@@ -1,0 +1,29 @@
+0000000000000000000000000000000000000000 d20142fee24157115467ad5fe1e1ff091c357fc9 Mohamed NasserE <monasser.eng@gmail.com> 1775012279 +0200	clone: from https://github.com/eslamkhames/sellx_dashboard_tauri.git
+d20142fee24157115467ad5fe1e1ff091c357fc9 d20142fee24157115467ad5fe1e1ff091c357fc9 Mohamed NasserE <monasser.eng@gmail.com> 1775014498 +0200	checkout: moving from main to backup-old-printing-system
+d20142fee24157115467ad5fe1e1ff091c357fc9 d20142fee24157115467ad5fe1e1ff091c357fc9 Mohamed NasserE <monasser.eng@gmail.com> 1775014505 +0200	checkout: moving from backup-old-printing-system to feature/sultana-printing-migration
+d20142fee24157115467ad5fe1e1ff091c357fc9 34bea688f120c0171135d6d379f74f71baddd8ec Mohamed NasserE <monasser.eng@gmail.com> 1775014952 +0200	commit: feat: Phase 1 & 2 Complete - Rust backend migrated to Sultana
+34bea688f120c0171135d6d379f74f71baddd8ec 387e5863c95eea69db4781e4a197429629a2ce01 Mohamed NasserE <monasser.eng@gmail.com> 1775015679 +0200	commit: feat: Phases 3-5 - Replace printing services and update UI
+387e5863c95eea69db4781e4a197429629a2ce01 e4b434d256a6c5ffaa49493e30605d68b6d93740 Mohamed NasserE <monasser.eng@gmail.com> 1775016438 +0200	commit: feat: Phase 6 Complete - Update all pages to use new printService + Cleanup
+e4b434d256a6c5ffaa49493e30605d68b6d93740 94ce004ad2af1fd6e180fe9ff2328499c25da1f3 Mohamed NasserE <monasser.eng@gmail.com> 1775016517 +0200	commit: docs: Add final migration completion summary
+94ce004ad2af1fd6e180fe9ff2328499c25da1f3 a3c8aaa218b6fc32a0af913bfb51e1e218258494 Mohamed NasserE <monasser.eng@gmail.com> 1775017402 +0200	commit: fix: Add Arabic font + remove unused packages (Final Review fixes)
+a3c8aaa218b6fc32a0af913bfb51e1e218258494 1e1f7890686b62f5959ae5df6fd02ba7c1903ba5 Mohamed NasserE <monasser.eng@gmail.com> 1775037920 +0200	commit: Fix barcode printing and add GitHub Actions workflow
+1e1f7890686b62f5959ae5df6fd02ba7c1903ba5 d20142fee24157115467ad5fe1e1ff091c357fc9 Mohamed NasserE <monasser.eng@gmail.com> 1775038211 +0200	checkout: moving from feature/sultana-printing-migration to main
+d20142fee24157115467ad5fe1e1ff091c357fc9 1e1f7890686b62f5959ae5df6fd02ba7c1903ba5 Mohamed NasserE <monasser.eng@gmail.com> 1775038225 +0200	merge feature/sultana-printing-migration: Fast-forward
+1e1f7890686b62f5959ae5df6fd02ba7c1903ba5 cd2b7b5cb32f81688dd466008aa59a1ac26b7c25 Mohamed NasserE <monasser.eng@gmail.com> 1775340671 +0200	commit: refineing
+cd2b7b5cb32f81688dd466008aa59a1ac26b7c25 540a37b7d2788c629ad1d337c892ee386a505996 Mohamed NasserE <monasser.eng@gmail.com> 1775341852 +0200	commit: Fix TypeScript errors in GitHub Actions build
+540a37b7d2788c629ad1d337c892ee386a505996 0e4facc724c17b892be9d25a0292cdbba6aa386d Mohamed NasserE <monasser.eng@gmail.com> 1775342359 +0200	commit: Fix remaining TypeScript errors in build
+0e4facc724c17b892be9d25a0292cdbba6aa386d ab141436616f432b847b623e04cba8aa7c4a10f3 Mohamed NasserE <monasser.eng@gmail.com> 1775342810 +0200	commit: Remove duplicate Salary and PaymentStatus type definitions
+ab141436616f432b847b623e04cba8aa7c4a10f3 ce45bdc8f3400928496d8b0cc0072745a07e70a1 Mohamed NasserE <monasser.eng@gmail.com> 1775343030 +0200	commit: Fix TypeScript errors - part 2
+ce45bdc8f3400928496d8b0cc0072745a07e70a1 bf8234eae7994f814c49b5be9bede3d37e9a2b54 Mohamed NasserE <monasser.eng@gmail.com> 1775344304 +0200	commit: Fix all TypeScript build errors (88 errors fixed)
+bf8234eae7994f814c49b5be9bede3d37e9a2b54 af09e42209de7742c0477171f94985d9c6d17db4 Mohamed NasserE <monasser.eng@gmail.com> 1775382430 +0200	commit: Enable Windows USB barcode printing with manufacturer driver support
+af09e42209de7742c0477171f94985d9c6d17db4 94f01c1fd3db2281734f5d356a99fb19207316e5 Mohamed NasserE <monasser.eng@gmail.com> 1775385388 +0200	commit: Fix: Correct indentation of TSPL code in print_barcode_native
+94f01c1fd3db2281734f5d356a99fb19207316e5 bc40c3db1454632e350cdd73d346268fcfbfa967 Mohamed NasserE <monasser.eng@gmail.com> 1775392767 +0200	commit: Complete Windows barcode printing fix with bulletproof escaping
+bc40c3db1454632e350cdd73d346268fcfbfa967 b66b12dc980969ccf2b1e8b85fceb409b4cb238f Mohamed NasserE <monasser.eng@gmail.com> 1775392948 +0200	commit: Add comprehensive logging for Windows barcode printing debug
+b66b12dc980969ccf2b1e8b85fceb409b4cb238f c595d754404b49545aae2524ca181057b159e329 Mohamed NasserE <monasser.eng@gmail.com> 1775395329 +0200	commit: Switch to copy /b method for Windows barcode printing
+c595d754404b49545aae2524ca181057b159e329 b0d2fafd5412e4787def79ea53feb5e3ae10d853 Mohamed NasserE <monasser.eng@gmail.com> 1775399317 +0200	commit: Windows barcode printing: Use confirmed working copy /b format
+b0d2fafd5412e4787def79ea53feb5e3ae10d853 c4ada253fc69eeb8608e95516c9c50162c928aa3 Mohamed NasserE <monasser.eng@gmail.com> 1776384464 +0200	commit: fix printer
+c4ada253fc69eeb8608e95516c9c50162c928aa3 d2bd1278614e7eec0999fcc2056b63ada59d2dc5 Mohamed NasserE <monasser.eng@gmail.com> 1776589231 +0200	commit: fix barcode
+d2bd1278614e7eec0999fcc2056b63ada59d2dc5 85c90673c23ce71c51754dc58e9c992ec4b36c40 Mohamed NasserE <monasser.eng@gmail.com> 1776604366 +0200	commit: fix barcode
+85c90673c23ce71c51754dc58e9c992ec4b36c40 f6813dc1043027a8e698e1455bf380884b10456e Mohamed NasserE <monasser.eng@gmail.com> 1776605543 +0200	commit: fix barcode
+f6813dc1043027a8e698e1455bf380884b10456e 48fb213ca6f982731b971cdc3d9c47387c6eafa5 Mohamed NasserE <monasser.eng@gmail.com> 1776606990 +0200	commit: prodction
+48fb213ca6f982731b971cdc3d9c47387c6eafa5 23ac9554a089b2be86e0a8389be86ba8cb994a6f Mohamed NasserE <monasser.eng@gmail.com> 1776608265 +0200	commit: prodction v2

@@ -1,0 +1,7 @@
+0000000000000000000000000000000000000000 d20142fee24157115467ad5fe1e1ff091c357fc9 Mohamed NasserE <monasser.eng@gmail.com> 1775014505 +0200	branch: Created from HEAD
+d20142fee24157115467ad5fe1e1ff091c357fc9 34bea688f120c0171135d6d379f74f71baddd8ec Mohamed NasserE <monasser.eng@gmail.com> 1775014952 +0200	commit: feat: Phase 1 & 2 Complete - Rust backend migrated to Sultana
+34bea688f120c0171135d6d379f74f71baddd8ec 387e5863c95eea69db4781e4a197429629a2ce01 Mohamed NasserE <monasser.eng@gmail.com> 1775015679 +0200	commit: feat: Phases 3-5 - Replace printing services and update UI
+387e5863c95eea69db4781e4a197429629a2ce01 e4b434d256a6c5ffaa49493e30605d68b6d93740 Mohamed NasserE <monasser.eng@gmail.com> 1775016438 +0200	commit: feat: Phase 6 Complete - Update all pages to use new printService + Cleanup
+e4b434d256a6c5ffaa49493e30605d68b6d93740 94ce004ad2af1fd6e180fe9ff2328499c25da1f3 Mohamed NasserE <monasser.eng@gmail.com> 1775016517 +0200	commit: docs: Add final migration completion summary
+94ce004ad2af1fd6e180fe9ff2328499c25da1f3 a3c8aaa218b6fc32a0af913bfb51e1e218258494 Mohamed NasserE <monasser.eng@gmail.com> 1775017402 +0200	commit: fix: Add Arabic font + remove unused packages (Final Review fixes)
+a3c8aaa218b6fc32a0af913bfb51e1e218258494 1e1f7890686b62f5959ae5df6fd02ba7c1903ba5 Mohamed NasserE <monasser.eng@gmail.com> 1775037920 +0200	commit: Fix barcode printing and add GitHub Actions workflow
