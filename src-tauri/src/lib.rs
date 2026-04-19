@@ -440,6 +440,171 @@ try {{
     }
 }
 
+// Label dimensions at 203 DPI for the 35×25mm media.
+const LABEL_WIDTH_DOTS: u32 = 280;
+
+// Vertical positions for each layout band (dots from top).
+// Top printable area on many label rolls starts ~8 dots below the page origin,
+// so COMPANY_Y must be at least 10 for the top of the glyphs to land on paper.
+const COMPANY_Y: u32 = 12;  // safe header — no clipping
+const NAME_Y: u32 = 48;     // product name (shifted down to make room)
+const BARCODE_Y: u32 = 92;  // barcode
+const BARCODE_HEIGHT: u32 = 70;
+
+/// Pick the widest CODE128 module width that fits the label for the given
+/// payload length. Wider modules = thicker bars = more scannable and more
+/// dirt-tolerant.
+///
+/// The formula `chars * 11 + 35` is pessimistic — real CODE128 renders in
+/// roughly 2/3 of that because digits use compact Subset-C encoding (5.5
+/// modules/pair) and the TSPL quiet zones are small. So we divide the budget
+/// to correct for that, letting us pick thicker bars confidently.
+///
+/// Returns `(narrow, wide)`; for CODE128 both are equal.
+fn pick_barcode_widths(payload_chars: u32) -> (u32, u32) {
+    // `adjusted` ≈ real rendered width. Cap it to give a comfortable visual
+    // margin on both sides — not edge-to-edge.
+    const LABEL_BUDGET: u32 = 220;
+    for narrow in [4u32, 3, 2] {
+        let raw_estimate = (payload_chars * 11 + 35) * narrow;
+        let adjusted = raw_estimate * 2 / 3;
+        if adjusted <= LABEL_BUDGET {
+            return (narrow, narrow);
+        }
+    }
+    (2, 2)
+}
+
+/// Build a full TSPL command payload (as raw bytes) for a barcode label.
+///
+/// Layout (203 DPI, 35mm × 25mm = 280×200 dots):
+///   Company bitmap    Y= 5, centered  (optional — Arabic only)
+///   Product name bmp  Y=32, centered  (or TSPL TEXT for Latin-only name)
+///   CODE128 barcode   Y=72, centered  (narrow=2, height=75)
+///   SKU (HRI digits)  auto under barcode
+///
+/// `line_ending` differs per platform: Windows thermal printers are pickier
+/// and want "\r\n"; macOS/Linux direct-USB works with "\n".
+fn build_barcode_tspl(
+    barcode_value: &str,
+    product_name: Option<&str>,
+    company_name: Option<&str>,
+    name_bitmap: Option<(&[u8], u32, u32)>,    // (bytes, widthBytes, heightDots)
+    company_bitmap: Option<(&[u8], u32, u32)>, // same shape
+    line_ending: &str,
+) -> Vec<u8> {
+    let mut out: Vec<u8> = Vec::with_capacity(2048);
+    let push = |b: &mut Vec<u8>, s: &str| b.extend_from_slice(s.as_bytes());
+
+    push(&mut out, "SIZE 35 mm,25 mm");
+    push(&mut out, line_ending);
+    push(&mut out, "GAP 3 mm,0");
+    push(&mut out, line_ending);
+    push(&mut out, "OFFSET 0");
+    push(&mut out, line_ending);
+    push(&mut out, "DIRECTION 1");
+    push(&mut out, line_ending);
+    push(&mut out, "SET TEAR ON");
+    push(&mut out, line_ending);
+    push(&mut out, "CLS");
+    push(&mut out, line_ending);
+
+    // ── Company name (top band) ──────────────────────────────────────────
+    emit_text_or_bitmap(
+        &mut out,
+        line_ending,
+        company_name,
+        company_bitmap,
+        COMPANY_Y,
+        "2", // small font for Latin fallback
+    );
+
+    // ── Product name (middle band) ───────────────────────────────────────
+    emit_text_or_bitmap(
+        &mut out,
+        line_ending,
+        product_name,
+        name_bitmap,
+        NAME_Y,
+        "3", // larger font for Latin fallback
+    );
+
+    // ── Barcode (centered, adaptive width) ───────────────────────────────
+    let char_count = barcode_value.chars().count() as u32;
+    let (narrow, wide) = pick_barcode_widths(char_count);
+    // Use the SAME 2/3 correction for centering — match the rendered width.
+    let estimated_width = (char_count * 11 + 35) * narrow * 2 / 3;
+    let barcode_x = if estimated_width < LABEL_WIDTH_DOTS {
+        (LABEL_WIDTH_DOTS - estimated_width) / 2
+    } else {
+        0
+    };
+    let escaped_barcode = barcode_value.replace('"', "\\\"");
+    let barcode_line = format!(
+        "BARCODE {},{},\"128\",{},1,0,{},{},\"{}\"",
+        barcode_x, BARCODE_Y, BARCODE_HEIGHT, narrow, wide, escaped_barcode
+    );
+    push(&mut out, &barcode_line);
+    push(&mut out, line_ending);
+
+    push(&mut out, "PRINT 1,1");
+    push(&mut out, line_ending);
+
+    out
+}
+
+/// Emit either a BITMAP command (when a pre-rendered bitmap is provided — the
+/// Arabic path) or a TSPL TEXT command (Latin-only fallback). Both are
+/// horizontally centered on the label.
+fn emit_text_or_bitmap(
+    out: &mut Vec<u8>,
+    line_ending: &str,
+    text: Option<&str>,
+    bitmap: Option<(&[u8], u32, u32)>,
+    y: u32,
+    text_font: &str,
+) {
+    if let Some((bytes, width_bytes, height_dots)) = bitmap {
+        // Center using widthBytes*8 as an upper-bound width (off by ≤7 dots).
+        let bitmap_width_dots = width_bytes * 8;
+        let x = if bitmap_width_dots < LABEL_WIDTH_DOTS {
+            (LABEL_WIDTH_DOTS - bitmap_width_dots) / 2
+        } else {
+            0
+        };
+        let header = format!("BITMAP {},{},{},{},0,", x, y, width_bytes, height_dots);
+        out.extend_from_slice(header.as_bytes());
+        out.extend_from_slice(bytes);
+        out.extend_from_slice(line_ending.as_bytes());
+        return;
+    }
+
+    if let Some(txt) = text.map(str::trim).filter(|s| !s.is_empty()) {
+        // Latin path: TSPL TEXT — the printer font can't draw Arabic so the
+        // caller is expected to send a bitmap whenever the string has Arabic.
+        // Rough centering for the printer's built-in fonts (monospaced-ish):
+        //   font "2" ≈ 12×20 dots per char, font "3" ≈ 12×24.
+        let char_w: u32 = match text_font {
+            "1" => 8,
+            "2" => 12,
+            "3" => 12,
+            "4" => 14,
+            "5" => 32,
+            _ => 12,
+        };
+        let estimated = (txt.chars().count() as u32) * char_w;
+        let x = if estimated < LABEL_WIDTH_DOTS {
+            (LABEL_WIDTH_DOTS - estimated) / 2
+        } else {
+            0
+        };
+        let escaped = txt.replace('"', "\\\"");
+        let line = format!("TEXT {},{},\"{}\",0,1,1,\"{}\"", x, y, text_font, escaped);
+        out.extend_from_slice(line.as_bytes());
+        out.extend_from_slice(line_ending.as_bytes());
+    }
+}
+
 /// Windows-specific: Print barcode by submitting raw TSPL bytes to the Windows
 /// print spooler (winspool.drv WritePrinter, RAW datatype). Uses the same
 /// RawPrint.SendRaw C# helper as the receipt path — no printer sharing and no
@@ -448,7 +613,10 @@ try {{
 fn print_barcode_windows_raw(
     barcode_value: String,
     product_name: Option<String>,
+    company_name: Option<String>,
     printer_name: Option<String>,
+    name_bitmap: Option<(Vec<u8>, u32, u32)>,
+    company_bitmap: Option<(Vec<u8>, u32, u32)>,
 ) -> Result<String, String> {
     log::info!("========== WINDOWS BARCODE PRINT START ==========");
     log::info!("[Barcode Windows] Using winspool RAW (RawPrint.SendRaw)");
@@ -468,36 +636,24 @@ fn print_barcode_windows_raw(
 
     log::info!("[Barcode Windows] Target printer: '{}'", target_printer);
 
-    // Generate TSPL commands with \r\n (CRLF) line endings — required by thermal printers.
-    let product_text = product_name.unwrap_or_default();
-    let tspl_command = if product_text.is_empty() {
-        format!(
-            "SIZE 35 mm,25 mm\r\n\
-             GAP 3 mm,0\r\n\
-             OFFSET 0\r\n\
-             DIRECTION 1\r\n\
-             SET TEAR ON\r\n\
-             CLS\r\n\
-             BARCODE 60,60,\"128\",80,1,0,3,3,\"{}\"\r\n\
-             PRINT 1,1\r\n",
-            barcode_value
-        )
-    } else {
-        format!(
-            "SIZE 35 mm,25 mm\r\n\
-             GAP 3 mm,0\r\n\
-             OFFSET 0\r\n\
-             DIRECTION 1\r\n\
-             SET TEAR ON\r\n\
-             CLS\r\n\
-             TEXT 60,20,\"3\",0,1,1,\"{}\"\r\n\
-             BARCODE 60,80,\"128\",80,1,0,3,3,\"{}\"\r\n\
-             PRINT 1,1\r\n",
-            product_text, barcode_value
-        )
-    };
+    // Build TSPL payload (bytes — may contain binary pixel data after BITMAP headers).
+    let name_bitmap_ref = name_bitmap.as_ref().map(|(b, w, h)| (b.as_slice(), *w, *h));
+    let company_bitmap_ref = company_bitmap.as_ref().map(|(b, w, h)| (b.as_slice(), *w, *h));
+    let tspl_bytes = build_barcode_tspl(
+        &barcode_value,
+        product_name.as_deref(),
+        company_name.as_deref(),
+        name_bitmap_ref,
+        company_bitmap_ref,
+        "\r\n",
+    );
 
-    log::info!("[Barcode Windows] TSPL commands ({} bytes):\n{}", tspl_command.len(), tspl_command);
+    log::info!(
+        "[Barcode Windows] TSPL payload: {} bytes (name_bmp: {}, company_bmp: {})",
+        tspl_bytes.len(),
+        name_bitmap.is_some(),
+        company_bitmap.is_some()
+    );
 
     // Stage TSPL bytes in a temp file so PowerShell can load them as a byte[] and
     // hand them to RawPrint.SendRaw unchanged (no encoding, no line-ending rewrites).
@@ -506,7 +662,7 @@ fn print_barcode_windows_raw(
         .unwrap_or_default()
         .as_millis();
     let temp_path = std::env::temp_dir().join(format!("sellx_barcode_{}.tspl", ts));
-    std::fs::write(&temp_path, tspl_command.as_bytes())
+    std::fs::write(&temp_path, &tspl_bytes)
         .map_err(|e| {
             log::error!("[Barcode Windows] Failed to write temp file: {}", e);
             format!("Failed to create temp file: {}", e)
@@ -641,28 +797,125 @@ switch ($written) {{
     }
 }
 
-/// Print barcode directly via USB using TSPL commands (for Xprinter XP-Q361U)
-/// This bypasses the OS print dialog and sends raw commands to the barcode printer
+/// Decode a base64-encoded bitmap payload coming from the frontend.
+/// Returns None if any of the three pieces is missing.
+fn decode_name_bitmap(
+    b64: Option<String>,
+    width_bytes: Option<u32>,
+    height_dots: Option<u32>,
+) -> Option<(Vec<u8>, u32, u32)> {
+    let (b64, w, h) = match (b64, width_bytes, height_dots) {
+        (Some(s), Some(w), Some(h)) if !s.is_empty() && w > 0 && h > 0 => (s, w, h),
+        _ => return None,
+    };
+
+    // Minimal inline base64 decoder so we don't add a dependency just for this.
+    let decoded = base64_decode(&b64)?;
+    let expected = (w as usize) * (h as usize);
+    if decoded.len() != expected {
+        log::warn!(
+            "[Barcode] name_bitmap size mismatch: got {} bytes, expected {} (w={} h={})",
+            decoded.len(),
+            expected,
+            w,
+            h
+        );
+        return None;
+    }
+    Some((decoded, w, h))
+}
+
+fn base64_decode(s: &str) -> Option<Vec<u8>> {
+    const INVALID: u8 = 0xFF;
+    // Build a lookup table for the standard base64 alphabet.
+    let mut table = [INVALID; 256];
+    for (i, c) in b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+        .iter()
+        .enumerate()
+    {
+        table[*c as usize] = i as u8;
+    }
+
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len() * 3 / 4);
+    let mut buf = 0u32;
+    let mut bits = 0u8;
+
+    for &c in bytes {
+        if c == b'=' || c == b'\n' || c == b'\r' || c == b' ' {
+            continue;
+        }
+        let v = table[c as usize];
+        if v == INVALID {
+            return None;
+        }
+        buf = (buf << 6) | v as u32;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push(((buf >> bits) & 0xFF) as u8);
+        }
+    }
+    Some(out)
+}
+
+/// Print barcode directly via USB using TSPL commands (for Xprinter XP-Q361U).
+/// Supports an optional pre-rendered product-name bitmap (used when the name
+/// contains Arabic characters the printer firmware can't render).
 /// NOW SUPPORTS: macOS (via USB), Windows (via Raw Printing), Linux (via USB)
 #[tauri::command]
 fn print_barcode_native(
     barcode_value: String,
     product_name: Option<String>,
-    printer_name: Option<String>,  // Windows: printer name; macOS/Linux: ignored
+    company_name: Option<String>,
+    printer_name: Option<String>,     // Windows: printer name; macOS/Linux: ignored
     vendor_id: Option<u16>,
     product_id: Option<u16>,
+    name_bitmap_b64: Option<String>,
+    name_bitmap_width_bytes: Option<u32>,
+    name_bitmap_height_dots: Option<u32>,
+    company_bitmap_b64: Option<String>,
+    company_bitmap_width_bytes: Option<u32>,
+    company_bitmap_height_dots: Option<u32>,
 ) -> Result<String, String> {
     log::info!("====================================================");
     log::info!("print_barcode_native called");
     log::info!("Platform: {}", std::env::consts::OS);
-    log::info!("Parameters: barcode={}, product={:?}, printer={:?}, vid={:?}, pid={:?}",
-        barcode_value, product_name, printer_name, vendor_id, product_id);
+    log::info!(
+        "Parameters: barcode={}, product={:?}, company={:?}, printer={:?}, vid={:?}, pid={:?}, name_bmp={}, company_bmp={}",
+        barcode_value,
+        product_name,
+        company_name,
+        printer_name,
+        vendor_id,
+        product_id,
+        name_bitmap_b64.is_some(),
+        company_bitmap_b64.is_some()
+    );
+
+    let name_bitmap = decode_name_bitmap(
+        name_bitmap_b64,
+        name_bitmap_width_bytes,
+        name_bitmap_height_dots,
+    );
+    let company_bitmap = decode_name_bitmap(
+        company_bitmap_b64,
+        company_bitmap_width_bytes,
+        company_bitmap_height_dots,
+    );
 
     // Windows uses Raw Printing API with manufacturer driver
     #[cfg(target_os = "windows")]
     {
         log::info!("Routing to Windows Raw Printing API");
-        return print_barcode_windows_raw(barcode_value, product_name, printer_name);
+        return print_barcode_windows_raw(
+            barcode_value,
+            product_name,
+            company_name,
+            printer_name,
+            name_bitmap,
+            company_bitmap,
+        );
     }
 
     // macOS and Linux use rusb (direct USB)
@@ -675,90 +928,120 @@ fn print_barcode_native(
         let vid = vendor_id.unwrap_or(0x1EEA);
         let pid = product_id.unwrap_or(0x002C);
 
-        log::info!("[Barcode] Attempting USB print - VID: 0x{:04X}, PID: 0x{:04X}", vid, pid);
+        log::info!(
+            "[Barcode] Attempting USB print - VID: 0x{:04X}, PID: 0x{:04X}",
+            vid,
+            pid
+        );
 
-        let context = Context::new().map_err(|e| format!("USB context error: {}", e))?;
+        // Build TSPL payload (may contain binary bitmap data).
+        let name_bitmap_ref = name_bitmap.as_ref().map(|(b, w, h)| (b.as_slice(), *w, *h));
+        let company_bitmap_ref = company_bitmap.as_ref().map(|(b, w, h)| (b.as_slice(), *w, *h));
+        let tspl_bytes = build_barcode_tspl(
+            &barcode_value,
+            product_name.as_deref(),
+            company_name.as_deref(),
+            name_bitmap_ref,
+            company_bitmap_ref,
+            "\n",
+        );
 
-        let handle = context
-            .open_device_with_vid_pid(vid, pid)
-            .ok_or_else(|| {
-                format!(
-                    "Barcode printer not found (VID: 0x{:04X}, PID: 0x{:04X}). Check USB connection and ensure printer is powered on.",
-                    vid, pid
-                )
-            })?;
+        log::info!(
+            "[Barcode] Sending {} bytes (name_bmp: {}, company_bmp: {})",
+            tspl_bytes.len(),
+            name_bitmap.is_some(),
+            company_bitmap.is_some()
+        );
 
-        // Claim interface 0 (standard for USB printers)
-        handle.claim_interface(0).map_err(|e| {
-            format!("Failed to claim USB interface: {}. Is another app using the printer?", e)
-        })?;
-
-        // Construct TSPL commands for barcode label
-        // SIZE: 35mm x 25mm (1.36" x 0.98") - actual label size
-        // GAP: 3mm gap between labels (standard for small labels)
-        // OFFSET: 0 - precise stopping position
-        // DIRECTION: 1 - print from top
-        // TEXT: X, Y, Font, Rotation, X-multiplication, Y-multiplication, Content
-        // BARCODE: X, Y, Type, Height, Human-Readable, Rotation, Narrow, Wide, Content
-        //   At 203 DPI: 35mm ≈ 276 dots, 25mm ≈ 200 dots
-        //   Centered X position: 60 dots (slightly left of center)
-        //
-        // Layout optimized for Xprinter XP-Q361U:
-        // - X=60 positions content centered
-        // - Product name at Y=20 (top)
-        // - Barcode at Y=80 (centered vertically)
-        let product_text = product_name.unwrap_or_default();
-
-        let tspl_command = if product_text.is_empty() {
-            // Barcode only - centered on label with wider bars
-            format!(
-                "SIZE 35 mm,25 mm\n\
-                 GAP 3 mm,0\n\
-                 OFFSET 0\n\
-                 DIRECTION 1\n\
-                 SET TEAR ON\n\
-                 CLS\n\
-                 BARCODE 60,60,\"128\",80,1,0,3,3,\"{}\"\n\
-                 PRINT 1,1\n",
-                barcode_value
-            )
-        } else {
-            // Product name at top + barcode centered with wider bars
-            format!(
-                "SIZE 35 mm,25 mm\n\
-                 GAP 3 mm,0\n\
-                 OFFSET 0\n\
-                 DIRECTION 1\n\
-                 SET TEAR ON\n\
-                 CLS\n\
-                 TEXT 60,20,\"3\",0,1,1,\"{}\"\n\
-                 BARCODE 60,80,\"128\",80,1,0,3,3,\"{}\"\n\
-                 PRINT 1,1\n",
-                product_text, barcode_value
-            )
-        };
-
-        log::info!("[Barcode] Sending TSPL commands:\n{}", tspl_command);
-
-        // Try different bulk endpoints (0x01, 0x02, 0x03)
-        // Xprinters typically use 0x01 or 0x02
+        // Retry on transient USB errors (NotFound/Busy/Timeout/Pipe). These
+        // happen when macOS probes the device, CUPS grabs it briefly, or the
+        // printer's USB pipe renegotiates between prints. Re-open the device
+        // each time so libusb sees the fresh state.
+        const MAX_ATTEMPTS: u32 = 3;
         let endpoints = [0x01, 0x02, 0x03];
         let mut last_error = String::new();
+        let mut last_error_kind = "";
 
-        for endpoint in endpoints.iter() {
-            match handle.write_bulk(*endpoint, tspl_command.as_bytes(), Duration::from_secs(5)) {
-                Ok(bytes_written) => {
-                    log::info!("[Barcode] ✅ Successfully sent {} bytes to endpoint 0x{:02X}", bytes_written, endpoint);
-                    return Ok(format!("Barcode printed successfully! ({} bytes sent)", bytes_written));
-                }
+        for attempt in 1..=MAX_ATTEMPTS {
+            // Fresh context + handle on every attempt — the previous handle
+            // may be in a bad state after a failure.
+            let context = match Context::new() {
+                Ok(c) => c,
                 Err(e) => {
-                    last_error = format!("Endpoint 0x{:02X}: {}", endpoint, e);
-                    log::warn!("[Barcode] Failed on endpoint 0x{:02X}: {}", endpoint, e);
+                    last_error = format!("USB context error: {}", e);
+                    last_error_kind = "context";
+                    break;
                 }
+            };
+            let handle = match context.open_device_with_vid_pid(vid, pid) {
+                Some(h) => h,
+                None => {
+                    last_error = format!(
+                        "Barcode printer not found (VID: 0x{:04X}, PID: 0x{:04X}).",
+                        vid, pid
+                    );
+                    last_error_kind = "not_found";
+                    // If the device is physically gone, retrying won't help,
+                    // but a brief wait can let the OS re-enumerate on wakeup.
+                    std::thread::sleep(Duration::from_millis(400));
+                    continue;
+                }
+            };
+            if let Err(e) = handle.claim_interface(0) {
+                last_error = format!("Claim interface failed: {}", e);
+                last_error_kind = "claim";
+                std::thread::sleep(Duration::from_millis(400));
+                continue;
+            }
+
+            let mut attempt_error = String::new();
+            let mut sent = false;
+            for endpoint in endpoints.iter() {
+                match handle.write_bulk(*endpoint, &tspl_bytes, Duration::from_secs(5)) {
+                    Ok(bytes_written) => {
+                        log::info!(
+                            "[Barcode] ✅ Attempt {}: sent {} bytes to endpoint 0x{:02X}",
+                            attempt,
+                            bytes_written,
+                            endpoint
+                        );
+                        sent = true;
+                        return Ok(format!(
+                            "Barcode printed successfully! ({} bytes sent)",
+                            bytes_written
+                        ));
+                    }
+                    Err(e) => {
+                        attempt_error = format!("ep 0x{:02X}: {}", endpoint, e);
+                        log::warn!("[Barcode] Attempt {} ep 0x{:02X}: {}", attempt, endpoint, e);
+                    }
+                }
+            }
+            if sent {
+                break;
+            }
+            last_error = attempt_error;
+            last_error_kind = "write";
+
+            if attempt < MAX_ATTEMPTS {
+                log::info!("[Barcode] Retrying after transient USB error (attempt {})", attempt + 1);
+                std::thread::sleep(Duration::from_millis(400));
             }
         }
 
-        Err(format!("Failed to send to any USB endpoint. Last error: {}", last_error))
+        // Friendly Arabic error for each failure mode.
+        let friendly = match last_error_kind {
+            "not_found" => format!(
+                "لم يتم العثور على طابعة الباركود.\n\
+                 تأكد من توصيل الـ USB وتشغيل الطابعة، ثم حاول مجدداً.\n\
+                 (VID 0x{:04X} / PID 0x{:04X})",
+                vid, pid
+            ),
+            "claim" => "تعذّر فتح الطابعة — تطبيق آخر يستخدمها. أغلق برامج الطباعة الأخرى وحاول مجدداً.".to_string(),
+            _ => "الطابعة لم تستجب. تأكد من التوصيل أو أعد تشغيل الطابعة ثم حاول مجدداً.".to_string(),
+        };
+        log::error!("[Barcode] All {} attempts failed: {}", MAX_ATTEMPTS, last_error);
+        Err(format!("{}\n(تفاصيل: {})", friendly, last_error))
     }
 }
 
@@ -904,12 +1187,11 @@ pub fn run() {
         ])
         // ── Setup ──────────────────────────────────────────
         .setup(|app| {
-            // Debug builds: auto-open DevTools. Release builds ship without DevTools.
-            #[cfg(debug_assertions)]
-            {
-                if let Some(window) = app.get_webview_window("main") {
-                    window.open_devtools();
-                }
+            // TEMPORARY: DevTools enabled in release builds for debugging.
+            // Revert before final ship (wrap in cfg(debug_assertions) + set
+            // window.devtools: false in tauri.conf.json).
+            if let Some(window) = app.get_webview_window("main") {
+                window.open_devtools();
             }
             // Start background network monitoring
             network::start_network_monitor(app.handle().clone());

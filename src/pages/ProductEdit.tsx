@@ -137,10 +137,10 @@ const ProductEdit: React.FC = () => {
         },
       });
 
-      toast.success('تم تحديث المنتج بنجاح');
-      navigate(`/products/${id}`);
+      // Success toast is fired by the mutation's onSuccess in useProducts.ts.
+      navigate('/products');
     } catch {
-      toast.error('حدث خطأ أثناء تحديث المنتج');
+      // Error toast is fired by the mutation's onError in useProducts.ts.
     }
   };
 
