@@ -904,11 +904,12 @@ pub fn run() {
         ])
         // ── Setup ──────────────────────────────────────────
         .setup(|app| {
-            // TEMPORARY: auto-open DevTools in all builds (including installed
-            // NSIS/DMG) so printing issues can be diagnosed from logs. Revert to
-            // cfg(debug_assertions)-only before final shipping.
-            if let Some(window) = app.get_webview_window("main") {
-                window.open_devtools();
+            // Debug builds: auto-open DevTools. Release builds ship without DevTools.
+            #[cfg(debug_assertions)]
+            {
+                if let Some(window) = app.get_webview_window("main") {
+                    window.open_devtools();
+                }
             }
             // Start background network monitoring
             network::start_network_monitor(app.handle().clone());
