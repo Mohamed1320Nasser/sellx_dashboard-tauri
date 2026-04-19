@@ -1,1 +1,1 @@
-# sellx_dashboard-tauri
+# sellx_dashboard_tauri

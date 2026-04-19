@@ -1,0 +1,254 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* Modern Professional Typography */
+  html[dir="rtl"] {
+    font-family: 'Almarai', 'Inter', 'Cairo', 'Noto Sans Arabic', sans-serif;
+  }
+
+  html, body {
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
+  }
+
+  body {
+    font-family: 'Almarai', 'Inter', system-ui, sans-serif;
+    background-color: #f8fafc;
+    color: #1e293b;
+    direction: rtl;
+    text-align: right;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  
+  /* Ensure no margins or padding on any element */
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+  
+  /* Remove any default margins/padding from common elements */
+  div, section, main, header, nav, aside, article, footer {
+    margin: 0;
+    padding: 0;
+  }
+}
+
+@layer components {
+  /* Custom component styles */
+  .btn-primary {
+    @apply bg-primary-600 hover:bg-primary-700 text-white font-medium px-4 py-2 rounded-lg transition-colors;
+  }
+
+  .btn-secondary {
+    @apply bg-secondary-600 hover:bg-secondary-700 text-white font-medium px-4 py-2 rounded-lg transition-colors;
+  }
+
+  .card {
+    @apply bg-white border border-gray-200 rounded-lg shadow-sm;
+  }
+
+  .input-field {
+    @apply w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent;
+  }
+
+  /* Fix date picker calendar size */
+  input[type="date"]::-webkit-calendar-picker-indicator {
+    font-size: 1.5em;
+    cursor: pointer;
+    padding: 4px;
+  }
+
+  input[type="date"] {
+    min-height: 42px;
+    font-size: 16px;
+  }
+
+  /* Force larger calendar popup */
+  input[type="date"]::-webkit-datetime-edit {
+    font-size: 16px;
+  }
+
+  input[type="date"]::-webkit-datetime-edit-fields-wrapper {
+    padding: 8px;
+  }
+
+  /* React DatePicker Custom Styles */
+  .custom-datepicker-calendar {
+    font-size: 0.875rem !important;
+    font-family: 'Almarai', 'Inter', system-ui, sans-serif !important;
+    direction: rtl !important;
+    border: 1px solid #e5e7eb !important;
+    border-radius: 0.375rem !important;
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1) !important;
+  }
+
+  .custom-datepicker-popper {
+    z-index: 9999 !important;
+  }
+
+  .react-datepicker__header {
+    background-color: #3b82f6 !important;
+    border-bottom: none !important;
+    border-radius: 0.375rem 0.375rem 0 0 !important;
+    padding: 0.5rem !important;
+  }
+
+  .react-datepicker__current-month,
+  .react-datepicker__day-name {
+    color: white !important;
+    font-weight: 600 !important;
+    font-size: 0.75rem !important;
+  }
+
+  .react-datepicker__day-name {
+    width: 1.75rem !important;
+    line-height: 1.75rem !important;
+    margin: 0.125rem !important;
+  }
+
+  .react-datepicker__day {
+    width: 1.75rem !important;
+    line-height: 1.75rem !important;
+    margin: 0.125rem !important;
+    font-size: 0.8rem !important;
+    border-radius: 0.25rem !important;
+  }
+
+  .react-datepicker__day:hover {
+    background-color: #dbeafe !important;
+    border-radius: 0.25rem !important;
+  }
+
+  .react-datepicker__day--selected {
+    background-color: #3b82f6 !important;
+    color: white !important;
+    font-weight: 600 !important;
+  }
+
+  .react-datepicker__day--keyboard-selected {
+    background-color: #93c5fd !important;
+  }
+
+  .react-datepicker__day--today {
+    font-weight: bold !important;
+    border: 1px solid #3b82f6 !important;
+  }
+
+  .react-datepicker__month {
+    padding: 0.25rem !important;
+  }
+
+  .react-datepicker__triangle {
+    display: none !important;
+  }
+
+  .react-datepicker__month-dropdown,
+  .react-datepicker__year-dropdown {
+    background-color: white !important;
+    border: 1px solid #e5e7eb !important;
+    border-radius: 0.25rem !important;
+    padding: 0.25rem !important;
+    font-size: 0.75rem !important;
+    max-height: 150px !important;
+    overflow-y: auto !important;
+  }
+
+  .react-datepicker__month-option,
+  .react-datepicker__year-option {
+    padding: 0.25rem 0.5rem !important;
+    font-size: 0.75rem !important;
+  }
+
+  .react-datepicker__month-option:hover,
+  .react-datepicker__year-option:hover {
+    background-color: #dbeafe !important;
+  }
+}
+
+/* Custom Scrollbar Styles - Works on Windows, Chrome, Edge, Safari */
+@layer utilities {
+  /* Thin scrollbar for sidebar (dark theme) */
+  .scrollbar-sidebar {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(100, 116, 139, 0.5) transparent;
+  }
+
+  .scrollbar-sidebar::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .scrollbar-sidebar::-webkit-scrollbar-track {
+    background: transparent;
+    border-radius: 3px;
+  }
+
+  .scrollbar-sidebar::-webkit-scrollbar-thumb {
+    background: rgba(100, 116, 139, 0.5);
+    border-radius: 3px;
+    transition: background 0.2s ease;
+  }
+
+  .scrollbar-sidebar::-webkit-scrollbar-thumb:hover {
+    background: rgba(100, 116, 139, 0.8);
+  }
+
+  /* General custom scrollbar (light theme) */
+  .scrollbar-custom {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(156, 163, 175, 0.5) transparent;
+  }
+
+  .scrollbar-custom::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .scrollbar-custom::-webkit-scrollbar-track {
+    background: rgba(243, 244, 246, 0.5);
+    border-radius: 4px;
+  }
+
+  .scrollbar-custom::-webkit-scrollbar-thumb {
+    background: rgba(156, 163, 175, 0.6);
+    border-radius: 4px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  .scrollbar-custom::-webkit-scrollbar-thumb:hover {
+    background: rgba(107, 114, 128, 0.8);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  /* Hide scrollbar but keep functionality */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Fade-in animation for smooth step transitions */
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-fadeIn {
+    animation: fadeIn 0.3s ease-in-out;
+  }
+}

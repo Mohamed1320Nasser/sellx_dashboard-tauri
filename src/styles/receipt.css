@@ -1,0 +1,354 @@
+/**
+ * Receipt Styles - Based on Sultana's receipt.css
+ * Applied to thermal printer receipts (58mm / 80mm)
+ */
+
+.receipt {
+  font-family: 'IBM Plex Sans Arabic', sans-serif;
+  direction: rtl;
+  padding: 4px;
+  font-size: 11px;
+  line-height: 1.3;
+  color: #000;
+  max-width: 100%;
+  overflow: hidden;
+  word-wrap: break-word;
+}
+
+.receipt__header {
+  text-align: center;
+  font-size: 16px;
+  font-weight: bold;
+  margin-bottom: 4px;
+  line-height: 1.2;
+}
+
+.receipt__subheader {
+  text-align: center;
+  font-size: 10px;
+  margin-bottom: 2px;
+  color: #333;
+  line-height: 1.2;
+}
+
+.receipt__type-header {
+  text-align: center;
+  font-size: 14px;
+  font-weight: bold;
+  margin: 6px 0;
+  line-height: 1.2;
+}
+
+.receipt__divider {
+  border: none;
+  border-top: 1px solid #000;
+  margin: 6px 0;
+}
+
+.receipt__logo {
+  display: block;
+  margin: 0 auto 10px;
+  max-width: 150px;
+  height: auto;
+}
+
+.receipt__info {
+  margin: 4px 0;
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+.receipt__row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 2px;
+  gap: 2px;
+}
+
+.receipt__row-2col {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 5px;
+}
+
+.receipt__label {
+  font-weight: normal;
+  color: #666;
+  font-size: 10px;
+  flex-shrink: 0;
+  max-width: 40%;
+}
+
+.receipt__value {
+  font-weight: bold;
+  color: #000;
+  font-size: 10px;
+  text-align: left;
+  word-break: break-all;
+  max-width: 55%;
+}
+
+/* Items Table */
+.receipt__table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 4px 0;
+  font-size: 9px;
+  table-layout: fixed; /* Force column widths to respect constraints */
+}
+
+.receipt__table thead tr {
+  border-bottom: 1px solid #000;
+}
+
+.receipt__table th {
+  text-align: right;
+  padding: 2px 0px 4px 0px;
+  font-weight: bold;
+  font-size: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.receipt__table td {
+  text-align: right;
+  padding: 2px 0px;
+  font-size: 9px;
+  word-wrap: break-word;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  hyphens: auto;
+  vertical-align: top;
+  line-height: 1.2;
+}
+
+/* Column width constraints for 80mm paper */
+.receipt__table th:nth-child(1),
+.receipt__table td:nth-child(1) {
+  width: 50%; /* Product name column - more space */
+  max-width: 50%;
+  min-width: 0; /* Allow shrinking */
+}
+
+.receipt__table th:nth-child(2),
+.receipt__table td:nth-child(2) {
+  width: 12%; /* Quantity column */
+  max-width: 12%;
+  white-space: nowrap; /* Keep qty on one line */
+}
+
+.receipt__table th:nth-child(3),
+.receipt__table td:nth-child(3) {
+  width: 19%; /* Unit price column */
+  max-width: 19%;
+  white-space: nowrap; /* Keep price on one line */
+}
+
+.receipt__table th:nth-child(4),
+.receipt__table td:nth-child(4) {
+  width: 19%; /* Total column */
+  max-width: 19%;
+  white-space: nowrap; /* Keep total on one line */
+}
+
+.receipt__table-center {
+  text-align: center !important;
+}
+
+.receipt__table-sub {
+  font-size: 9px;
+  color: #666;
+  margin-top: 1px;
+  line-height: 1.2;
+}
+
+.receipt__item-name {
+  font-weight: 500;
+  font-size: 9px;
+  line-height: 1.2;
+  word-wrap: break-word;
+  word-break: break-word;
+  max-width: 100%;
+  display: block;
+  white-space: normal; /* Allow wrapping */
+}
+
+.receipt__item-variant {
+  font-style: italic;
+  color: #555;
+  font-size: 8px;
+  line-height: 1.1;
+}
+
+.receipt__item-sku {
+  color: #888;
+  font-size: 7px;
+  line-height: 1.1;
+  word-break: break-all;
+}
+
+.receipt__item-comment {
+  color: #d32f2f;
+  font-style: italic;
+}
+
+/* Totals */
+.receipt__totals {
+  margin: 4px 0;
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+.receipt__total {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: bold;
+  margin-top: 3px;
+  padding-top: 3px;
+  border-top: 1px solid #000;
+  gap: 2px;
+}
+
+/* Payment */
+.receipt__payment {
+  margin: 10px 0;
+  font-size: 13px;
+}
+
+/* QR Code */
+.receipt__qr-container {
+  text-align: center;
+  margin: 10px 0;
+}
+
+.receipt__qr {
+  width: 120px;
+  height: 120px;
+  margin: 0 auto;
+}
+
+/* Footer */
+.receipt__footer {
+  text-align: center;
+  font-size: 10px;
+  margin: 4px 0;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.receipt__phone {
+  text-align: center;
+  font-size: 9px;
+  margin: 2px 0;
+  line-height: 1.2;
+}
+
+.receipt__namePhone {
+  font-weight: bold;
+}
+
+.receipt__powered {
+  text-align: center;
+  font-size: 9px;
+  font-weight: 600;
+  margin-top: 6px;
+  line-height: 1.2;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  font-family: 'IBM Plex Sans Arabic', sans-serif;
+}
+
+.receipt__copy-mark {
+  text-align: center;
+  font-size: 18px;
+  font-weight: bold;
+  color: #d32f2f;
+  margin: 10px 0;
+}
+
+/* Barcode Label Styles */
+.barcode-label {
+  font-family: 'IBM Plex Sans Arabic', sans-serif;
+  direction: rtl;
+  text-align: center;
+  padding: 5mm;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  box-sizing: border-box;
+}
+
+.barcode-label__name {
+  font-size: 12px;
+  font-weight: bold;
+  margin-bottom: 3mm;
+  word-wrap: break-word;
+}
+
+.barcode-label__barcode-container {
+  margin: 2mm 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.barcode-label__barcode-container svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.barcode-label__code {
+  font-size: 10px;
+  margin: 2mm 0;
+  font-family: 'Courier New', monospace;
+}
+
+.barcode-label__price {
+  font-size: 14px;
+  font-weight: bold;
+  margin-top: 3mm;
+}
+
+/* Responsive adjustments for 58mm paper */
+@media (max-width: 220px) {
+  .receipt {
+    padding: 3px;
+    font-size: 10px;
+  }
+
+  .receipt__header {
+    font-size: 14px;
+  }
+
+  .receipt__table {
+    font-size: 8px;
+  }
+
+  .receipt__table th,
+  .receipt__table td {
+    padding: 1px 0px;
+  }
+
+  .receipt__item-name {
+    font-size: 8px;
+  }
+
+  .receipt__item-sku,
+  .receipt__table-sub {
+    font-size: 7px;
+  }
+
+  .receipt__row {
+    gap: 1px;
+  }
+
+  .receipt__divider {
+    margin: 4px 0;
+  }
+}

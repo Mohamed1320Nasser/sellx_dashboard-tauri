@@ -1,0 +1,67 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "SellX POS",
+  "version": "1.0.0",
+  "identifier": "com.sellx.pos",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "SellX POS",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 1024,
+        "minHeight": 768,
+        "resizable": true,
+        "fullscreen": false,
+        "devtools": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "app", "dmg", "deb"],
+    "publisher": "SellX",
+    "copyright": "© 2026 SellX. All rights reserved.",
+    "category": "Business",
+    "shortDescription": "SellX POS — Professional Point of Sale",
+    "longDescription": "SellX POS is a professional point-of-sale system for retail stores, featuring sales, inventory, barcode printing, receipts, and multi-printer support.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
+      "allowDowngrades": false,
+      "nsis": {
+        "installMode": "perMachine",
+        "displayLanguageSelector": true,
+        "languages": ["English", "Arabic"],
+        "installerIcon": "icons/icon.ico",
+        "startMenuFolder": "SellX POS"
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    },
+    "linux": {
+      "deb": {
+        "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0"]
+      }
+    }
+  }
+}

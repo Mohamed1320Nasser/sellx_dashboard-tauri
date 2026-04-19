@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default capabilities for the SellX POS application",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "store:default",
+    "shell:default",
+    "fs:default",
+    "dialog:default",
+    "process:default",
+    "os:default",
+    "opener:default"
+  ]
+}

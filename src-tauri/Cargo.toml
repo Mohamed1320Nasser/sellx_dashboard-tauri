@@ -1,0 +1,55 @@
+[package]
+name = "sellx-pos"
+version = "1.0.0"
+description = "SellX POS - Point of Sale System"
+authors = ["SellX"]
+license = "UNLICENSED"
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# DevTools are gated in code via `cfg(debug_assertions)` so release builds don't
+# auto-open them. The `devtools` Cargo feature here only enables the compile-time
+# support; opening them is a separate runtime choice.
+tauri = { version = "2", features = ["devtools"] }
+tauri-plugin-store = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-http = "2"
+tauri-plugin-deep-link = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-process = "2"
+tauri-plugin-os = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-log = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", features = ["json"] }
+tokio = { version = "1", features = ["full"] }
+log = "0.4"
+dirs = "5.0"  # For temp and cache directories (printing)
+
+[target.'cfg(target_os = "macos")'.dependencies]
+rusb = "0.9"  # For direct USB communication with barcode printer (macOS uses system libusb)
+
+[target.'cfg(target_os = "windows")'.dependencies]
+rusb = { version = "0.9", features = ["vendored"] }  # For direct USB communication (Windows uses bundled libusb)
+
+[target.'cfg(target_os = "linux")'.dependencies]
+rusb = "0.9"  # For direct USB communication with barcode printer (Linux uses system libusb)
+
+# Production release profile: smaller binary, faster startup.
+[profile.release]
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
+incremental = false
