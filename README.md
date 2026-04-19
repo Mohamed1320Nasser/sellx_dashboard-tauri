@@ -1,0 +1,1 @@
+# sellx_dashboard-tauri
