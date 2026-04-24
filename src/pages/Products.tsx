@@ -12,6 +12,9 @@ import {
   useDeleteProduct,
 } from "../hooks/api/useProducts";
 import { useCategories } from "../hooks/api/useCategories";
+import { useQueryClient } from "@tanstack/react-query";
+import { qk } from "../config/queryKeys";
+import { productService } from "../services/productService";
 import type { Product } from "../types";
 import { printBarcode } from "../services/smartPrintService";
 import { PrintBarcodeModal } from "../components/modals/PrintBarcodeModal";
@@ -19,8 +22,19 @@ import toast from 'react-hot-toast';
 
 const Products: React.FC = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { company } = useSessionAuthStore();
   const { hasPermission } = usePermissionStore();
+  const resolvedCompanyId = company?.companyId || company?.company?.id;
+
+  const prefetchProduct = (productId: string | number) => {
+    if (!resolvedCompanyId) return;
+    queryClient.prefetchQuery({
+      queryKey: qk.products.detail(productId, resolvedCompanyId),
+      queryFn: () => productService.getById(String(productId), resolvedCompanyId as number),
+      staleTime: 10 * 1000,
+    });
+  };
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [searchTerm, setSearchTerm] = useState("");
@@ -302,6 +316,7 @@ const Products: React.FC = () => {
               icon: Eye,
               label: "عرض التفاصيل",
               onClick: (product) => navigate(`/products/${product.id}`),
+              onHover: (product) => prefetchProduct(product.id),
               variant: "primary",
             },
             {
@@ -314,6 +329,7 @@ const Products: React.FC = () => {
               icon: Edit,
               label: "تعديل المنتج",
               onClick: (product) => navigate(`/products/${product.id}/edit`),
+              onHover: (product) => prefetchProduct(product.id),
               variant: "warning",
               show: () => hasPermission("canEditProducts"),
             },

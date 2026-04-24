@@ -14,6 +14,7 @@ interface Action<T> {
     icon: React.ComponentType<any>;
     label: string;
     onClick: (item: T) => void;
+    onHover?: (item: T) => void;
     variant?: 'primary' | 'danger' | 'success' | 'warning';
     show?: (item: T) => boolean;
 }
@@ -219,6 +220,9 @@ function ActionsDropdown<T>({ actions, item, loading }: ActionsDropdownProps<T>)
             <button
                 type="button"
                 onClick={() => setIsOpen(!isOpen)}
+                onMouseEnter={() => {
+                    for (const a of visibleActions) a.onHover?.(item);
+                }}
                 disabled={loading}
                 className={`p-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 hover:border-gray-300 transition-all duration-200 ${
                     isOpen ? 'bg-gray-100 border-gray-300' : ''
@@ -250,6 +254,7 @@ function ActionsDropdown<T>({ actions, item, loading }: ActionsDropdownProps<T>)
                                         action.onClick(item);
                                         setIsOpen(false);
                                     }}
+                                    onMouseEnter={() => action.onHover?.(item)}
                                     disabled={loading}
                                     className={`w-full px-4 py-2.5 text-sm font-medium flex items-center gap-3 transition-colors duration-150 ${getVariantClasses(action.variant)} ${
                                         loading ? 'opacity-50 cursor-not-allowed' : ''
