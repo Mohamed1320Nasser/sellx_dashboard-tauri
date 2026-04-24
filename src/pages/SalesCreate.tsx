@@ -201,24 +201,17 @@ const SalesCreate: React.FC = () => {
       const result = await productService.findByBarcode(barcode, companyId);
       console.log('📦 API Response:', result);
 
-      // apiClient returns response.data, so structure is:
-      // { msg, status, data: { success, data: { product, matchedField } } }
-      const product = result?.data?.data?.product || result?.data?.product;
-      const matchedField = result?.data?.data?.matchedField || result?.data?.matchedField;
+      // apiClient returns response.data. Backend wraps as:
+      //   { msg, status, data: { success: true, data: <product> } }   — on hit
+      //   { msg, status, data: { success: false, error } }             — on miss
+      const inner = result?.data;
+      const product = inner?.success ? inner.data : null;
 
       if (product) {
         console.log('✅ Product found:', product.name);
-        console.log('📊 Matched field:', matchedField);
-
         addItem(product);
         setBarcodeInput(""); // Clear input
-
-        // Show which barcode type was matched
-        const matchedFieldArabic =
-          matchedField === 'originalBarcode' ? 'الباركود الأصلي' :
-          matchedField === 'localBarcode' ? 'الباركود المحلي' :
-          'رمز المنتج';
-        toast.success(`تمت الإضافة: ${product.name} (${matchedFieldArabic})`);
+        toast.success(`تمت الإضافة: ${product.name}`);
 
         // Auto-focus barcode input for next scan
         setTimeout(() => {

@@ -54,7 +54,9 @@ export const productService = {
   validateBarcode: (barcode: string): Promise<any> =>
     apiClient.post("/product/barcode/validate", { barcode }),
 
-  // Find product by barcode - returns nested structure: { msg, status, data: { success, data: { product, matchedField } } }
+  // Find product by barcode. Response shape (after apiClient unwraps response.data):
+  //   hit : { msg, status, data: { success: true,  data: <product> }, error: false }
+  //   miss: { msg, status, data: { success: false, error: string   }, error: false }
   findByBarcode: (barcode: string, companyId: number): Promise<any> =>
     apiClient.get(`/product/barcode/${barcode}`, { params: { companyId } }),
 };

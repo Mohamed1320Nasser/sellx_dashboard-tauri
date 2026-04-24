@@ -187,8 +187,9 @@ const QuoteEdit: React.FC = () => {
 
     try {
       const result = await productService.findByBarcode(barcode, companyId!);
-      if (result?.data?.data?.product) {
-        const product = result.data.data.product;
+      const inner = result?.data;
+      const product = inner?.success ? inner.data : null;
+      if (product) {
         addItem(product);
         toast.success(`تم إضافة: ${product.name}`);
         setBarcodeInput("");
