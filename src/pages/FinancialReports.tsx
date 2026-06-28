@@ -5,7 +5,7 @@ import { useSessionAuthStore } from '../stores/sessionAuthStore';
 import { ReportPeriod } from '../types/business';
 import { formatCurrency, formatNumber } from '../utils';
 import { formatTableDate } from '../utils/dateUtils';
-import { DateRange } from '../components/filters';
+import { DateRange, DateRangeFilter } from '../components/filters';
 import {
   Eye,
   TrendingUp,
@@ -18,12 +18,20 @@ import {
   Percent,
   CheckCircle,
   Clock,
-  XCircle
+  XCircle,
+  FileText,
+  FileSpreadsheet
 } from 'lucide-react';
-import { Button, DataTable, Card } from '../components/ui';
-import type { Column, TableFilter } from '../components/ui/DataTable';
+import { Button, DataTable, Card, Select } from '../components/ui';
+import type { Column } from '../components/ui/DataTable';
 import { FinancialReportAnalytics } from '../components/financialReports';
 import { Layout } from '../components/layout';
+import {
+  exportReportToPdf,
+  exportReportToExcel,
+  type ReportColumn,
+} from '../utils/reportExport';
+import toast from 'react-hot-toast';
 
 const FinancialReports: React.FC = () => {
   const navigate = useNavigate();
@@ -87,21 +95,10 @@ const FinancialReports: React.FC = () => {
     { value: ReportPeriod.DAILY, label: 'يومي' },
     { value: ReportPeriod.WEEKLY, label: 'أسبوعي' },
     { value: ReportPeriod.MONTHLY, label: 'شهري' },
+    { value: ReportPeriod.QUARTERLY, label: 'ربع سنوي' },
     { value: ReportPeriod.YEARLY, label: 'سنوي' },
     { value: ReportPeriod.CUSTOM, label: 'مخصص' },
   ], []);
-
-  // Table filters configuration
-  const tableFilters: TableFilter[] = useMemo(() => [
-    {
-      key: 'period',
-      label: 'الفترة',
-      type: 'select',
-      options: periodOptions,
-      value: filters.period,
-      onChange: (value) => handlePeriodChange(value as string),
-    },
-  ], [periodOptions, filters.period, handlePeriodChange]);
 
   const handleViewDetails = (sale: any) => {
     // Navigate to the existing SalesDetails page
@@ -112,6 +109,71 @@ const FinancialReports: React.FC = () => {
   const handleRefresh = () => {
     refetch();
   };
+
+  // Columns for the exported report (PDF + Excel) — numeric values stay numeric
+  const exportColumns: ReportColumn<any>[] = useMemo(() => [
+    { header: 'رقم الإيصال', accessor: (s) => s.receiptNumber },
+    { header: 'تاريخ البيع', accessor: (s) => formatTableDate(s.saleDate) },
+    { header: 'العميل', accessor: (s) => s.client?.name || 'عميل عام' },
+    { header: 'المبلغ', accessor: (s) => Number(s.totalAmount ?? 0), format: 'currency' },
+    { header: 'الربح', accessor: (s) => Number(s.totalProfit ?? 0), format: 'currency' },
+    { header: 'حالة الدفع', accessor: (s) => ({ PAID: 'مدفوع', PARTIAL: 'جزئي', UNPAID: 'غير مدفوع' }[(s.paymentStatus as string) || 'PAID'] || 'مدفوع') },
+    { header: 'الأصناف', accessor: (s) => Number(s._count?.items ?? 0), format: 'number' },
+    { header: 'الموظف', accessor: (s) => s.user?.fullname || 'غير محدد' },
+  ], []);
+
+  const periodLabel = useMemo(
+    () => periodOptions.find((o) => o.value === filters.period)?.label || '',
+    [periodOptions, filters.period]
+  );
+
+  const buildReportMeta = useCallback(() => {
+    const summary = salesData?.summary;
+    const companyName =
+      company?.name || company?.company?.name || company?.companyName || '';
+    const subtitleParts = [`الفترة: ${periodLabel}`];
+    if (filters.period === ReportPeriod.CUSTOM && filters.dateRange.startDate) {
+      subtitleParts.push(`${filters.dateRange.startDate} → ${filters.dateRange.endDate}`);
+    }
+    return {
+      title: 'تقرير المبيعات',
+      companyName,
+      subtitle: subtitleParts.join(' — '),
+      fileName: 'تقرير-المبيعات',
+      summary: summary
+        ? [
+            { label: 'عدد الطلبات', value: formatNumber(summary.totalOrders) },
+            { label: 'إجمالي الربح', value: formatCurrency(summary.totalProfit) },
+            { label: 'المبالغ المستحقة', value: formatCurrency(summary.outstandingBalance) },
+            { label: 'إجمالي المبيعات', value: formatCurrency(summary.totalSales), emphasis: true },
+          ]
+        : undefined,
+    };
+  }, [salesData, company, periodLabel, filters]);
+
+  const handleExportPdf = useCallback(async () => {
+    if (sales.length === 0) {
+      toast.error('لا توجد بيانات للتصدير');
+      return;
+    }
+    try {
+      await exportReportToPdf(sales, exportColumns, buildReportMeta());
+    } catch {
+      toast.error('تعذر تصدير ملف PDF');
+    }
+  }, [sales, exportColumns, buildReportMeta]);
+
+  const handleExportExcel = useCallback(async () => {
+    if (sales.length === 0) {
+      toast.error('لا توجد بيانات للتصدير');
+      return;
+    }
+    try {
+      await exportReportToExcel(sales, exportColumns, buildReportMeta());
+    } catch {
+      toast.error('تعذر تصدير ملف Excel');
+    }
+  }, [sales, exportColumns, buildReportMeta]);
 
   const columns: Column<any>[] = [
     {
@@ -225,6 +287,22 @@ const FinancialReports: React.FC = () => {
             </Button>
             <Button
               variant="outline"
+              onClick={handleExportPdf}
+              className="flex items-center"
+            >
+              <FileText className="w-4 h-4 ml-1" />
+              PDF
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleExportExcel}
+              className="flex items-center"
+            >
+              <FileSpreadsheet className="w-4 h-4 ml-1" />
+              Excel
+            </Button>
+            <Button
+              variant="outline"
               onClick={handleRefresh}
               className="flex items-center"
             >
@@ -233,6 +311,37 @@ const FinancialReports: React.FC = () => {
             </Button>
           </div>
         </div>
+
+        {/* Page-level Period Filter — governs the whole page (analytics, table, exports) */}
+        <Card padding="md">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+              <Calendar className="w-4 h-4 text-primary-600" />
+              <span>الفترة الزمنية</span>
+            </div>
+            <div className="min-w-[200px]">
+              <Select
+                options={periodOptions}
+                value={filters.period}
+                onChange={(value) => handlePeriodChange(value)}
+                placeholder="اختر الفترة"
+              />
+            </div>
+            {filters.period === ReportPeriod.CUSTOM && (
+              <DateRangeFilter
+                value={filters.dateRange}
+                onChange={handleDateRangeChange}
+                size="md"
+                showPresets
+                showClearButton
+                showResetButton={false}
+              />
+            )}
+            <span className="text-xs text-gray-400 mr-auto">
+              تُطبَّق على التحليلات والتقرير والتصدير
+            </span>
+          </div>
+        </Card>
 
         {/* Analytics Section */}
         {showAnalytics && (
@@ -262,11 +371,6 @@ const FinancialReports: React.FC = () => {
           loading={isLoading}
           searchPlaceholder="البحث في أرقام الإيصالات..."
           onSearch={handleSearch}
-          filters={tableFilters}
-          dateRangeFilter={filters.period === ReportPeriod.CUSTOM ? {
-            value: filters.dateRange,
-            onChange: handleDateRangeChange,
-          } : undefined}
           actions={[
             {
               icon: Eye,

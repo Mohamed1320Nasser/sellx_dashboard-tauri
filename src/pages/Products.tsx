@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Edit, Trash2, Package, AlertTriangle, Eye, Folder, Printer } from "lucide-react";
+import { Plus, Edit, Trash2, Package, AlertTriangle, Eye, Folder, Printer, ShoppingCart, FolderInput } from "lucide-react";
 import { Layout } from "../components/layout";
-import { Button, Card, DataTable, Badge, ConfirmDialog } from "../components/ui";
+import { Button, Card, DataTable, Badge, ConfirmDialog, Modal, Select } from "../components/ui";
 import type { Column, TableFilter } from "../components/ui/DataTable";
 import { PermissionGuard } from "../components/common/PermissionGuard";
 import { useSessionAuthStore } from "../stores/sessionAuthStore";
@@ -50,6 +50,13 @@ const Products: React.FC = () => {
     isOpen: boolean;
     product: Product | null;
   }>({ isOpen: false, product: null });
+
+  // ── Bulk selection state (current-page scope) ──
+  const [selectedIds, setSelectedIds] = useState<(string | number)[]>([]);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkMoveOpen, setBulkMoveOpen] = useState(false);
+  const [bulkMoveCategoryId, setBulkMoveCategoryId] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   // API hooks
   const { data: productsData, isLoading } = useProducts({
@@ -235,6 +242,103 @@ const Products: React.FC = () => {
     }
   };
 
+  // ── Bulk operations ──
+  const currentPageProducts: Product[] = (productsData as any)?.data?.list || [];
+  const selectedProducts = useMemo(
+    () => currentPageProducts.filter((p) => selectedIds.includes(p.id)),
+    [currentPageProducts, selectedIds]
+  );
+
+  // Clear selection whenever the page/filters change (current-page scope)
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [currentPage, pageSize, searchTerm, selectedCategory, showLowStock]);
+
+  const handleBulkDelete = async () => {
+    if (!resolvedCompanyId || selectedIds.length === 0) return;
+    setBulkBusy(true);
+    try {
+      const res = await productService.bulkDelete(
+        resolvedCompanyId as number,
+        selectedIds.map(String)
+      );
+      const deleted = res?.data?.deletedCount ?? res?.deletedCount ?? 0;
+      const failedCount = res?.data?.failedCount ?? res?.failedCount ?? 0;
+      if (deleted > 0) toast.success(`تم حذف ${deleted} منتج`);
+      if (failedCount > 0)
+        toast.error(`تعذّر حذف ${failedCount} منتج (مرتبط بمبيعات أو مخزون)`);
+      setSelectedIds([]);
+      setBulkDeleteOpen(false);
+      queryClient.invalidateQueries({ queryKey: qk.products.all });
+    } catch {
+      toast.error("فشل الحذف الجماعي");
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const handleBulkMoveCategory = async () => {
+    if (!resolvedCompanyId || selectedIds.length === 0 || !bulkMoveCategoryId) return;
+    setBulkBusy(true);
+    try {
+      const res = await productService.bulkMoveCategory(
+        resolvedCompanyId as number,
+        selectedIds.map(String),
+        bulkMoveCategoryId
+      );
+      const moved = res?.data?.movedCount ?? res?.movedCount ?? 0;
+      toast.success(`تم نقل ${moved} منتج إلى الفئة المحددة`);
+      setSelectedIds([]);
+      setBulkMoveOpen(false);
+      setBulkMoveCategoryId("");
+      queryClient.invalidateQueries({ queryKey: qk.products.all });
+    } catch {
+      toast.error("فشل نقل الفئة");
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const handleBulkAddToInvoice = () => {
+    if (selectedIds.length === 0) return;
+    navigate("/sales/create", { state: { bulkProductIds: selectedIds } });
+  };
+
+  const handleBulkPrintBarcodes = async () => {
+    const printable = selectedProducts.filter((p) => p.sku);
+    if (printable.length === 0) {
+      toast.error("لا توجد منتجات تحتوي على باركود للطباعة");
+      return;
+    }
+    setBulkBusy(true);
+    let ok = 0;
+    let fail = 0;
+    for (const product of printable) {
+      try {
+        await printBarcode(
+          {
+            barcode: product.sku,
+            productName: product.name,
+            price: product.sellingPrice,
+          },
+          1
+        );
+        ok += 1;
+      } catch {
+        fail += 1;
+      }
+    }
+    setBulkBusy(false);
+    if (ok > 0) toast.success(`تم طباعة باركود ${ok} منتج`);
+    if (fail > 0) toast.error(`فشلت طباعة ${fail} منتج`);
+  };
+
+  const bulkMoveCategoryOptions = useMemo(
+    () =>
+      (categoriesData?.data?.list || []).map((c) => ({ value: c.id, label: c.name })),
+    [categoriesData]
+  );
+
   // Calculate summary stats
   const totalProducts = (productsData as any)?.data?.totalCount || 0;
   const lowStockCount = (productsData as any)?.data?.list.filter(
@@ -311,6 +415,57 @@ const Products: React.FC = () => {
           onSearch={handleSearch}
           filters={tableFilters}
           onClearFilters={handleClearFilters}
+          selectable
+          selectedIds={selectedIds}
+          onSelectionChange={setSelectedIds}
+          renderBulkActions={() => (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleBulkAddToInvoice}
+                disabled={bulkBusy}
+                className="flex items-center"
+              >
+                <ShoppingCart className="w-4 h-4 ml-1" />
+                إضافة للفاتورة
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleBulkPrintBarcodes}
+                disabled={bulkBusy}
+                className="flex items-center"
+              >
+                <Printer className="w-4 h-4 ml-1" />
+                طباعة الباركود
+              </Button>
+              {hasPermission("canEditProducts") && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setBulkMoveOpen(true)}
+                  disabled={bulkBusy}
+                  className="flex items-center"
+                >
+                  <FolderInput className="w-4 h-4 ml-1" />
+                  نقل لفئة
+                </Button>
+              )}
+              {hasPermission("canDeleteProducts") && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => setBulkDeleteOpen(true)}
+                  disabled={bulkBusy}
+                  className="flex items-center"
+                >
+                  <Trash2 className="w-4 h-4 ml-1" />
+                  حذف
+                </Button>
+              )}
+            </>
+          )}
           actions={[
             {
               icon: Eye,
@@ -368,6 +523,50 @@ const Products: React.FC = () => {
           type="danger"
           isLoading={deleteMutation.isPending}
         />
+
+        {/* Bulk Delete Confirmation */}
+        <ConfirmDialog
+          isOpen={bulkDeleteOpen}
+          onClose={() => setBulkDeleteOpen(false)}
+          onConfirm={handleBulkDelete}
+          title="تأكيد الحذف الجماعي"
+          message={`هل أنت متأكد من حذف ${selectedIds.length} منتج؟ المنتجات المرتبطة بمبيعات أو مخزون لن يتم حذفها.`}
+          confirmText="حذف"
+          cancelText="إلغاء"
+          type="danger"
+          isLoading={bulkBusy}
+        />
+
+        {/* Bulk Move Category Modal */}
+        <Modal
+          isOpen={bulkMoveOpen}
+          onClose={() => setBulkMoveOpen(false)}
+          title="نقل المنتجات إلى فئة"
+        >
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              سيتم نقل {selectedIds.length} منتج إلى الفئة المختارة.
+            </p>
+            <Select
+              label="الفئة"
+              placeholder="اختر الفئة"
+              options={bulkMoveCategoryOptions}
+              value={bulkMoveCategoryId}
+              onChange={(v) => setBulkMoveCategoryId(v)}
+            />
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setBulkMoveOpen(false)} disabled={bulkBusy}>
+                إلغاء
+              </Button>
+              <Button
+                onClick={handleBulkMoveCategory}
+                disabled={bulkBusy || !bulkMoveCategoryId}
+              >
+                نقل
+              </Button>
+            </div>
+          </div>
+        </Modal>
 
         {/* Print Barcode Modal */}
         {printModal.product && (

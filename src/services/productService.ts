@@ -46,6 +46,24 @@ export const productService = {
       params: { companyId },
     }),
 
+  // Bulk soft-delete products. Returns per-item breakdown:
+  //   { requested, deletedCount, failedCount, deletedIds, failed: [{id, reason}] }
+  bulkDelete: (companyId: number, productIds: string[]): Promise<any> =>
+    apiClient.post("/product/bulk/delete", { companyId, productIds }),
+
+  // Bulk reassign products to a category.
+  //   Returns { requested, movedCount, categoryId, categoryName }
+  bulkMoveCategory: (
+    companyId: number,
+    productIds: string[],
+    categoryId: string
+  ): Promise<any> =>
+    apiClient.post("/product/bulk/move-category", {
+      companyId,
+      productIds,
+      categoryId,
+    }),
+
   // Generate barcode - returns nested structure: { msg, status, data: { success, data: { barcode, format } } }
   generateBarcode: (companyId: number, prefix: string = 'PROD'): Promise<any> =>
     apiClient.post("/product/barcode/generate", { companyId, prefix }),

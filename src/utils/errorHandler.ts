@@ -1,6 +1,23 @@
 import { AxiosError } from "axios";
 import toast from "react-hot-toast";
 
+const extractValidationMessage = (data: any): string | null => {
+  const errors = data?.errors;
+  if (!Array.isArray(errors)) return null;
+
+  for (const err of errors) {
+    if (err?.constraints && typeof err.constraints === "object") {
+      const messages = Object.values(err.constraints);
+      if (messages.length > 0) return String(messages[0]);
+    }
+    if (Array.isArray(err?.children)) {
+      const nested = extractValidationMessage({ errors: err.children });
+      if (nested) return nested;
+    }
+  }
+  return null;
+};
+
 /**
  * Handle API errors and return user-friendly messages
  * @param error - The error object from API calls
@@ -17,7 +34,12 @@ export const handleApiError = (error: any): string => {
       // Handle specific HTTP status codes
       switch (status) {
         case 400:
-          return data?.msg || data?.message || "بيانات غير صحيحة";
+          return (
+            extractValidationMessage(data) ||
+            data?.msg ||
+            data?.message ||
+            "بيانات غير صحيحة"
+          );
         case 401:
           return "غير مصرح لك بالوصول";
         case 403:
@@ -27,7 +49,12 @@ export const handleApiError = (error: any): string => {
         case 409:
           return "هذا المورد موجود بالفعل";
         case 422:
-          return data?.msg || data?.message || "بيانات غير صحيحة";
+          return (
+            extractValidationMessage(data) ||
+            data?.msg ||
+            data?.message ||
+            "بيانات غير صحيحة"
+          );
         case 429:
           return "تم تجاوز الحد المسموح من الطلبات، يرجى المحاولة لاحقاً";
         case 500:

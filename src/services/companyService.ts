@@ -7,6 +7,7 @@ export interface CompanyRegisterRequest {
   companyAddress?: string;
   taxNumber?: string;
   ownerFullname: string;
+  ownerUsername: string;
   ownerEmail: string;
   ownerPhone?: string;
   password: string;

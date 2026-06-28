@@ -605,6 +605,7 @@ export enum ReportPeriod {
   DAILY = "daily",
   WEEKLY = "weekly",
   MONTHLY = "monthly",
+  QUARTERLY = "quarterly",
   YEARLY = "yearly",
   CUSTOM = "custom",
 }

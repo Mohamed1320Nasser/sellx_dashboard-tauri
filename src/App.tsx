@@ -40,6 +40,8 @@ import PaymentCreate from './pages/PaymentCreate';
 import PaymentDetails from './pages/PaymentDetails';
 import StockMovements from './pages/StockMovements';
 import FinancialReports from './pages/FinancialReports';
+import CategoryReport from './pages/CategoryReport';
+import CustomerStatement from './pages/CustomerStatement';
 import Analytics from './pages/Analytics';
 import Quotes from './pages/Quotes';
 import QuoteCreate from './pages/QuoteCreate';
@@ -288,6 +290,7 @@ const App: React.FC = () => {
                                         <Route path="/users" element={<UserManagement />} />
                                         <Route path="/suppliers" element={<Suppliers />} />
                                         <Route path="/clients" element={<Clients />} />
+                                        <Route path="/clients/:id/statement" element={<CustomerStatement />} />
                                         <Route path="/sales" element={<Sales />} />
                                         <Route path="/sales/create" element={<SalesCreate />} />
                                         <Route path="/sales/:id" element={<SalesDetails />} />
@@ -301,6 +304,7 @@ const App: React.FC = () => {
                                         <Route path="/payments/:id/edit" element={<PaymentCreate />} />
                                         <Route path="/stock-movements" element={<StockMovements />} />
                                         <Route path="/financial-reports" element={<FinancialReports />} />
+                                        <Route path="/category-report" element={<CategoryReport />} />
                                         <Route path="/analytics" element={<Analytics />} />
                                         <Route path="/returns" element={<Returns />} />
                                         <Route path="/returns/create" element={<ReturnsCreate />} />

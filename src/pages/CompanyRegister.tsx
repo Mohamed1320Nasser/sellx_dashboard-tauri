@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -17,6 +17,7 @@ const companyRegisterSchema = z.object({
     taxNumber: z.string().min(5, 'الرقم الضريبي يجب أن يكون على الأقل 5 أحرف').max(50, 'الرقم الضريبي لا يمكن أن يتجاوز 50 حرف').optional().or(z.literal('')),
     ownerFullname: z.string().min(2, 'اسم المالك يجب أن يكون على الأقل حرفين').max(50, 'اسم المالك لا يمكن أن يتجاوز 50 حرف'),
     ownerEmail: z.string().email('بريد المالك الإلكتروني غير صحيح').max(64, 'البريد الإلكتروني لا يمكن أن يتجاوز 64 حرف'),
+    ownerUsername: z.string().min(3, 'اسم المستخدم يجب أن يكون على الأقل 3 أحرف').max(50, 'اسم المستخدم لا يمكن أن يتجاوز 50 حرف'),
     ownerPhone: z.string().regex(/^[0-9]*$/, 'رقم هاتف المالك يجب أن يحتوي على أرقام فقط').min(5, 'رقم هاتف المالك يجب أن يكون على الأقل 5 أرقام').max(15, 'رقم هاتف المالك لا يمكن أن يتجاوز 15 رقم').optional().or(z.literal('')),
     password: z.string().min(8, 'كلمة المرور يجب أن تكون على الأقل 8 أحرف')
         .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/, 'كلمة المرور يجب أن تحتوي على حرف صغير، حرف كبير، رقم، ورمز خاص'),
@@ -33,15 +34,30 @@ const CompanyRegister: React.FC = () => {
     const [logoPreview, setLogoPreview] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
+    // Track whether the user manually edited the username so we stop auto-filling it
+    const [usernameEdited, setUsernameEdited] = useState(false);
+
     const {
         register,
         handleSubmit,
+        watch,
+        setValue,
         formState: { errors },
     } = useForm<CompanyRegisterForm>({
         resolver: zodResolver(companyRegisterSchema),
         mode: 'onSubmit',
         shouldFocusError: false,
     });
+
+    const ownerEmail = watch('ownerEmail');
+
+    // Auto-generate username from the owner email until the user edits it manually
+    useEffect(() => {
+        if (usernameEdited) return;
+        const localPart = (ownerEmail || '').split('@')[0] || '';
+        const generated = localPart.toLowerCase().replace(/[^a-z0-9._-]/g, '');
+        setValue('ownerUsername', generated);
+    }, [ownerEmail, usernameEdited, setValue]);
 
     const registerCompanyMutation = useMutation({
         mutationFn: ({ data, logoFile }: { data: CompanyRegisterForm; logoFile?: File }) =>
@@ -242,7 +258,23 @@ const CompanyRegister: React.FC = () => {
                                     {...register('ownerEmail')}
                                     error={errors.ownerEmail?.message}
                                 />
-                                
+
+                                {(() => {
+                                    const usernameField = register('ownerUsername');
+                                    return (
+                                        <Input
+                                            label="اسم المستخدم *"
+                                            {...usernameField}
+                                            onChange={(e) => {
+                                                setUsernameEdited(true);
+                                                usernameField.onChange(e);
+                                            }}
+                                            error={errors.ownerUsername?.message}
+                                            placeholder="يتم إنشاؤه تلقائياً من البريد الإلكتروني"
+                                        />
+                                    );
+                                })()}
+
                                 <Input
                                     label="رقم هاتف المالك (اختياري)"
                                     type="tel"

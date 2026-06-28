@@ -56,6 +56,14 @@ interface DataTableProps<T> {
         value: DateRange;
         onChange: (dateRange: DateRange) => void;
     };
+    // ── Row selection (opt-in; defaults off so existing tables are unaffected) ──
+    selectable?: boolean;
+    /** Controlled set of selected row ids (current page scope). */
+    selectedIds?: (string | number)[];
+    /** Called with the next selection whenever it changes. */
+    onSelectionChange?: (ids: (string | number)[]) => void;
+    /** Optional toolbar rendered above the table when ≥1 row is selected. */
+    renderBulkActions?: (selectedIds: (string | number)[]) => React.ReactNode;
 }
 
 // Custom Filter Select Dropdown Component (matches Select.tsx style)
@@ -367,6 +375,10 @@ function DataTable<T extends { id?: string | number }>({
     showEntriesSelector = true,
     filters = [],
     dateRangeFilter,
+    selectable = false,
+    selectedIds = [],
+    onSelectionChange,
+    renderBulkActions,
 }: DataTableProps<T>) {
     const [searchQuery, setSearchQuery] = useState('');
     const [internalCurrentPage, setInternalCurrentPage] = useState(1);
@@ -416,6 +428,28 @@ function DataTable<T extends { id?: string | number }>({
             onPageSizeChange(size);
         }
         handlePageChange(1); // Reset to first page
+    };
+
+    // ── Selection helpers (current-page scope) ──
+    const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+    const pageRowIds = useMemo(
+        () => displayData.map((item) => item.id).filter((id): id is string | number => id !== undefined),
+        [displayData]
+    );
+    const allPageSelected = pageRowIds.length > 0 && pageRowIds.every((id) => selectedSet.has(id));
+    const somePageSelected = pageRowIds.some((id) => selectedSet.has(id));
+
+    const toggleRow = (id: string | number) => {
+        if (!onSelectionChange) return;
+        const next = new Set(selectedSet);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        onSelectionChange(Array.from(next));
+    };
+
+    const toggleAllOnPage = () => {
+        if (!onSelectionChange) return;
+        onSelectionChange(allPageSelected ? [] : pageRowIds);
     };
 
     const getPageNumbers = () => {
@@ -534,6 +568,30 @@ function DataTable<T extends { id?: string | number }>({
                 </div>
             </div>
 
+            {/* Bulk Actions Bar */}
+            {selectable && selectedIds.length > 0 && (
+                <div className="px-6 py-3 bg-primary-50 border-b border-primary-100 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-primary-700">
+                        <span className="inline-flex items-center justify-center min-w-[24px] h-6 px-2 rounded-full bg-primary-600 text-white text-xs">
+                            {selectedIds.length}
+                        </span>
+                        <span>عنصر محدد</span>
+                        <button
+                            type="button"
+                            onClick={() => onSelectionChange?.([])}
+                            className="text-primary-500 hover:text-primary-700 underline underline-offset-2 font-medium"
+                        >
+                            إلغاء التحديد
+                        </button>
+                    </div>
+                    {renderBulkActions && (
+                        <div className="flex flex-wrap items-center gap-2">
+                            {renderBulkActions(selectedIds)}
+                        </div>
+                    )}
+                </div>
+            )}
+
             {/* Table */}
             <div className="overflow-x-auto relative">
                 {/* Subtle loading overlay - keeps previous data visible */}
@@ -548,6 +606,20 @@ function DataTable<T extends { id?: string | number }>({
                 <table className="w-full">
                     <thead className="bg-gray-50 border-b border-gray-200">
                         <tr>
+                            {selectable && (
+                                <th className="px-6 py-4 text-right w-12">
+                                    <input
+                                        type="checkbox"
+                                        checked={allPageSelected}
+                                        ref={(el) => {
+                                            if (el) el.indeterminate = !allPageSelected && somePageSelected;
+                                        }}
+                                        onChange={toggleAllOnPage}
+                                        aria-label="تحديد كل الصفوف"
+                                        className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500 cursor-pointer"
+                                    />
+                                </th>
+                            )}
                             {columns.map((column, index) => (
                                 <th
                                     key={column.key}
@@ -569,7 +641,7 @@ function DataTable<T extends { id?: string | number }>({
                         {loading && isInitialLoad ? (
                             <tr>
                                 <td
-                                    colSpan={columns.length + (actions.length > 0 ? 1 : 0)}
+                                    colSpan={columns.length + (actions.length > 0 ? 1 : 0) + (selectable ? 1 : 0)}
                                     className="px-6 py-12 text-center"
                                 >
                                     <div className="flex items-center justify-center">
@@ -581,18 +653,32 @@ function DataTable<T extends { id?: string | number }>({
                         ) : displayData.length === 0 ? (
                             <tr>
                                 <td
-                                    colSpan={columns.length + (actions.length > 0 ? 1 : 0)}
+                                    colSpan={columns.length + (actions.length > 0 ? 1 : 0) + (selectable ? 1 : 0)}
                                     className="px-6 py-12 text-center text-gray-500"
                                 >
                                     {emptyMessage}
                                 </td>
                             </tr>
                         ) : (
-                            displayData.map((item, rowIndex) => (
+                            displayData.map((item, rowIndex) => {
+                                const rowSelected = item.id !== undefined && selectedSet.has(item.id);
+                                return (
                                 <tr
                                     key={item.id || rowIndex}
-                                    className={`hover:bg-gray-50 transition-all duration-200 ${loading ? 'opacity-60' : ''}`}
+                                    className={`transition-all duration-200 ${rowSelected ? 'bg-primary-50/60 hover:bg-primary-50' : 'hover:bg-gray-50'} ${loading ? 'opacity-60' : ''}`}
                                 >
+                                    {selectable && (
+                                        <td className="px-6 py-4 w-12">
+                                            <input
+                                                type="checkbox"
+                                                checked={rowSelected}
+                                                disabled={item.id === undefined}
+                                                onChange={() => item.id !== undefined && toggleRow(item.id)}
+                                                aria-label="تحديد الصف"
+                                                className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500 cursor-pointer"
+                                            />
+                                        </td>
+                                    )}
                                     {columns.map((column) => (
                                         <td
                                             key={column.key}
@@ -613,7 +699,8 @@ function DataTable<T extends { id?: string | number }>({
                                         </td>
                                     )}
                                 </tr>
-                            ))
+                                );
+                            })
                         )}
                     </tbody>
                 </table>

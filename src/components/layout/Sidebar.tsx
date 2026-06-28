@@ -139,6 +139,12 @@ const navigationItems: NavigationItem[] = [
                 permission: 'canViewFinancialReports',
             },
             {
+                name: 'تقرير الفئات',
+                href: '/category-report',
+                icon: Folder,
+                permission: 'canViewFinancialReports',
+            },
+            {
                 name: 'التحليلات',
                 href: '/analytics',
                 icon: BarChart3,

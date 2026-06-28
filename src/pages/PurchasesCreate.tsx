@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from "react"
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Plus, Minus, ShoppingCart, Package, Calendar, DollarSign, Search, ScanLine, Upload, FileText, Trash2, ChevronDown, ChevronUp, CheckCircle, ChevronRight, Truck, Receipt } from "lucide-react";
 import { Layout } from "../components/layout";
-import { Button, Card, Input, Select, Modal, DatePicker } from "../components/ui";
+import { Button, Card, Input, Select, DatePicker } from "../components/ui";
 import { useSessionAuthStore } from "../stores/sessionAuthStore";
 import { useSuppliers } from "../hooks/api/useSuppliers";
 import { useProducts } from "../hooks/api/useProducts";
@@ -1331,60 +1331,18 @@ const PurchasesCreate: React.FC = () => {
         </div>
       </div>
 
-      {/* Print Preview Modal */}
+      {/* Print Receipt Preview Modal */}
       {printablePurchase && (
-        <Modal
+        <PrintReceiptPreview
+          sale={printablePurchase}
+          companyId={company?.companyId || company?.id || 0}
+          cashier={null}
           isOpen={showPrintModal}
           onClose={() => {
             setShowPrintModal(false);
             navigate('/purchases');
           }}
-          title="معاينة الطباعة"
-          size="xl"
-        >
-          <PrintReceiptPreview
-            sale={printablePurchase}
-            companyId={company?.companyId || company?.id || 0}
-            cashier={null}
-            isOpen={showPrintModal}
-            onClose={() => {
-              setShowPrintModal(false);
-              navigate('/purchases');
-            }}
-            onPrint={async () => {
-              try {
-                const companyId = company?.companyId || company?.id;
-                let fullCompany = company?.company || { name: 'POS System' };
-                if (companyId) {
-                  try {
-                    fullCompany = await companyService.getProfile(companyId);
-                  } catch (err) {
-                    console.warn('Could not fetch company profile, using default data');
-                  }
-                }
-
-                // TODO: Convert purchase to SellxReceiptData format
-                // await printReceipt({
-                //   sale: printablePurchase,
-                //   company: fullCompany,
-                //   cashier: null,
-                //   isPurchase: true
-                // });
-                console.warn('Purchase printing disabled - needs conversion to SellxReceiptData format');
-                toast.success('تم الطباعة بنجاح');
-                setShowPrintModal(false);
-                navigate('/purchases');
-              } catch (error) {
-                console.error('Print error:', error);
-                toast.error('فشلت الطباعة');
-              }
-            }}
-            onCancel={() => {
-              setShowPrintModal(false);
-              navigate('/purchases');
-            }}
-          />
-        </Modal>
+        />
       )}
     </Layout>
   );

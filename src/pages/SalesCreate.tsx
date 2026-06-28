@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { ArrowLeft, Save, X, ShoppingCart, Plus, Minus, Trash2, Search, Package, Printer } from "lucide-react";
 import { Layout } from "../components/layout";
 import { Button, Input, Select, Card, Modal } from "../components/ui";
@@ -84,6 +84,7 @@ interface SaleItem {
 
 const SalesCreate: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { company, user } = useSessionAuthStore();
   const companyId = company?.companyId || company?.company?.id;
 
@@ -287,6 +288,34 @@ const SalesCreate: React.FC = () => {
       setItems([...items, newItem]);
     }
   };
+
+  // Bulk pre-fill: when navigated here from Products "إضافة للفاتورة" with a list
+  // of product ids, add each once. Runs after products load; clears state so it
+  // doesn't re-run on re-render/back-navigation.
+  const bulkPrefillDoneRef = useRef(false);
+  useEffect(() => {
+    if (bulkPrefillDoneRef.current) return;
+    const bulkIds = (location.state as any)?.bulkProductIds as (string | number)[] | undefined;
+    if (!bulkIds || bulkIds.length === 0) return;
+
+    const list = (productsData as any)?.data?.list as any[] | undefined;
+    if (!list || list.length === 0) return; // wait until products are loaded
+
+    bulkPrefillDoneRef.current = true;
+    const idSet = new Set(bulkIds.map(String));
+    const toAdd = list.filter((p) => idSet.has(String(p.id)));
+    let added = 0;
+    for (const product of toAdd) {
+      addItem(product);
+      added += 1;
+    }
+    if (added > 0) {
+      toast.success(`تمت إضافة ${added} منتج إلى الفاتورة`);
+    }
+    // Clear navigation state so a refresh/back doesn't re-add
+    navigate(location.pathname, { replace: true, state: {} });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productsData, location.state]);
 
   // Update item quantity
   const updateQuantity = (productId: number, quantity: number) => {

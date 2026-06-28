@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { Plus, Edit, Trash2, Users, User, Phone, Mail, Calendar, ShoppingBag } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Plus, Edit, Trash2, Users, User, Phone, Mail, Calendar, ShoppingBag, FileText } from "lucide-react";
 import { Layout } from "../components/layout";
 import { Button, Card, Modal, Input, ConfirmDialog, DataTable, Badge } from "../components/ui";
 import type { Column } from "../components/ui/DataTable";
@@ -22,6 +23,8 @@ const clientSchema = z.object({
   email: z.string().email("البريد الإلكتروني غير صحيح").optional().or(z.literal("")),
   phone: z.string().optional(),
   address: z.string().optional(),
+  creditLimit: z.string().optional(),
+  openingBalance: z.string().optional(),
 });
 
 type ClientFormData = z.infer<typeof clientSchema>;
@@ -44,11 +47,29 @@ const ClientForm: React.FC<{
       email: client?.email || "",
       phone: client?.phone || "",
       address: client?.address || "",
+      creditLimit:
+        (client as any)?.creditLimit !== undefined && (client as any)?.creditLimit !== null
+          ? String((client as any).creditLimit)
+          : "",
+      openingBalance:
+        (client as any)?.openingBalance !== undefined && (client as any)?.openingBalance !== null
+          ? String((client as any).openingBalance)
+          : "",
     },
   });
 
   const handleFormSubmit = (data: ClientFormData) => {
-    onSubmit({ ...data, companyId });
+    const { creditLimit, openingBalance, ...rest } = data;
+    onSubmit({
+      ...rest,
+      companyId,
+      ...(creditLimit !== undefined && creditLimit !== ""
+        ? { creditLimit: parseFloat(creditLimit) }
+        : {}),
+      ...(openingBalance !== undefined && openingBalance !== ""
+        ? { openingBalance: parseFloat(openingBalance) }
+        : {}),
+    } as any);
   };
 
   return (
@@ -88,6 +109,28 @@ const ClientForm: React.FC<{
         disabled={loading}
       />
 
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Input
+          label="حد الائتمان (اختياري)"
+          type="number"
+          step="0.01"
+          placeholder="0.00"
+          {...register("creditLimit")}
+          error={errors.creditLimit?.message}
+          disabled={loading}
+        />
+
+        <Input
+          label="الرصيد الافتتاحي"
+          type="number"
+          step="0.01"
+          placeholder="0.00"
+          {...register("openingBalance")}
+          error={errors.openingBalance?.message}
+          disabled={loading}
+        />
+      </div>
+
       <div className="flex justify-end space-x-4 space-x-reverse">
         {onCancel && (
           <Button
@@ -108,6 +151,7 @@ const ClientForm: React.FC<{
 };
 
 const Clients: React.FC = () => {
+  const navigate = useNavigate();
   const { company } = useSessionAuthStore();
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -275,6 +319,12 @@ const Clients: React.FC = () => {
           searchPlaceholder="البحث في العملاء (الاسم، البريد الإلكتروني، رقم الهاتف...)"
           onSearch={handleSearch}
           actions={[
+            {
+              icon: FileText,
+              label: "كشف حساب",
+              onClick: (client) => navigate(`/clients/${client.id}/statement`),
+              variant: "primary",
+            },
             {
               icon: Edit,
               label: "تعديل العميل",
