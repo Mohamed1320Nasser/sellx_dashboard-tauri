@@ -16,7 +16,7 @@ class SessionAuthService {
   // Get baseURL dynamically from config (supports Electron stored config)
   private getBaseURL(): string {
     const config = getApiConfig();
-    return config.baseURL || import.meta.env.VITE_API_BASE_URL || "https://api.sellx.monasser.me"
+    return config.baseURL || import.meta.env.VITE_API_BASE_URL || "https://api.sellpoint.morita.vip"
   }
 
   // Get the appropriate storage based on remember me setting

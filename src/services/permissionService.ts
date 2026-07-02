@@ -12,7 +12,7 @@ export interface PermissionResponse {
 }
 
 class PermissionService {
-  private baseURL = import.meta.env.VITE_API_URL || "https://api.sellx.monasser.me"
+  private baseURL = import.meta.env.VITE_API_URL || "https://api.sellpoint.morita.vip"
   private requestCache = new Map<
     string,
     { data: PermissionResponse; timestamp: number }
