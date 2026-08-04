@@ -1,6 +1,6 @@
 // Default API configuration
 const DEFAULT_API_CONFIG = {
-  baseURL: import.meta.env.VITE_API_URL || "https://api.sellpoint.morita.vip",
+  baseURL: import.meta.env.VITE_API_URL || "https://api.sellx.monasser.me",
   timeout: 30000,
   retries: 3,
 };

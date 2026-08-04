@@ -2,7 +2,7 @@ import { getApiConfig } from "@/shared/api/config";
 
 // API Configuration - will be updated dynamically
 export const API_CONFIG = {
-  baseURL: import.meta.env.VITE_API_BASE_URL || "https://api.sellpoint.morita.vip",
+  baseURL: import.meta.env.VITE_API_BASE_URL || "https://api.sellx.monasser.me",
   timeout: 30000,
   headers: {
     "Content-Type": "application/json",

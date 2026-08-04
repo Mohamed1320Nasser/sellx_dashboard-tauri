@@ -7,7 +7,7 @@ class SessionApiClient {
   private baseURL: string;
 
   constructor() {
-    this.baseURL = import.meta.env.VITE_API_BASE_URL || "https://api.sellpoint.morita.vip"
+    this.baseURL = import.meta.env.VITE_API_BASE_URL || "https://api.sellx.monasser.me"
 
     this.instance = axios.create({
       baseURL: this.baseURL,

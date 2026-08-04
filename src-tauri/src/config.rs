@@ -20,7 +20,7 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             backend: BackendConfig {
-                api_url: "https://api.sellpoint.morita.vip".into(),
+                api_url: "https://api.sellx.monasser.me".into(),
                 timeout: 30000,
                 retries: 3,
             },
@@ -60,9 +60,9 @@ pub async fn get_backend_url(app: AppHandle) -> Result<serde_json::Value, String
             .get("backend")
             .and_then(|b| b.get("apiUrl"))
             .and_then(|u| u.as_str())
-            .unwrap_or("https://api.sellpoint.morita.vip")
+            .unwrap_or("https://api.sellx.monasser.me")
             .to_string(),
-        None => "https://api.sellpoint.morita.vip".to_string(),
+        None => "https://api.sellx.monasser.me".to_string(),
     };
     Ok(serde_json::json!({ "success": true, "data": url }))
 }
@@ -84,7 +84,7 @@ pub async fn set_backend_url(app: AppHandle, url: String) -> Result<serde_json::
 
 #[tauri::command]
 pub async fn test_backend(url: Option<String>) -> Result<serde_json::Value, String> {
-    let test_url = url.unwrap_or_else(|| "https://api.sellpoint.morita.vip".into());
+    let test_url = url.unwrap_or_else(|| "https://api.sellx.monasser.me".into());
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(5))
         .build()
