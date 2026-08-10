@@ -1187,9 +1187,10 @@ pub fn run() {
         ])
         // ── Setup ──────────────────────────────────────────
         .setup(|app| {
-            // TEMPORARY: DevTools enabled in release builds for debugging.
-            // Revert before final ship (wrap in cfg(debug_assertions) + set
-            // window.devtools: false in tauri.conf.json).
+            // DevTools only auto-open in debug builds (`tauri dev` / debug
+            // builds). Release builds respect tauri.conf.json's
+            // `windows[].devtools: false` and stay closed for end users.
+            #[cfg(debug_assertions)]
             if let Some(window) = app.get_webview_window("main") {
                 window.open_devtools();
             }

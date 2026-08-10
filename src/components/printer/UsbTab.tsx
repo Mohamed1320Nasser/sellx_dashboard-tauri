@@ -105,7 +105,12 @@ export function UsbTab() {
   };
 
   const handleToggleNativeUSB = (enabled: boolean) => {
-    if (enabled && (!config.usbVendorId || !config.usbProductId)) {
+    // Windows selects a printer by name (winspool); macOS/Linux needs VID/PID.
+    const missingSelection = isWindows
+      ? !config.getPrinterForType('barcode')
+      : !config.usbVendorId || !config.usbProductId;
+
+    if (enabled && missingSelection) {
       toast.error('الرجاء اكتشاف واختيار طابعة USB أولاً');
       return;
     }

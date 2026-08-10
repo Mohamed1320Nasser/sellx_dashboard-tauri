@@ -63,7 +63,20 @@ export async function printBarcode(data: BarcodeData, quantity: number = 1): Pro
   const pidHex = printerConfig.usbProductId;
   const assignedBarcodePrinter = printerConfig.getPrinterForType('barcode');
 
-  if (!printerConfig.useNativeUsb || !vidHex || !pidHex) {
+  // Windows prints via the OS spooler (winspool RAW) by printer name — VID/PID
+  // is a macOS/Linux-only concept (direct libusb). See print_barcode_native's
+  // #[cfg(target_os = "windows")] branch in src-tauri/src/lib.rs.
+  const isWindows = typeof window !== 'undefined' && navigator.userAgent.includes('Windows');
+
+  if (isWindows) {
+    if (!assignedBarcodePrinter) {
+      throw new Error(
+        'لم يتم إعداد طابعة الباركود.\n' +
+        'افتح الإعدادات → الطابعات → اختر طابعة الباركود من قائمة الطابعات.\n' +
+        'تأكد أن الطابعة في وضع TSPL وأن ورق اللاصق محمّل.'
+      );
+    }
+  } else if (!printerConfig.useNativeUsb || !vidHex || !pidHex) {
     throw new Error(
       'لم يتم إعداد طابعة الباركود عبر USB.\n' +
       'افتح الإعدادات → الطابعات → USB → اضغط "كشف أجهزة USB" ثم اختر طابعة الباركود.\n' +
@@ -71,9 +84,9 @@ export async function printBarcode(data: BarcodeData, quantity: number = 1): Pro
     );
   }
 
-  const vendorId = parseInt(vidHex, 16);
-  const productId = parseInt(pidHex, 16);
-  if (Number.isNaN(vendorId) || Number.isNaN(productId)) {
+  const vendorId = vidHex ? parseInt(vidHex, 16) : 0;
+  const productId = pidHex ? parseInt(pidHex, 16) : 0;
+  if (!isWindows && (Number.isNaN(vendorId) || Number.isNaN(productId))) {
     throw new Error('معرّف USB غير صالح. أعد كشف أجهزة USB من الإعدادات.');
   }
 

@@ -58,17 +58,10 @@ export default function PrinterSettings() {
   };
 
   const handleTestPrint = async () => {
-    // Check if printer is configured
-    if (!config.printerName && config.connectionType === 'usb') {
-      toast.error('⚠️ يرجى حفظ إعدادات الطابعة أولاً قبل الطباعة التجريبية');
-      return;
-    }
-
-    if (config.connectionType === 'lan' && (!config.ipAddress || !config.port)) {
-      toast.error('⚠️ يرجى تكوين عنوان IP والمنفذ وحفظ الإعدادات أولاً');
-      return;
-    }
-
+    // This sends a barcode label test print — printBarcode() itself validates
+    // that a barcode printer is configured (printer-name on Windows, VID/PID
+    // on macOS/Linux) and throws a clear Arabic error if not. No need to
+    // duplicate that check here against unrelated receipt-connection fields.
     try {
       const loadingToast = toast.loading('جاري طباعة ملصق تجريبي...');
       await printBarcode({
