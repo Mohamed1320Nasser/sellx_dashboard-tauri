@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { productService } from "../../services/productService";
 import { handleApiError } from "../../utils/errorHandler";
 import { qk } from "../../config/queryKeys";
@@ -21,6 +21,25 @@ export const useProducts = (params: ProductListParams) => {
     queryFn: () => productService.getList(params),
     enabled: !!params.companyId,
     staleTime: 5 * 60 * 1000,
+  });
+};
+
+// List products with infinite scroll (e.g. the Sales/Quote product picker)
+// so callers aren't capped at a single page's worth of results.
+export const useProductsInfinite = (params: Omit<ProductListParams, "page">) => {
+  const limit = params.limit ?? 50;
+  return useInfiniteQuery({
+    queryKey: qk.products.list({ ...params, limit, infinite: true }),
+    queryFn: ({ pageParam }) =>
+      productService.getList({ ...params, limit, page: pageParam }),
+    enabled: !!params.companyId,
+    staleTime: 5 * 60 * 1000,
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => {
+      const data = (lastPage as any)?.data;
+      if (!data) return undefined;
+      return data.page < data.totalPages ? data.page + 1 : undefined;
+    },
   });
 };
 

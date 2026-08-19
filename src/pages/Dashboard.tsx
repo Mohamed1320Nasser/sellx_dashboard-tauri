@@ -20,8 +20,6 @@ import {
   RotateCcw,
   Calendar,
   Activity,
-  ArrowUp,
-  ArrowDown,
   Folder,
   Plus,
 } from 'lucide-react';
@@ -81,6 +79,8 @@ const Dashboard: React.FC = () => {
     const mockData = {
         overview: {
             currentRevenue: 0,
+            todaysRevenue: 0,
+            todaysOrders: 0,
             currentReturns: 0,
             currentNetRevenue: 0,
             previousRevenue: 0,
@@ -151,8 +151,9 @@ const Dashboard: React.FC = () => {
                             value={isLoading ? '...' : formatCurrency(data?.overview?.currentRevenue || 0)}
                             color="#10B981"
                             growth={!isLoading ? {
-                                value: data?.overview?.revenueGrowth || 0,
-                                isPositive: (data?.overview?.revenueGrowth || 0) >= 0
+                                value: data?.overview?.revenueGrowth ?? 0,
+                                isPositive: (data?.overview?.revenueGrowth ?? 0) >= 0,
+                                isNeutral: data?.overview?.revenueGrowth == null
                             } : undefined}
                             isLoading={isLoading}
                         />
@@ -163,8 +164,9 @@ const Dashboard: React.FC = () => {
                             value={isLoading ? '...' : formatNumber(data?.overview?.currentOrders || 0)}
                             color="#3B82F6"
                             growth={!isLoading ? {
-                                value: data?.overview?.orderGrowth || 0,
-                                isPositive: (data?.overview?.orderGrowth || 0) >= 0
+                                value: data?.overview?.orderGrowth ?? 0,
+                                isPositive: (data?.overview?.orderGrowth ?? 0) >= 0,
+                                isNeutral: data?.overview?.orderGrowth == null
                             } : undefined}
                             isLoading={isLoading}
                         />
@@ -206,8 +208,9 @@ const Dashboard: React.FC = () => {
                             value={isLoading ? '...' : formatCurrency(data?.overview?.currentPurchases || 0)}
                             color="#6366F1"
                             growth={!isLoading ? {
-                                value: data?.overview?.purchaseGrowth || 0,
-                                isPositive: (data?.overview?.purchaseGrowth || 0) >= 0
+                                value: data?.overview?.purchaseGrowth ?? 0,
+                                isPositive: (data?.overview?.purchaseGrowth ?? 0) >= 0,
+                                isNeutral: data?.overview?.purchaseGrowth == null
                             } : undefined}
                             isLoading={isLoading}
                         />
@@ -242,23 +245,11 @@ const Dashboard: React.FC = () => {
                                 <div className="flex items-center justify-between">
                                     <div>
                                         <p className="text-sm font-medium text-green-700">مبيعات اليوم</p>
-                                        <p className={`${getDynamicFontSize(formatCurrency(data?.overview?.currentRevenue || 0))} font-bold text-green-800`}>
-                                            {isLoading ? '...' : formatCurrency(data?.overview?.currentRevenue || 0)}
+                                        <p className={`${getDynamicFontSize(formatCurrency(data?.overview?.todaysRevenue || 0))} font-bold text-green-800`}>
+                                            {isLoading ? '...' : formatCurrency(data?.overview?.todaysRevenue || 0)}
                                         </p>
                                     </div>
                                     <DollarSign className="w-6 h-6 text-green-600" />
-                                </div>
-                                <div className="mt-2 flex items-center">
-                                    {data?.overview?.revenueGrowth >= 0 ? (
-                                        <ArrowUp className="w-4 h-4 text-green-600 ml-1" />
-                                    ) : (
-                                        <ArrowDown className="w-4 h-4 text-red-600 ml-1" />
-                                    )}
-                                    <span className={`text-sm font-medium ${
-                                        data?.overview?.revenueGrowth >= 0 ? 'text-green-600' : 'text-red-600'
-                                    }`}>
-                                        {Math.abs(data?.overview?.revenueGrowth || 0).toFixed(1)}%
-                                    </span>
                                 </div>
                             </div>
 
@@ -266,23 +257,11 @@ const Dashboard: React.FC = () => {
                                 <div className="flex items-center justify-between">
                                     <div>
                                         <p className="text-sm font-medium text-blue-700">طلبات اليوم</p>
-                                        <p className={`${getDynamicFontSize(formatNumber(data?.overview?.currentOrders || 0))} font-bold text-blue-800`}>
-                                            {isLoading ? '...' : formatNumber(data?.overview?.currentOrders || 0)}
+                                        <p className={`${getDynamicFontSize(formatNumber(data?.overview?.todaysOrders || 0))} font-bold text-blue-800`}>
+                                            {isLoading ? '...' : formatNumber(data?.overview?.todaysOrders || 0)}
                                         </p>
                                     </div>
                                     <ShoppingCart className="w-8 h-8 text-blue-600" />
-                                </div>
-                                <div className="mt-2 flex items-center">
-                                    {data?.overview?.orderGrowth >= 0 ? (
-                                        <ArrowUp className="w-4 h-4 text-green-600 ml-1" />
-                                    ) : (
-                                        <ArrowDown className="w-4 h-4 text-red-600 ml-1" />
-                                    )}
-                                    <span className={`text-sm font-medium ${
-                                        data?.overview?.orderGrowth >= 0 ? 'text-green-600' : 'text-red-600'
-                                    }`}>
-                                        {Math.abs(data?.overview?.orderGrowth || 0).toFixed(1)}%
-                                    </span>
                                 </div>
                             </div>
 
@@ -332,12 +311,12 @@ const Dashboard: React.FC = () => {
                                 <div className="flex-1">
                                     <p className="font-medium text-gray-900">مبيعات جديدة</p>
                                     <p className="text-sm text-gray-600">
-                                        {isLoading ? '...' : `${data?.overview?.currentOrders || 0} طلب جديد اليوم`}
+                                        {isLoading ? '...' : `${data?.overview?.todaysOrders || 0} طلب جديد اليوم`}
                                     </p>
                                 </div>
                                 <div className="text-right">
                                     <p className="text-sm font-medium text-green-600">
-                                        {isLoading ? '...' : formatCurrency(data?.overview?.currentRevenue || 0)}
+                                        {isLoading ? '...' : formatCurrency(data?.overview?.todaysRevenue || 0)}
                                     </p>
                                     <p className="text-xs text-gray-500">اليوم</p>
                                 </div>

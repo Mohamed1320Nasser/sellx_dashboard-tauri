@@ -12,7 +12,7 @@ export const useSalesTrends = (
   filters: Omit<SalesTrendsFilters, "companyId">
 ) => {
   const { company } = useSessionAuthStore();
-  const companyId = company?.companyId || 0;
+  const companyId = company?.companyId || company?.company?.id || 0;
 
   return useQuery({
     queryKey: ["analytics", "sales-trends", companyId, filters],
@@ -26,7 +26,7 @@ export const useProductPerformance = (
   filters: Omit<ProductPerformanceFilters, "companyId">
 ) => {
   const { company } = useSessionAuthStore();
-  const companyId = company?.companyId || 0;
+  const companyId = company?.companyId || company?.company?.id || 0;
 
   return useQuery({
     queryKey: ["analytics", "product-performance", companyId, filters],
@@ -41,7 +41,7 @@ export const useCustomerAnalytics = (
   filters: Omit<CustomerAnalyticsFilters, "companyId">
 ) => {
   const { company } = useSessionAuthStore();
-  const companyId = company?.companyId || 0;
+  const companyId = company?.companyId || company?.company?.id || 0;
 
   return useQuery({
     queryKey: ["analytics", "customer-analytics", companyId, filters],
@@ -56,7 +56,7 @@ export const useInventoryAnalytics = (
   filters: Omit<InventoryAnalyticsFilters, "companyId">
 ) => {
   const { company } = useSessionAuthStore();
-  const companyId = company?.companyId || 0;
+  const companyId = company?.companyId || company?.company?.id || 0;
 
   return useQuery({
     queryKey: ["analytics", "inventory-analytics", companyId, filters],
@@ -69,7 +69,7 @@ export const useInventoryAnalytics = (
 // Dashboard Summary Hook
 export const useDashboardSummary = () => {
   const { company } = useSessionAuthStore();
-  const companyId = company?.companyId || 0;
+  const companyId = company?.companyId || company?.company?.id || 0;
 
   return useQuery({
     queryKey: ["analytics", "dashboard-summary", companyId],

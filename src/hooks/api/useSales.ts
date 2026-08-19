@@ -1,7 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { saleService } from "../../services/saleService";
+import { companyService } from "../../services/companyService";
 import { handleApiError } from "../../utils/errorHandler";
-import { generateHtmlReceipt } from "../../utils/htmlPdfGenerator";
+import { generateSaleInvoicePdf } from "../../components/invoice/generateSaleInvoicePdf";
 import toast from "react-hot-toast";
 
 export const useSales = (params: {
@@ -98,15 +99,15 @@ export const useGenerateReceipt = () => {
       saleId: number;
       companyId: number;
     }) => {
-      // Fetch the sale data first
-      const response = await saleService.getById(saleId.toString(), companyId);
-
-      // Debug: Log the raw response in development
+      const [saleResponse, company] = await Promise.all([
+        saleService.getById(saleId.toString(), companyId),
+        companyService.getProfile(companyId),
+      ]);
 
       // Handle different response structures
-      let saleData: any = response;
-      if (response && typeof response === "object" && "data" in response) {
-        saleData = (response as any).data;
+      let saleData: any = saleResponse;
+      if (saleResponse && typeof saleResponse === "object" && "data" in saleResponse) {
+        saleData = (saleResponse as any).data;
       }
 
       // Validate that we have the required data
@@ -116,12 +117,11 @@ export const useGenerateReceipt = () => {
         );
       }
 
-      return saleData;
+      return { saleData, company };
     },
-    onSuccess: async (saleData) => {
+    onSuccess: async ({ saleData, company }) => {
       try {
-        // Generate PDF receipt using the sale data
-        await generateHtmlReceipt({ sale: saleData });
+        await generateSaleInvoicePdf({ sale: saleData, company });
         toast.success("تم تحميل الفاتورة بنجاح");
       } catch (error) {
         const errorMessage =

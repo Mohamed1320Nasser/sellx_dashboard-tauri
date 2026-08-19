@@ -11,6 +11,10 @@ interface StatisticsCardProps {
   growth?: {
     value: number;
     isPositive: boolean;
+    /** true when there's no prior-period baseline to compare against (e.g.
+     * previous period had zero activity) — renders as "new"/"—" instead of
+     * a misleading 0% up-arrow. */
+    isNeutral?: boolean;
   };
   subtitle?: string;
   isLoading?: boolean;
@@ -135,17 +139,26 @@ const StatisticsCard: React.FC<StatisticsCardProps> = ({
       {/* Growth indicator */}
       {growth && !isLoading && (
         <div className="flex items-center">
-          <div className={`flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-            growth.isPositive 
-              ? 'bg-green-100 text-green-700' 
-              : 'bg-red-100 text-red-700'
-          }`}>
-            <span className="mr-1">
-              {growth.isPositive ? '↗' : '↘'}
-            </span>
-            {Math.abs(growth.value)}%
-          </div>
-          <span className="text-xs text-gray-500 mr-2">من الشهر الماضي</span>
+          {growth.isNeutral ? (
+            <div className="flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+              <span className="mr-1">—</span>
+              لا توجد بيانات مقارنة
+            </div>
+          ) : (
+            <>
+              <div className={`flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                growth.isPositive
+                  ? 'bg-green-100 text-green-700'
+                  : 'bg-red-100 text-red-700'
+              }`}>
+                <span className="mr-1">
+                  {growth.isPositive ? '↗' : '↘'}
+                </span>
+                {Math.abs(growth.value)}%
+              </div>
+              <span className="text-xs text-gray-500 mr-2">من الشهر الماضي</span>
+            </>
+          )}
         </div>
       )}
 

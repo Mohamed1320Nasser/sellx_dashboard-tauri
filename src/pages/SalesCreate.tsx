@@ -6,7 +6,7 @@ import { Button, Input, Select, Card, Modal } from "../components/ui";
 import { useSessionAuthStore } from "../stores/sessionAuthStore";
 import { useCreateSale } from "../hooks/api/useSales";
 import { useClients, useCreateClient } from "../hooks/api/useClients";
-import { useProducts } from "../hooks/api/useProducts";
+import { useProductsInfinite } from "../hooks/api/useProducts";
 import { useCategories } from "../hooks/api/useCategories";
 import { useActiveTaxSettings } from "../hooks/api/useTax";
 import { productService } from "../services/productService";
@@ -80,6 +80,7 @@ interface SaleItem {
   quantity: number;
   unitPrice: number;
   total: number;
+  stock: number;
 }
 
 const SalesCreate: React.FC = () => {
@@ -96,6 +97,7 @@ const SalesCreate: React.FC = () => {
   const [printableSale, setPrintableSale] = useState<any>(null);
   const [clientType, setClientType] = useState<"cash" | "existing" | "new">("cash");
   const [productSearch, setProductSearch] = useState("");
+  const [debouncedProductSearch, setDebouncedProductSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
   const [clientSearch] = useState("");
   const [barcodeInput, setBarcodeInput] = useState("");
@@ -109,10 +111,16 @@ const SalesCreate: React.FC = () => {
     limit: 100,
   });
 
-  const { data: productsData } = useProducts({
+  const {
+    data: productsData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useProductsInfinite({
     companyId: companyId!,
-    page: 1,
-    limit: 100,
+    limit: 50,
+    search: debouncedProductSearch || undefined,
+    categoryId: selectedCategory || undefined,
   });
 
   const { data: categoriesData } = useCategories({
@@ -244,11 +252,43 @@ const SalesCreate: React.FC = () => {
     barcodeInputRef.current?.focus();
   }, []);
 
-  // Get product stock by ID
-  const getProductStock = (productId: number): number => {
-    const products = (productsData as any)?.data?.list || [];
-    const product = products.find((p: any) => p.id === productId);
-    return product?.currentStock || product?.stockQuantity || 0;
+  // Debounce product search so we don't fire a request on every keystroke
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedProductSearch(productSearch), 300);
+    return () => clearTimeout(timer);
+  }, [productSearch]);
+
+  // Infinite scroll: load the next page of products when the sentinel
+  // at the bottom of the grid scrolls into view
+  const productScrollSentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const sentinel = productScrollSentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && hasNextPage && !isFetchingNextPage) {
+          fetchNextPage();
+        }
+      },
+      { rootMargin: "200px" }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  // All products loaded so far across every fetched page
+  const allLoadedProducts = useMemo(() => {
+    const pages = (productsData as any)?.pages || [];
+    return pages.flatMap((page: any) => page?.data?.list || []);
+  }, [productsData]);
+
+  // Get product stock by ID (undefined if the product isn't in any currently
+  // loaded product page, e.g. it was added via barcode scan)
+  const getProductStock = (productId: number): number | undefined => {
+    const product = allLoadedProducts.find((p: any) => p.id === productId);
+    if (!product) return undefined;
+    return product.currentStock ?? product.stockQuantity ?? 0;
   };
 
   // Add item to sale
@@ -272,6 +312,7 @@ const SalesCreate: React.FC = () => {
               ...item,
               quantity: newQuantity,
               total: newQuantity * item.unitPrice,
+              stock,
             }
           : item
       );
@@ -284,38 +325,47 @@ const SalesCreate: React.FC = () => {
         quantity: 1,
         unitPrice: product.sellingPrice,
         total: product.sellingPrice,
+        stock,
       };
       setItems([...items, newItem]);
     }
   };
 
   // Bulk pre-fill: when navigated here from Products "إضافة للفاتورة" with a list
-  // of product ids, add each once. Runs after products load; clears state so it
-  // doesn't re-run on re-render/back-navigation.
+  // of product ids, add each once. Fetches each product by id directly rather
+  // than relying on the (paginated/search-filtered) picker list, since the
+  // selected products may not be part of whatever page/search is loaded here.
   const bulkPrefillDoneRef = useRef(false);
   useEffect(() => {
     if (bulkPrefillDoneRef.current) return;
     const bulkIds = (location.state as any)?.bulkProductIds as (string | number)[] | undefined;
     if (!bulkIds || bulkIds.length === 0) return;
-
-    const list = (productsData as any)?.data?.list as any[] | undefined;
-    if (!list || list.length === 0) return; // wait until products are loaded
+    if (!companyId) return;
 
     bulkPrefillDoneRef.current = true;
-    const idSet = new Set(bulkIds.map(String));
-    const toAdd = list.filter((p) => idSet.has(String(p.id)));
-    let added = 0;
-    for (const product of toAdd) {
-      addItem(product);
-      added += 1;
-    }
-    if (added > 0) {
-      toast.success(`تمت إضافة ${added} منتج إلى الفاتورة`);
-    }
-    // Clear navigation state so a refresh/back doesn't re-add
-    navigate(location.pathname, { replace: true, state: {} });
+
+    (async () => {
+      let added = 0;
+      for (const id of bulkIds) {
+        try {
+          const result = await productService.getById(String(id), companyId);
+          const product = (result as any)?.data?.data || (result as any)?.data;
+          if (product) {
+            addItem(product);
+            added += 1;
+          }
+        } catch {
+          // skip products that fail to load; continue with the rest
+        }
+      }
+      if (added > 0) {
+        toast.success(`تمت إضافة ${added} منتج إلى الفاتورة`);
+      }
+      // Clear navigation state so a refresh/back doesn't re-add
+      navigate(location.pathname, { replace: true, state: {} });
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productsData, location.state]);
+  }, [companyId, location.state]);
 
   // Update item quantity
   const updateQuantity = (productId: number, quantity: number) => {
@@ -330,7 +380,10 @@ const SalesCreate: React.FC = () => {
 
     // Only validate stock when INCREASING quantity
     if (quantity > currentQuantity) {
-      const stock = getProductStock(productId);
+      // Prefer live stock from the loaded product list, but fall back to the
+      // stock captured when the item was added (e.g. via barcode scan for a
+      // product not present in the currently loaded product page).
+      const stock = getProductStock(productId) ?? currentItem?.stock ?? 0;
       if (quantity > stock) {
         toast.error(`الكمية المطلوبة تتجاوز المخزون المتاح: ${stock}`);
         return;
@@ -588,25 +641,10 @@ const SalesCreate: React.FC = () => {
     label: `${client.name}${client.phone ? ` - ${client.phone}` : ''}`,
   }));
 
-  // Filter products based on search and category
-  const filteredProducts = useMemo(() => {
-    const products = (productsData as any)?.data?.list || [];
-    
-    return products.filter((product: any) => {
-      const matchesSearch = product.name.toLowerCase().includes(productSearch.toLowerCase()) ||
-                           product.sku?.toLowerCase().includes(productSearch.toLowerCase());
-      
-      // Convert both to strings for comparison to handle any type mismatches
-      const productCategoryId = String(product.categoryId || '');
-      const selectedCategoryId = String(selectedCategory || '');
-      const matchesCategory = !selectedCategory || productCategoryId === selectedCategoryId;
-      
-      return matchesSearch && matchesCategory;
-    });
-  }, [productsData, productSearch, selectedCategory]);
-
-  // Product options for display
-  const productOptions = filteredProducts.map((product: any) => ({
+  // Product options for display — search and category filtering happen
+  // server-side (see useProductsInfinite above), so this is just every
+  // product page fetched so far.
+  const productOptions = allLoadedProducts.map((product: any) => ({
     value: product.id,
     label: `${product.name} - ${formatCurrency(product.sellingPrice)} (المتاح: ${formatNumber(product.currentStock || product.stockQuantity)})`,
     product,
@@ -821,6 +859,15 @@ const SalesCreate: React.FC = () => {
                     <p className="text-sm">لا توجد منتجات</p>
                   </div>
                 )}
+
+                {/* Infinite scroll sentinel + loading indicator */}
+                {productOptions.length > 0 && (
+                  <div ref={productScrollSentinelRef} className="py-3 text-center">
+                    {isFetchingNextPage && (
+                      <span className="text-xs text-gray-400">جاري تحميل المزيد...</span>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -842,7 +889,7 @@ const SalesCreate: React.FC = () => {
                   {items.length > 0 ? (
                     <div className="divide-y divide-gray-100">
                       {items.map((item) => {
-                        const stock = getProductStock(item.productId);
+                        const stock = getProductStock(item.productId) ?? item.stock ?? 0;
                         const isMaxReached = item.quantity >= stock;
 
                         return (

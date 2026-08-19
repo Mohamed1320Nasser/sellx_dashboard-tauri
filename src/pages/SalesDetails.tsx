@@ -1,6 +1,6 @@
-import React, { useCallback, useState, useRef, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Receipt, DollarSign, Package, Download, Building2, Phone, Mail as MailIcon, MapPin, User, CreditCard, CheckCircle, Clock, AlertCircle, Percent, TrendingUp, Printer } from 'lucide-react';
+import { ArrowLeft, Receipt, DollarSign, Package, Download, CheckCircle, Clock, AlertCircle, Percent, TrendingUp, Printer } from 'lucide-react';
 import { Layout } from '../components/layout';
 import { Button, Card, Badge } from '../components/ui';
 import { useSessionAuthStore } from '../stores/sessionAuthStore';
@@ -9,11 +9,9 @@ import { saleService } from '../services/saleService';
 import { formatCurrency, formatNumber } from '../utils/currencyUtils';
 import { formatTableDate } from '../utils/dateUtils';
 import toast from 'react-hot-toast';
-import html2canvas from 'html2canvas';
-import { jsPDF } from 'jspdf';
-import { printReceipt } from '../services/printService';
 import { companyService } from '../services/companyService';
 import { PrintReceiptPreview } from '../components/printer/PrintReceiptPreview';
+import { generateSaleInvoicePdf } from '../components/invoice/generateSaleInvoicePdf';
 
 const SalesDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -21,7 +19,6 @@ const SalesDetails: React.FC = () => {
   const { company, user } = useSessionAuthStore();
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
-  const pdfContentRef = useRef<HTMLDivElement>(null);
 
   const companyId = company?.companyId || company?.company?.id;
 
@@ -38,7 +35,7 @@ const SalesDetails: React.FC = () => {
   };
 
   const handleDownloadPDF = async () => {
-    if (!sale || !pdfContentRef.current) {
+    if (!sale) {
       toast.error("لا توجد بيانات للتحميل");
       return;
     }
@@ -47,48 +44,10 @@ const SalesDetails: React.FC = () => {
     const loadingToast = toast.loading("جاري إنشاء ملف PDF...");
 
     try {
-      const pdfElement = pdfContentRef.current;
-
-      const canvas = await html2canvas(pdfElement, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: "#ffffff",
-      });
-
-      const imgWidth = 210;
-      const pageHeight = 297;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-      const pdf = new jsPDF("p", "mm", "a4");
-      let heightLeft = imgHeight;
-      let position = 0;
-
-      pdf.addImage(
-        canvas.toDataURL("image/png"),
-        "PNG",
-        0,
-        position,
-        imgWidth,
-        imgHeight
-      );
-      heightLeft -= pageHeight;
-
-      while (heightLeft > 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(
-          canvas.toDataURL("image/png"),
-          "PNG",
-          0,
-          position,
-          imgWidth,
-          imgHeight
-        );
-        heightLeft -= pageHeight;
-      }
-
-      pdf.save(`فاتورة-${sale.receiptNumber}.pdf`);
+      const companyProfile = companyId
+        ? await companyService.getProfile(companyId)
+        : company;
+      await generateSaleInvoicePdf({ sale, company: companyProfile, cashier: user });
 
       toast.dismiss(loadingToast);
       toast.success("تم تحميل ملف PDF بنجاح");
@@ -577,236 +536,6 @@ const SalesDetails: React.FC = () => {
               )}
             </div>
           </Card>
-        </div>
-
-        {/* Hidden PDF Content - This will be captured for PDF generation */}
-        <div className="fixed left-[-9999px] top-0">
-          <div ref={pdfContentRef} className="w-[210mm] bg-white p-8" dir="rtl">
-            {/* Header with Gradient */}
-            <div className="bg-gradient-to-br from-primary-600 via-primary-600 to-primary-700 text-white p-6 rounded-t-xl">
-              <div className="flex justify-between items-start">
-                {/* Company Info */}
-                <div className="flex items-start gap-4">
-                  <div className="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center">
-                    <Building2 className="w-8 h-8 text-white" />
-                  </div>
-                  <div>
-                    <p className="text-white/80 text-xs mb-1">SellX</p>
-                    <h1 className="text-2xl font-bold mb-2">{company?.name || "SellX"}</h1>
-                    <div className="space-y-1 text-white/90 text-sm">
-                      {company?.address && (
-                        <p className="flex items-center gap-2">
-                          <MapPin className="w-4 h-4" />
-                          {company.address}
-                        </p>
-                      )}
-                      {company?.phone && (
-                        <p className="flex items-center gap-2">
-                          <Phone className="w-4 h-4" />
-                          {company.phone}
-                        </p>
-                      )}
-                      {company?.email && (
-                        <p className="flex items-center gap-2">
-                          <MailIcon className="w-4 h-4" />
-                          {company.email}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Receipt Number Badge */}
-                <div className="text-left">
-                  <div className="bg-white/20 backdrop-blur-sm rounded-xl px-4 py-3">
-                    <p className="text-white/80 text-sm mb-1">فاتورة بيع</p>
-                    <p className="text-xl font-bold">{sale?.receiptNumber}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Sale Details Section */}
-            <div className="p-6 border border-t-0 border-gray-200 rounded-b-xl">
-              {/* Info Cards Row */}
-              <div className="grid grid-cols-3 gap-4 mb-6">
-                {/* Sale Info */}
-                <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="w-8 h-8 bg-primary-100 rounded-lg flex items-center justify-center">
-                      <Receipt className="w-4 h-4 text-primary-600" />
-                    </div>
-                    <h3 className="font-bold text-gray-900 text-sm">معلومات الفاتورة</h3>
-                  </div>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">التاريخ:</span>
-                      <span className="font-medium text-gray-900">{sale?.saleDate ? formatTableDate(sale.saleDate) : '-'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">الوقت:</span>
-                      <span className="font-medium text-gray-900">
-                        {sale?.saleDate ? new Date(sale.saleDate).toLocaleTimeString('ar-SA') : '-'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Customer Info */}
-                <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="w-8 h-8 bg-emerald-100 rounded-lg flex items-center justify-center">
-                      <User className="w-4 h-4 text-emerald-600" />
-                    </div>
-                    <h3 className="font-bold text-gray-900 text-sm">معلومات العميل</h3>
-                  </div>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">الاسم:</span>
-                      <span className="font-medium text-gray-900">{sale?.client?.name || "عميل نقدي"}</span>
-                    </div>
-                    {sale?.client?.phone && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">الهاتف:</span>
-                        <span className="font-medium text-gray-900">{sale.client.phone}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Payment Info */}
-                <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center">
-                      <CreditCard className="w-4 h-4 text-amber-600" />
-                    </div>
-                    <h3 className="font-bold text-gray-900 text-sm">طريقة الدفع</h3>
-                  </div>
-                  <div className="space-y-2">
-                    <div
-                      className={`inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium ${
-                        sale?.paymentMethod === "CASH"
-                          ? "bg-green-100 text-green-700"
-                          : sale?.paymentMethod === "CARD"
-                          ? "bg-blue-100 text-blue-700"
-                          : "bg-orange-100 text-orange-700"
-                      }`}
-                    >
-                      {sale?.paymentMethod === "CASH" && "نقدي"}
-                      {sale?.paymentMethod === "CARD" && "بطاقة"}
-                      {sale?.paymentMethod === "CREDIT" && "آجل"}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Products Table */}
-              <div className="mb-6">
-                <h3 className="text-base font-bold text-gray-900 mb-3 flex items-center gap-2">
-                  <span className="w-1.5 h-5 bg-primary-600 rounded-full"></span>
-                  تفاصيل المنتجات
-                </h3>
-                <div className="overflow-hidden rounded-xl border border-gray-200">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="bg-gradient-to-r from-gray-800 to-gray-900 text-white">
-                        <th className="px-3 py-3 text-right font-semibold text-sm">#</th>
-                        <th className="px-3 py-3 text-right font-semibold text-sm">المنتج</th>
-                        <th className="px-3 py-3 text-center font-semibold text-sm">الكمية</th>
-                        <th className="px-3 py-3 text-center font-semibold text-sm">سعر الوحدة</th>
-                        <th className="px-3 py-3 text-center font-semibold text-sm">المجموع</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sale?.items?.map((item: any, index: number) => (
-                        <tr key={index} className={`border-b border-gray-100 ${index % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
-                          <td className="px-3 py-3">
-                            <span className="w-6 h-6 bg-gray-100 rounded-lg flex items-center justify-center text-xs font-medium text-gray-600">
-                              {index + 1}
-                            </span>
-                          </td>
-                          <td className="px-3 py-3">
-                            <div>
-                              <div className="font-medium text-gray-900 text-sm">{item.product?.name || 'منتج'}</div>
-                              {item.product?.sku && <div className="text-xs text-gray-500 mt-1">SKU: {item.product.sku}</div>}
-                            </div>
-                          </td>
-                          <td className="px-3 py-3 text-center">
-                            <span className="inline-flex items-center justify-center w-8 h-6 bg-primary-100 text-primary-700 rounded-lg font-medium text-sm">
-                              {item.quantity}
-                            </span>
-                          </td>
-                          <td className="px-3 py-3 text-center text-gray-700 text-sm">
-                            {formatCurrency(item.unitPrice)}
-                          </td>
-                          <td className="px-3 py-3 text-center font-bold text-gray-900 text-sm">
-                            {formatCurrency(item.totalPrice)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Summary Section */}
-              <div className="flex justify-end mb-6">
-                <div className="w-full max-w-md">
-                  <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
-                    <h3 className="text-base font-bold text-gray-900 mb-3">ملخص الفاتورة</h3>
-                    <div className="space-y-2">
-                      {sale?.additionalFee && sale.additionalFee > 0 && (
-                        <div className="flex justify-between items-center text-sm">
-                          <span className="text-gray-600">{sale.additionalFeeLabel || "رسوم إضافية"}:</span>
-                          <span className="font-medium text-gray-900">
-                            {formatCurrency(sale.additionalFee)}
-                          </span>
-                        </div>
-                      )}
-                      <div className="border-t-2 border-dashed border-gray-300 pt-2 mt-2">
-                        <div className="flex justify-between items-center">
-                          <span className="text-lg font-bold text-gray-900">المجموع الكلي:</span>
-                          <span className="text-xl font-bold text-primary-600">
-                            {formatCurrency(sale?.totalAmount || 0)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Footer */}
-              <div className="border-t-2 border-gray-200 pt-6">
-                {/* Thank You Message */}
-                <div className="text-center bg-gradient-to-r from-primary-50 via-primary-50 to-primary-50 rounded-xl p-4 border border-primary-100">
-                  <h4 className="text-lg font-bold text-gray-900 mb-1">شكراً لاختياركم {company?.name || "خدماتنا"}</h4>
-                  <p className="text-gray-600 text-sm">نتطلع لخدمتكم مرة أخرى</p>
-                  <div className="flex items-center justify-center gap-4 mt-2 text-xs text-gray-500">
-                    {company?.phone && (
-                      <span className="flex items-center gap-1">
-                        <Phone className="w-3 h-3" />
-                        {company.phone}
-                      </span>
-                    )}
-                    {company?.email && (
-                      <span className="flex items-center gap-1">
-                        <MailIcon className="w-3 h-3" />
-                        {company.email}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* SellX Signature */}
-                <div className="mt-4 pt-3 border-t border-gray-200 text-center">
-                  <p className="text-xs text-gray-400">
-                    تم إنشاء هذا المستند بواسطة نظام <span className="font-semibold text-primary-600">SellX</span> لإدارة نقاط البيع
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
