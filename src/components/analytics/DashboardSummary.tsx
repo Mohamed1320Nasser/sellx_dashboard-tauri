@@ -87,6 +87,8 @@ const DashboardSummary: React.FC<DashboardSummaryProps> = ({
       returnRate: 0,
       pendingPayments: 0,
       completedPayments: 0,
+      todaysRevenue: 0,
+      todaysOrders: 0,
     },
     topProducts = [],
     lowStockProducts = [],

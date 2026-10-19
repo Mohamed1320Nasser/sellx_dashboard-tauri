@@ -1010,6 +1010,8 @@ export interface DashboardSummary {
     returnRate: number;
     pendingPayments: number;
     completedPayments: number;
+    todaysRevenue: number;
+    todaysOrders: number;
   };
   topProducts: Array<{
     id: string;

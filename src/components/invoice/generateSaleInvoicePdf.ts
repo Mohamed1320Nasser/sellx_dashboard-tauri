@@ -1,5 +1,5 @@
 import React from "react";
-import { pdf } from "@react-pdf/renderer";
+import { pdf, type DocumentProps } from "@react-pdf/renderer";
 import { SaleInvoicePdf } from "./SaleInvoicePdf";
 import { buildSaleInvoiceData } from "./buildSaleInvoiceData";
 
@@ -11,8 +11,9 @@ export async function generateSaleInvoicePdf(params: {
   cashier?: any;
 }): Promise<void> {
   const data = await buildSaleInvoiceData(params);
+  // SaleInvoicePdf renders a <Document>; pdf() only accepts that element type
   const blob = await pdf(
-    React.createElement(SaleInvoicePdf, { data })
+    React.createElement(SaleInvoicePdf, { data }) as unknown as React.ReactElement<DocumentProps>
   ).toBlob();
 
   const url = URL.createObjectURL(blob);
