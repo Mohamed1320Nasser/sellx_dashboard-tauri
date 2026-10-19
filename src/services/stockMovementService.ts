@@ -11,8 +11,10 @@ import type {
 export interface CreateStockMovementRequest {
   productId: string;
   companyId: number;
-  type: StockMovementType;
+  /** Manual movements are saved as adjustments: add (IN) or deduct (OUT) */
+  direction: "IN" | "OUT";
   quantity: number;
+  reason?: string;
   reference?: string;
 }
 

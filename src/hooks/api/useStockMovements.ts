@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { stockMovementService } from "../../services/stockMovementService";
 import { useSessionAuthStore } from "../../stores/sessionAuthStore";
+import { handleApiError } from "../../utils/errorHandler";
+import toast from "react-hot-toast";
 import type {
   StockMovementFilters,
   CreateStockMovementRequest,
@@ -87,6 +89,10 @@ export const useCreateStockMovement = () => {
       queryClient.invalidateQueries({ queryKey: ["lowStockProducts"] });
       queryClient.invalidateQueries({ queryKey: ["products"] });
       queryClient.invalidateQueries({ queryKey: ["productStockHistory"] });
+      toast.success("تم تعديل المخزون");
+    },
+    onError: (error) => {
+      toast.error(handleApiError(error));
     },
   });
 };

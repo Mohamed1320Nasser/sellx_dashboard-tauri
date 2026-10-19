@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { X, Printer, Download, FileText } from 'lucide-react';
 import { Modal, Button } from '../ui';
-import { saleToReceiptData, generateReceiptHTML } from '../../services/receiptHtmlTemplate';
+import { saleToReceiptData as saleMapper, purchaseToReceiptData, generateReceiptHTML } from '../../services/receiptHtmlTemplate';
 import { usePrinterConfigStore } from '../../stores/printerConfigStore';
 import { exportReceiptAsImage } from '../../services/exportReceiptAsImage';
 import { printReceipt } from '../../services/printService';
@@ -19,6 +19,8 @@ interface PrintReceiptPreviewProps {
   onClose: () => void;
   onPrint?: () => Promise<void>; // Optional custom print handler
   onCancel?: () => void; // Optional cancel handler
+  /** "purchase" fills the receipt from a purchase (supplier, invoice number, amount owed) */
+  kind?: 'sale' | 'purchase';
 }
 
 export const PrintReceiptPreview: React.FC<PrintReceiptPreviewProps> = ({
@@ -27,7 +29,9 @@ export const PrintReceiptPreview: React.FC<PrintReceiptPreviewProps> = ({
   cashier,
   isOpen,
   onClose,
+  kind = 'sale',
 }) => {
+  const saleToReceiptData = kind === 'purchase' ? purchaseToReceiptData : saleMapper;
   const previewRef = useRef<HTMLDivElement>(null);
   const [isPrinting, setIsPrinting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);

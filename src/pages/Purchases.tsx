@@ -128,10 +128,10 @@ const Purchases: React.FC = () => {
 
   // Calculate totals
   const totalPurchases = (purchasesData as any)?.data?.totalCount || 0;
-  const totalAmount = ((purchasesData as any)?.data?.list || []).reduce(
-    (sum: number, purchase: Purchase) => sum + (Number(purchase.totalAmount) || 0),
-    0
-  );
+  // Totals of every purchase matching the search, not only this page
+  const summary = (purchasesData as any)?.data?.summary;
+  const totalAmount = Number(summary?.totalAmount || 0);
+  const outstanding = Number(summary?.outstanding || 0);
 
   return (
     <Layout>
@@ -173,21 +173,22 @@ const Purchases: React.FC = () => {
               </div>
               <div>
                 <p className="text-sm text-gray-600">إجمالي المبلغ</p>
-                <p className="text-2xl font-bold text-green-600">{totalAmount.toFixed(2)} جنيه</p>
+                <p className="text-2xl font-bold text-green-600">{formatCurrency(totalAmount)}</p>
               </div>
             </div>
           </Card>
 
           <Card padding="md">
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-500/30">
+              <div className="w-12 h-12 bg-gradient-to-br from-red-500 to-red-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-red-500/30">
                 <Calendar className="w-6 h-6 text-white" />
               </div>
               <div>
-                <p className="text-sm text-gray-600">اليوم</p>
-                <p className="text-lg font-bold text-blue-600">
-                  {formatTableDate(new Date())}
-                </p>
+                <p className="text-sm text-gray-600">المستحق للموردين</p>
+                <p className="text-2xl font-bold text-red-600">{formatCurrency(outstanding)}</p>
+                {summary?.unpaidCount > 0 && (
+                  <p className="text-xs text-gray-500">{summary.unpaidCount} فاتورة غير مسددة بالكامل</p>
+                )}
               </div>
             </div>
           </Card>

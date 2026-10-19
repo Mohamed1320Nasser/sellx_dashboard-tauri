@@ -57,6 +57,8 @@ export interface SellxReceiptData {
 
   // ── SELLX-SPECIFIC FIELDS ──
   isPurchase?: boolean; // true = purchase receipt, false/undefined = sale receipt
+  supplierName?: string; // Purchase receipts: who the goods came from
+  remaining?: number; // Purchase receipts: amount still owed on the invoice
   additionalFee?: number; // Delivery fees, service charges, etc.
   additionalFeeLabel?: string; // Custom label (e.g., "رسوم التوصيل")
 

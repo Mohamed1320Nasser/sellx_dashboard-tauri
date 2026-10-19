@@ -592,3 +592,45 @@ export function saleToReceiptData(params: {
     footerText: settings.footerText || 'شكراً لزيارتكم',
   };
 }
+
+const PURCHASE_PAYMENT_LABELS: Record<string, string> = {
+  CASH: 'نقداً',
+  CARD: 'بطاقة',
+  MOBILE_WALLET: 'محفظة إلكترونية',
+  BANK_TRANSFER: 'تحويل بنكي',
+};
+
+/**
+ * Same receipt layout as sales, filled from a purchase: supplier's invoice number,
+ * purchase date, the supplier, and what is still owed. Accepts the purchase from
+ * the API (totalAmount/paidAmount/taxAmount) or the object built after saving (total/paid/tax).
+ */
+export function purchaseToReceiptData(params: Parameters<typeof saleToReceiptData>[0]): any {
+  const { sale: purchase } = params;
+  const base = saleToReceiptData(params);
+  const when = new Date(purchase.purchaseDate || purchase.createdAt || Date.now());
+  const total = parseFloat(purchase.totalAmount ?? purchase.total ?? 0);
+  const paid = parseFloat(purchase.paidAmount ?? purchase.paid ?? 0);
+  const remaining = purchase.remainingAmount !== undefined ? parseFloat(purchase.remainingAmount) : total - paid;
+  return {
+    ...base,
+    receiptNumber: purchase.invoiceNumber || `PURCHASE-${purchase.id}`,
+    date: when.toLocaleDateString('ar-EG', { year: 'numeric', month: '2-digit', day: '2-digit' }),
+    // The purchase date is a calendar day only; the time comes from when it was entered
+    time: new Date(purchase.createdAt || Date.now()).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: true }),
+    subtotal: parseFloat(purchase.subtotal ?? total - parseFloat(purchase.taxAmount ?? purchase.tax ?? 0)),
+    discount: 0,
+    tax: parseFloat(purchase.taxAmount ?? purchase.tax ?? 0),
+    taxRate: parseFloat(purchase.taxRate ?? 0),
+    total,
+    paid,
+    change: 0,
+    remaining: Math.max(0, Math.round(remaining * 100) / 100),
+    paymentMethod: paid > 0 ? PURCHASE_PAYMENT_LABELS[purchase.paymentMethod] || 'نقداً' : 'آجل',
+    supplierName: purchase.supplier?.name,
+    isPurchase: true,
+    additionalFee: 0,
+    additionalFeeLabel: undefined,
+    footerText: params.footerText || ' ',
+  };
+}

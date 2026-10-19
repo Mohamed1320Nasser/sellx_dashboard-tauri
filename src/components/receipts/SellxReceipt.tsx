@@ -66,6 +66,12 @@ export function SellxReceipt({ data }: Props) {
           <span className="receipt__label">الكاشير</span>
           <span className="receipt__value">{data.cashier}</span>
         </div>
+        {data.supplierName && (
+          <div className="receipt__row">
+            <span className="receipt__label">المورد</span>
+            <span className="receipt__value">{data.supplierName}</span>
+          </div>
+        )}
       </div>
 
       <hr className="receipt__divider" />
@@ -110,7 +116,7 @@ export function SellxReceipt({ data }: Props) {
 
       {/* Totals */}
       <div className="receipt__totals">
-        {((data.discount && data.discount > 0) || (data.tax && data.tax > 0) || (data.additionalFee && data.additionalFee > 0)) && (
+        {((data.discount ?? 0) > 0 || (data.tax ?? 0) > 0 || (data.additionalFee ?? 0) > 0) && (
           <div className="receipt__row">
             <span className="receipt__label">المجموع الفرعي</span>
             <span className="receipt__value">{formatPrice(data.subtotal)}</span>
@@ -163,6 +169,12 @@ export function SellxReceipt({ data }: Props) {
               <span className="receipt__label">المدفوع</span>
               <span className="receipt__value">{formatPrice(data.paid)}</span>
             </div>
+            {(data.remaining ?? 0) > 0 && (
+              <div className="receipt__row">
+                <span className="receipt__label">المتبقي (آجل)</span>
+                <span className="receipt__value">{formatPrice(data.remaining!)}</span>
+              </div>
+            )}
             {data.change !== undefined && data.change > 0 && (
               <div className="receipt__row">
                 <span className="receipt__label">الباقي</span>

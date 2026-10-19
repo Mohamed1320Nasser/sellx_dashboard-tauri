@@ -4,16 +4,14 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Button, Input, Select } from '../ui';
 import { useProducts } from '../../hooks/api/useProducts';
-import { StockMovementType } from '../../types/business';
 import type { StockMovement } from '../../types/business';
 
 // Form validation schema
 const stockMovementSchema = z.object({
   productId: z.string().min(1, 'يرجى اختيار منتج'),
-  type: z.nativeEnum(StockMovementType, {
-    message: 'يرجى اختيار نوع الحركة',
-  }),
-  quantity: z.number().min(1, 'الكمية يجب أن تكون أكبر من 0'),
+  direction: z.enum(['IN', 'OUT'], { message: 'اختر إضافة أو خصم' }),
+  quantity: z.number().int('الكمية يجب أن تكون رقماً صحيحاً').min(1, 'الكمية يجب أن تكون أكبر من 0'),
+  reason: z.string().optional(),
   reference: z.string().optional(),
 });
 
@@ -45,8 +43,9 @@ const StockMovementForm: React.FC<StockMovementFormProps> = ({
     resolver: zodResolver(stockMovementSchema),
     defaultValues: {
       productId: stockMovement?.productId || '',
-      type: stockMovement?.type || StockMovementType.ADJUSTMENT,
+      direction: 'IN',
       quantity: 1,
+      reason: '',
       reference: stockMovement?.reference || '',
     },
   });
@@ -67,32 +66,12 @@ const StockMovementForm: React.FC<StockMovementFormProps> = ({
     if (stockMovement) {
       reset({
         productId: stockMovement.productId,
-        type: stockMovement.type,
+        direction: stockMovement.quantity < 0 ? 'OUT' : 'IN',
         quantity: Math.abs(stockMovement.quantity),
         reference: stockMovement.reference || '',
       });
     }
   }, [stockMovement, reset]);
-
-  const getMovementTypeLabel = (type: StockMovementType) => {
-    const labels = {
-      [StockMovementType.PURCHASE]: 'شراء',
-      [StockMovementType.SALE]: 'بيع',
-      [StockMovementType.ADJUSTMENT]: 'تعديل مخزون',
-      [StockMovementType.RETURN]: 'إرجاع',
-    };
-    return labels[type];
-  };
-
-  const getMovementTypeDescription = (type: StockMovementType) => {
-    const descriptions = {
-      [StockMovementType.PURCHASE]: 'إضافة منتجات للمخزون',
-      [StockMovementType.SALE]: 'خصم منتجات من المخزون',
-      [StockMovementType.ADJUSTMENT]: 'تعديل كمية المخزون (إضافة أو خصم)',
-      [StockMovementType.RETURN]: 'إرجاع منتجات للمخزون',
-    };
-    return descriptions[type];
-  };
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
@@ -132,25 +111,30 @@ const StockMovementForm: React.FC<StockMovementFormProps> = ({
         </div>
       )}
 
-      {/* Movement Type */}
+      {/* Direction: purchases, sales and returns have their own screens */}
       <div>
-        <Select
-          label="نوع الحركة"
-          placeholder="اختر نوع الحركة"
-          options={Object.values(StockMovementType).map((type) => ({
-            value: type,
-            label: getMovementTypeLabel(type),
-          }))}
-          value={watch('type')}
-          onChange={(value) => setValue('type', value as StockMovementType)}
-          error={errors.type?.message}
-          disabled={loading}
-        />
-        {watch('type') && (
-          <p className="mt-2 text-sm text-gray-500">
-            {getMovementTypeDescription(watch('type'))}
-          </p>
-        )}
+        <label className="block text-sm font-medium text-gray-700 mb-2">نوع التعديل</label>
+        <div className="grid grid-cols-2 gap-3">
+          {([
+            ['IN', 'إضافة للمخزون', 'border-green-500 bg-green-50 text-green-700'],
+            ['OUT', 'خصم من المخزون', 'border-red-500 bg-red-50 text-red-700'],
+          ] as const).map(([value, label, active]) => (
+            <button
+              key={value}
+              type="button"
+              disabled={loading}
+              onClick={() => setValue('direction', value)}
+              className={`py-2.5 rounded-lg border-2 text-sm font-medium transition-colors ${
+                watch('direction') === value ? active : 'border-gray-200 text-gray-600 hover:border-gray-300'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="mt-2 text-xs text-gray-500">
+          للجرد والتالف والفروقات فقط. المشتريات والمبيعات والمرتجعات تُسجل من شاشاتها.
+        </p>
       </div>
 
       {/* Quantity */}
@@ -168,9 +152,24 @@ const StockMovementForm: React.FC<StockMovementFormProps> = ({
         {errors.quantity && (
           <p className="mt-1 text-sm text-red-600">{errors.quantity.message}</p>
         )}
-        <p className="mt-1 text-sm text-gray-500">
-          للخصم من المخزون، استخدم قيمة سالبة
-        </p>
+        {watch('direction') === 'OUT' && selectedProduct && (
+          <p className={`mt-1 text-sm ${selectedProduct.stockQuantity - (Number(watch('quantity')) || 0) < 0 ? 'text-red-600' : 'text-gray-500'}`}>
+            المخزون بعد الخصم: {selectedProduct.stockQuantity - (Number(watch('quantity')) || 0)}
+            {selectedProduct.stockQuantity - (Number(watch('quantity')) || 0) < 0 && ' — الكمية أكبر من المتاح'}
+          </p>
+        )}
+      </div>
+
+      {/* Reason */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          السبب (اختياري)
+        </label>
+        <Input
+          {...register('reason')}
+          placeholder="مثال: جرد، تالف، هدايا"
+          disabled={loading}
+        />
       </div>
 
       {/* Reference */}

@@ -19,6 +19,9 @@ import { usePrinterConfigStore } from "../stores/printerConfigStore";
 import { companyService } from "../services/companyService";
 import { printReceipt } from "../services/printService";
 import { PrintReceiptPreview } from "../components/printer/PrintReceiptPreview";
+import { PurchaseBarcodeModal, type PurchaseLabelItem } from "../components/modals/PurchaseBarcodeModal";
+import { productService } from "../services/productService";
+import { purchaseService } from "../services/purchaseService";
 
 interface PurchaseItem {
   productId: string;
@@ -54,6 +57,9 @@ const PurchasesCreate: React.FC = () => {
   // Print modal state
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [printablePurchase, setPrintablePurchase] = useState<any>(null);
+  // Barcode labels offered right after saving, before the receipt
+  const [labelItems, setLabelItems] = useState<PurchaseLabelItem[] | null>(null);
+  const [afterLabels, setAfterLabels] = useState<"receipt" | "list">("list");
 
   // Multi-step wizard state
   const [currentStep, setCurrentStep] = useState(1);
@@ -124,7 +130,10 @@ const PurchasesCreate: React.FC = () => {
   // Calculate totals
   const subtotal = items.reduce((sum, item) => sum + (Number(item.totalPrice) || 0), 0);
   const taxAmount = includeTax ? subtotal * ((Number(taxRate) || 0) / 100) : 0;
-  const totalAmount = subtotal; // Backend expects total without tax
+  // What the supplier is owed: the tax is part of it
+  const totalAmount = Math.round((subtotal + taxAmount) * 100) / 100;
+  const paidValue = Number(paidAmount) || 0;
+  const paidTooMuch = paidValue > totalAmount + 0.01;
 
   // Handlers (moved before barcode scanning handler)
   const handleBack = useCallback(() => {
@@ -152,11 +161,20 @@ const PurchasesCreate: React.FC = () => {
   const handleBarcodeScan = useCallback(async (barcode: string) => {
     setLastScannedBarcode(barcode);
     
-    // Find product by barcode
+    // Find product by barcode: the loaded list first, then the server
+    // (the list only holds products matching the current search/category)
     const products = (productsData as any)?.data?.list || [];
-    const product = products.find((p: any) => 
+    let product = products.find((p: any) =>
       p.barcode === barcode || p.sku === barcode
     );
+    if (!product && company?.companyId) {
+      try {
+        const res = await productService.findByBarcode(barcode, company.companyId);
+        if (res?.data?.success) product = res.data.data;
+      } catch {
+        // not found
+      }
+    }
 
     if (product) {
       // Check if product is already in purchase
@@ -190,7 +208,7 @@ const PurchasesCreate: React.FC = () => {
       toast.error(`المنتج غير موجود: ${barcode}`);
       setBarcodeInput(""); // Clear input
     }
-  }, [items, productsData, handleUpdateItemQuantity]);
+  }, [items, productsData, handleUpdateItemQuantity, company]);
 
   // Handle manual barcode input
   const handleBarcodeSubmit = useCallback(async (e: React.FormEvent) => {
@@ -289,18 +307,25 @@ const PurchasesCreate: React.FC = () => {
       toast.error('يرجى ملء جميع البيانات المطلوبة');
       return;
     }
+    if (paidTooMuch) {
+      toast.error('المبلغ المدفوع أكبر من إجمالي الفاتورة');
+      return;
+    }
 
     // Create FormData for file upload
     const formData = new FormData();
     formData.append('companyId', String(company?.companyId || 0));
     formData.append('supplierId', supplierId);
     formData.append('invoiceNumber', invoiceNumber);
-    formData.append('purchaseDate', purchaseDate.toISOString().split('T')[0]);
+    // The local calendar day; toISOString() would give yesterday after midnight in Cairo
+    const day = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    formData.append('purchaseDate', day(purchaseDate));
     if (dueDate) {
-      formData.append('dueDate', dueDate.toISOString().split('T')[0]);
+      formData.append('dueDate', day(dueDate));
     }
     formData.append('totalAmount', String(totalAmount));
-    formData.append('paidAmount', String(Number(paidAmount) || 0));
+    formData.append('paidAmount', String(paidValue));
     formData.append('paymentMethod', paymentMethod);
     if (includeTax) {
       formData.append('taxRate', String(Number(taxRate) || 0));
@@ -341,6 +366,10 @@ const PurchasesCreate: React.FC = () => {
       // Prepare purchase with items for printing
       const purchaseWithItems = {
         ...purchaseData,
+        subtotal,
+        tax: taxAmount,
+        total: totalAmount,
+        paid: paidValue,
         items: items.map(item => ({
           ...item,
           productName: item.productName,
@@ -397,15 +426,18 @@ const PurchasesCreate: React.FC = () => {
             total: purchaseWithItems.total,
 
             // Payment
-            paid: purchaseWithItems.paid || purchaseWithItems.total,
+            paid: purchaseWithItems.paid,
             change: 0,
-            paymentMethod: purchaseWithItems.paymentMethod === 'cash' ? 'نقداً' :
-                          purchaseWithItems.paymentMethod === 'card' ? 'بطاقة' :
-                          purchaseWithItems.paymentMethod === 'bank_transfer' ? 'تحويل بنكي' :
-                          purchaseWithItems.paymentMethod || 'نقداً',
+            paymentMethod: paidValue <= 0 ? 'آجل' :
+                          paymentMethod === 'CASH' ? 'نقداً' :
+                          paymentMethod === 'CARD' ? 'بطاقة' :
+                          paymentMethod === 'MOBILE_WALLET' ? 'محفظة إلكترونية' :
+                          paymentMethod === 'BANK_TRANSFER' ? 'تحويل بنكي' : paymentMethod,
 
             // SELLX-SPECIFIC - PURCHASE
             isPurchase: true,  // ⚠️ IMPORTANT: Shows "فاتورة مشتريات"
+            supplierName: purchaseWithItems.supplier?.name,
+            remaining: Math.max(0, totalAmount - paidValue),
             additionalFee: purchaseWithItems.shippingCost || purchaseWithItems.additionalFee,
             additionalFeeLabel: purchaseWithItems.shippingCost || purchaseWithItems.additionalFee ? "رسوم الشحن" : undefined,
           });
@@ -414,22 +446,50 @@ const PurchasesCreate: React.FC = () => {
           console.error('Auto-print error:', printError);
           toast.error('فشلت الطباعة التلقائية');
         }
-        navigate('/purchases');
+        setAfterLabels("list");
       } else {
-        // Show print preview modal
+        // Receipt preview comes after the barcode labels
         setPrintablePurchase(purchaseWithItems);
-        setShowPrintModal(true);
+        setAfterLabels("receipt");
       }
-    } catch (error: any) {
-      const errorMessage = error?.response?.data?.msg || error?.message || 'حدث خطأ أثناء إنشاء عملية الشراء';
 
-      if (errorMessage.includes('Invoice number already exists')) {
-        toast.error('رقم الفاتورة موجود مسبقاً. يرجى استخدام رقم فاتورة مختلف أو الضغط على "توليد رقم"');
-      } else {
-        toast.error(errorMessage);
+      // Offer barcode labels for everything received, with the stock after the purchase
+      let labels: PurchaseLabelItem[] = items.map(item => ({
+        productId: item.productId,
+        name: item.productName,
+        sku: null,
+        purchasedQty: Number(item.quantity),
+        stock: Number(item.quantity),
+      }));
+      try {
+        const saved: any = await purchaseService.getById(purchaseData.id, company?.companyId || 0);
+        const full = saved?.data || saved;
+        if (full?.items?.length) {
+          labels = full.items.map((it: any) => ({
+            productId: it.productId,
+            name: it.product?.name || '',
+            sku: it.product?.sku,
+            purchasedQty: it.quantity,
+            stock: it.product?.stockQuantity ?? it.quantity,
+          }));
+        }
+      } catch {
+        // keep the local list; products without a barcode are skipped
       }
+      setLabelItems(labels);
+    } catch {
+      // The mutation hook already shows the server's message
     }
-  }, [supplierId, invoiceNumber, items, purchaseDate, dueDate, totalAmount, paidAmount, paymentMethod, includeTax, taxRate, taxAmount, reminderEnabled, reminderDate, notes, invoiceFile, company, createMutation, navigate, suppliersData]);
+  }, [supplierId, invoiceNumber, items, purchaseDate, dueDate, subtotal, totalAmount, paidValue, paidTooMuch, paymentMethod, includeTax, taxRate, taxAmount, reminderEnabled, reminderDate, notes, invoiceFile, company, createMutation, navigate, suppliersData, user]);
+
+  const handleLabelsClosed = () => {
+    setLabelItems(null);
+    if (afterLabels === "receipt") {
+      setShowPrintModal(true);
+    } else {
+      navigate('/purchases');
+    }
+  };
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -663,44 +723,6 @@ const PurchasesCreate: React.FC = () => {
                         placeholder="اختر تاريخ الاستحقاق"
                         minDate={new Date()}
                       />
-                    </div>
-                  </div>
-
-                  {/* Payment Information */}
-                  <div className="bg-gradient-to-br from-primary-50 to-success-50 rounded-xl p-6 border border-primary-100">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                      <DollarSign className="w-5 h-5 ml-2 text-success-600" />
-                      معلومات الدفع
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">
-                          المبلغ المدفوع
-                        </label>
-                        <Input
-                          type="number"
-                          placeholder="0.00"
-                          min="0"
-                          step="0.01"
-                          value={paidAmount}
-                          onChange={(e) => setPaidAmount(e.target.value)}
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">
-                          طريقة الدفع
-                        </label>
-                        <Select
-                          options={[
-                            { value: 'CASH', label: 'نقدي' },
-                            { value: 'MOBILE_WALLET', label: 'محفظة إلكترونية' },
-                            { value: 'BANK_TRANSFER', label: 'تحويل بنكي' },
-                          ]}
-                          value={paymentMethod}
-                          onChange={setPaymentMethod}
-                        />
-                      </div>
                     </div>
                   </div>
 
@@ -1139,13 +1161,13 @@ const PurchasesCreate: React.FC = () => {
                                 onChange={(e) => handleTogglePriceUpdate(item.productId, e.target.checked)}
                                 className="rounded border-gray-300 text-accent-600 focus:ring-accent-500"
                               />
-                              <span className="text-gray-700 font-medium">تحديث سعر المنتج تلقائياً</span>
+                              <span className="text-gray-700 font-medium">تحديث سعر البيع تلقائياً</span>
                             </label>
                             {item.updateProductPrice && (
                               <div className="text-xs text-gray-600 bg-white p-2 rounded">
                                 <div className="flex items-center gap-1">
                                   <span className="text-amber-600">⚡</span>
-                                  <span>سيتم تحديث سعر الشراء والبيع مع الحفاظ على هامش الربح</span>
+                                  <span>سيتم تحديث سعر البيع على سعر الشراء الجديد مع الحفاظ على هامش الربح</span>
                                 </div>
                                 <div className="mt-1 text-gray-500">
                                   • سيتم تقريب السعر حسب إعدادات الشركة (.50 افتراضياً)
@@ -1259,7 +1281,57 @@ const PurchasesCreate: React.FC = () => {
 
                   {/* Right: Financial Summary */}
                   <div className="lg:col-span-1">
-                    <div className="lg:sticky lg:top-6">
+                    <div className="lg:sticky lg:top-6 space-y-6">
+                  {/* Payment Information */}
+                  <div className="bg-gradient-to-br from-primary-50 to-success-50 rounded-xl p-6 border border-primary-100">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                      <DollarSign className="w-5 h-5 ml-2 text-success-600" />
+                      معلومات الدفع
+                    </h3>
+                    <div className="grid grid-cols-1 gap-4">
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">
+                          المبلغ المدفوع
+                        </label>
+                        <div className="flex gap-2">
+                          <Input
+                            type="number"
+                            placeholder="0.00"
+                            min="0"
+                            step="0.01"
+                            value={paidAmount}
+                            onChange={(e) => setPaidAmount(e.target.value)}
+                          />
+                          <Button type="button" variant="outline" onClick={() => setPaidAmount(String(totalAmount))}>
+                            المبلغ كامل
+                          </Button>
+                        </div>
+                        {paidTooMuch && (
+                          <p className="mt-1 text-sm text-danger-600">المبلغ المدفوع أكبر من إجمالي الفاتورة ({formatCurrency(totalAmount)})</p>
+                        )}
+                        {paidValue <= 0 && (
+                          <p className="mt-1 text-xs text-gray-500">بدون دفع: تُسجل الفاتورة آجلة على المورد</p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">
+                          طريقة الدفع
+                        </label>
+                        <Select
+                          options={[
+                            { value: 'CASH', label: 'نقدي (من درج الوردية)' },
+                            { value: 'CARD', label: 'بطاقة' },
+                            { value: 'MOBILE_WALLET', label: 'محفظة إلكترونية' },
+                            { value: 'BANK_TRANSFER', label: 'تحويل بنكي' },
+                          ]}
+                          value={paymentMethod}
+                          onChange={setPaymentMethod}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
                       <Card padding="lg" className="bg-gradient-to-br from-success-50 to-primary-50 border-success-200">
                         <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
                           <DollarSign className="w-5 h-5 ml-2 text-success-600" />
@@ -1278,17 +1350,17 @@ const PurchasesCreate: React.FC = () => {
                           )}
                           <div className="flex justify-between items-center p-3 bg-white rounded-lg">
                             <span className="text-sm text-gray-600">المبلغ المدفوع</span>
-                            <span className="text-lg font-semibold text-success-600">{formatCurrency(Number(paidAmount) || 0)}</span>
+                            <span className="text-lg font-semibold text-success-600">{formatCurrency(paidValue)}</span>
                           </div>
                           <div className="flex justify-between items-center p-3 bg-white rounded-lg">
                             <span className="text-sm text-gray-600">المبلغ المتبقي</span>
                             <span className="text-lg font-semibold text-danger-600">
-                              {formatCurrency((subtotal + taxAmount) - (Number(paidAmount) || 0))}
+                              {formatCurrency(Math.max(0, totalAmount - paidValue))}
                             </span>
                           </div>
                           <div className="flex justify-between items-center p-4 bg-gradient-to-r from-primary-600 to-success-600 rounded-lg text-white shadow-lg">
                             <span className="text-sm font-medium">المجموع الكلي</span>
-                            <span className="text-2xl font-bold">{formatCurrency(subtotal + taxAmount)}</span>
+                            <span className="text-2xl font-bold">{formatCurrency(totalAmount)}</span>
                           </div>
                         </div>
                       </Card>
@@ -1309,7 +1381,7 @@ const PurchasesCreate: React.FC = () => {
 
                   <Button
                     onClick={handleSubmit}
-                    disabled={createMutation.isPending}
+                    disabled={createMutation.isPending || paidTooMuch || labelItems !== null}
                     className="px-8 bg-gradient-to-r from-success-600 to-primary-600 hover:from-success-700 hover:to-primary-700 text-white shadow-lg text-lg font-semibold"
                   >
                     {createMutation.isPending ? (
@@ -1331,10 +1403,18 @@ const PurchasesCreate: React.FC = () => {
         </div>
       </div>
 
+      {/* Barcode labels for the received products */}
+      <PurchaseBarcodeModal
+        isOpen={labelItems !== null}
+        onClose={handleLabelsClosed}
+        items={labelItems || []}
+      />
+
       {/* Print Receipt Preview Modal */}
       {printablePurchase && (
         <PrintReceiptPreview
           sale={printablePurchase}
+          kind="purchase"
           companyId={company?.companyId || company?.id || 0}
           cashier={null}
           isOpen={showPrintModal}

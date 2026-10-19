@@ -1,8 +1,11 @@
 import React, { useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ShoppingCart, Package, Calendar, Download, Edit, Plus, Printer, FileText, ExternalLink, ZoomIn, ZoomOut } from 'lucide-react';
+import { ArrowLeft, ShoppingCart, Package, Calendar, Download, Edit, Plus, Printer, FileText, ExternalLink, ZoomIn, ZoomOut, Tag, RotateCcw, Trash2 } from 'lucide-react';
 import { Layout } from '../components/layout';
-import { Button, Card } from '../components/ui';
+import { Button, Card, ConfirmDialog } from '../components/ui';
+import { PurchaseBarcodeModal } from '../components/modals/PurchaseBarcodeModal';
+import { SupplierReturnModal } from '../components/modals/SupplierReturnModal';
+import { useDeletePurchase, useDeleteSupplierReturn } from '../hooks/api/usePurchases';
 import { useSessionAuthStore } from '../stores/sessionAuthStore';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { purchaseService } from '../services/purchaseService';
@@ -14,6 +17,13 @@ import toast from 'react-hot-toast';
 import { printReceipt } from '@/services/printService';
 // import type { Purchase } from '../types';
 
+const paymentMethodLabel = (method?: string | null) =>
+  method === 'CASH' ? 'نقداً' :
+  method === 'CARD' ? 'بطاقة' :
+  method === 'MOBILE_WALLET' ? 'محفظة إلكترونية' :
+  method === 'BANK_TRANSFER' ? 'تحويل بنكي' :
+  method ? method : 'آجل';
+
 const PurchasesDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -24,6 +34,12 @@ const PurchasesDetails: React.FC = () => {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [isPrinting, setIsPrinting] = useState(false);
+  const [showLabels, setShowLabels] = useState(false);
+  const [showReturn, setShowReturn] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [returnToDelete, setReturnToDelete] = useState<any>(null);
+  const deletePurchase = useDeletePurchase();
+  const deleteReturn = useDeleteSupplierReturn();
 
   // Fetch purchase data
   const { data: purchase, isLoading, error } = useQuery({
@@ -77,20 +93,20 @@ const PurchasesDetails: React.FC = () => {
           total: item.totalPrice || (item.quantity * (item.unitPrice || item.price || item.costPrice)),
         })),
 
-        subtotal: purchase.totalAmount || 0,
+        subtotal: purchase.subtotal ?? purchase.totalAmount - (purchase.taxAmount || 0),
         discount: purchase.discount || 0,
         tax: purchase.taxAmount || 0,
-        taxRate: fullCompany?.taxRate || 15,
-        total: (purchase.totalAmount || 0) + (purchase.taxAmount || 0),
+        taxRate: purchase.taxRate || 0,
+        total: purchase.totalAmount || 0,
 
         paid: purchase.paidAmount || 0,
         change: 0,
-        paymentMethod: purchase.paymentMethod === 'CASH' ? 'نقداً' :
-                       purchase.paymentMethod === 'CARD' ? 'بطاقة' :
-                       purchase.paymentMethod === 'BANK_TRANSFER' ? 'تحويل بنكي' : 'آخر',
+        paymentMethod: paymentMethodLabel(purchase.paymentMethod),
 
         // SELLX-SPECIFIC - Purchase receipt
         isPurchase: true,  // ⚠️ IMPORTANT: Shows "فاتورة مشتريات"
+        supplierName: purchase.supplier?.name,
+        remaining: Number(purchase.remainingAmount || 0),
         additionalFee: purchase.shippingCost || purchase.additionalFee,
         additionalFeeLabel: purchase.shippingCost || purchase.additionalFee ? "رسوم الشحن" : undefined,
       });
@@ -131,6 +147,7 @@ const PurchasesDetails: React.FC = () => {
     onSuccess: () => {
       toast.success('تم إضافة الدفعة بنجاح');
       queryClient.invalidateQueries({ queryKey: ['purchase', id, companyId] });
+      queryClient.invalidateQueries({ queryKey: ['purchases'] });
       setShowPaymentModal(false);
     },
     onError: (error: any) => {
@@ -141,6 +158,23 @@ const PurchasesDetails: React.FC = () => {
 
   const handleCreatePayment = async (data: CreatePaymentRequest) => {
     await createPaymentMutation.mutateAsync(data);
+  };
+
+  const handleDelete = async () => {
+    try {
+      await deletePurchase.mutateAsync({ id: parseInt(id!), companyId: companyId! });
+      navigate('/purchases');
+    } catch {
+      setConfirmDelete(false);
+    }
+  };
+
+  const handleDeleteReturn = async () => {
+    try {
+      await deleteReturn.mutateAsync({ id: returnToDelete.id, companyId: companyId! });
+    } finally {
+      setReturnToDelete(null);
+    }
   };
 
   if (isLoading) {
@@ -223,6 +257,18 @@ const PurchasesDetails: React.FC = () => {
   const status = paymentStatusMap[purchase.paymentStatus as keyof typeof paymentStatusMap] || 
                 { text: purchase.paymentStatus, color: "text-gray-600 bg-gray-100" };
 
+  // The server includes the tax in totalAmount and the return credit in remainingAmount
+  const remaining: number = purchase.remainingAmount ?? (purchase.totalAmount || 0) - (purchase.paidAmount || 0);
+  const subtotal: number = purchase.subtotal ?? (purchase.totalAmount || 0) - (purchase.taxAmount || 0);
+  const supplierReturns: any[] = purchase.supplierReturns || [];
+  const labelItems = (purchase.items || []).map((item: any) => ({
+    productId: item.productId,
+    name: item.product?.name || '',
+    sku: item.product?.sku,
+    purchasedQty: item.quantity,
+    stock: item.product?.stockQuantity ?? item.quantity,
+  }));
+
   return (
     <Layout>
       <div className="w-full space-y-6">
@@ -266,11 +312,38 @@ const PurchasesDetails: React.FC = () => {
               تحميل PDF
             </Button>
             <Button
+              onClick={() => setShowLabels(true)}
+              variant="outline"
+              size="sm"
+              className="text-purple-600 border-purple-200 hover:bg-purple-50"
+            >
+              <Tag className="w-4 h-4 ml-1" />
+              طباعة باركود
+            </Button>
+            <Button
+              onClick={() => setShowReturn(true)}
+              variant="outline"
+              size="sm"
+              className="text-amber-600 border-amber-200 hover:bg-amber-50"
+            >
+              <RotateCcw className="w-4 h-4 ml-1" />
+              مرتجع للمورد
+            </Button>
+            <Button
               onClick={handleEdit}
               size="sm"
             >
               <Edit className="w-4 h-4 ml-1" />
               تعديل
+            </Button>
+            <Button
+              onClick={() => setConfirmDelete(true)}
+              variant="outline"
+              size="sm"
+              className="text-red-600 border-red-200 hover:bg-red-50"
+            >
+              <Trash2 className="w-4 h-4 ml-1" />
+              حذف
             </Button>
           </div>
         </div>
@@ -531,29 +604,99 @@ const PurchasesDetails: React.FC = () => {
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold text-gray-900">ملخص المدفوعات</h3>
                 <div className="space-y-4">
+                  <div className="flex items-center justify-between px-3 text-sm text-gray-600">
+                    <span>قيمة المنتجات</span>
+                    <span>{formatCurrency(subtotal)}</span>
+                  </div>
+                  {(purchase.taxAmount || 0) > 0 && (
+                    <div className="flex items-center justify-between px-3 text-sm text-gray-600">
+                      <span>الضريبة {purchase.taxRate ? `(${purchase.taxRate}%)` : ''}</span>
+                      <span>{formatCurrency(purchase.taxAmount)}</span>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div className="text-sm font-medium text-gray-700">المبلغ الإجمالي</div>
+                    <div className="text-sm font-medium text-gray-700">إجمالي الفاتورة</div>
                     <div className="text-xl font-bold text-gray-900">
-                      {formatCurrency((purchase.totalAmount || 0) + (purchase.taxAmount || 0))}
+                      {formatCurrency(purchase.totalAmount || 0)}
                     </div>
                   </div>
                   <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
-                    <div className="text-sm font-medium text-gray-700">المبلغ المدفوع</div>
+                    <div className="text-sm font-medium text-gray-700">
+                      المبلغ المدفوع
+                      {purchase.paymentMethod && (
+                        <span className="block text-xs text-gray-500">{paymentMethodLabel(purchase.paymentMethod)}</span>
+                      )}
+                    </div>
                     <div className="text-xl font-bold text-green-600">
                       {formatCurrency(purchase.paidAmount || 0)}
                     </div>
                   </div>
+                  {(purchase.returnCredit || 0) !== 0 && (
+                    <div className="flex items-center justify-between p-3 bg-amber-50 rounded-lg">
+                      <div className="text-sm font-medium text-gray-700">مخصوم بمرتجعات للمورد</div>
+                      <div className="text-xl font-bold text-amber-600">
+                        {formatCurrency(purchase.returnCredit)}
+                      </div>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
-                    <div className="text-sm font-medium text-gray-700">المبلغ المتبقي</div>
-                    <div className={`text-xl font-bold ${
-                      (purchase.totalAmount || 0) + (purchase.taxAmount || 0) - (purchase.paidAmount || 0) > 0 ? 'text-red-600' : 'text-green-600'
-                    }`}>
-                      {formatCurrency((purchase.totalAmount || 0) + (purchase.taxAmount || 0) - (purchase.paidAmount || 0))}
+                    <div className="text-sm font-medium text-gray-700">المتبقي للمورد</div>
+                    <div className={`text-xl font-bold ${remaining > 0.009 ? 'text-red-600' : 'text-green-600'}`}>
+                      {formatCurrency(Math.max(0, remaining))}
                     </div>
                   </div>
                 </div>
               </div>
             </Card>
+
+            {/* Returns to supplier */}
+            {supplierReturns.length > 0 && (
+              <Card padding="lg">
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+                    <RotateCcw className="w-5 h-5 ml-2 text-amber-600" />
+                    مرتجعات للمورد
+                  </h3>
+                  {supplierReturns.map((ret: any) => (
+                    <div key={ret.id} className="border rounded-lg p-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="font-mono text-sm font-semibold">{ret.returnNumber}</div>
+                          <div className="text-xs text-gray-500">
+                            {formatTableDate(ret.returnDate)} · {ret.user?.fullname}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => setReturnToDelete(ret)}
+                          className="text-red-500 hover:text-red-700"
+                          title="حذف المرتجع"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <ul className="text-sm text-gray-700">
+                        {ret.items.map((it: any) => (
+                          <li key={it.id}>
+                            {it.product?.name} × {it.quantity}
+                          </li>
+                        ))}
+                      </ul>
+                      <div className="flex justify-between text-sm">
+                        <span>القيمة</span>
+                        <span className="font-semibold">{formatCurrency(ret.totalAmount)}</span>
+                      </div>
+                      {Number(ret.refundAmount) > 0 && (
+                        <div className="flex justify-between text-sm">
+                          <span>رده المورد ({paymentMethodLabel(ret.refundMethod)})</span>
+                          <span>{formatCurrency(ret.refundAmount)}</span>
+                        </div>
+                      )}
+                      {ret.reason && <div className="text-xs text-gray-500">السبب: {ret.reason}</div>}
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
 
             {/* Payment Management */}
             <Card padding="lg">
@@ -565,7 +708,7 @@ const PurchasesDetails: React.FC = () => {
                     </div>
                     <h3 className="text-lg font-semibold text-gray-900">إدارة المدفوعات</h3>
                   </div>
-                  {(purchase.totalAmount || 0) + (purchase.taxAmount || 0) - (purchase.paidAmount || 0) > 0 && (
+                  {remaining > 0.009 && (
                     <Button
                       onClick={() => {
                         setShowPaymentModal(true);
@@ -646,8 +789,39 @@ const PurchasesDetails: React.FC = () => {
         onSubmit={handleCreatePayment}
         purchaseId={parseInt(id!)}
         companyId={companyId!}
-        remainingAmount={(purchase?.totalAmount || 0) + (purchase?.taxAmount || 0) - (purchase?.paidAmount || 0)}
+        remainingAmount={Math.max(0, remaining)}
         isLoading={createPaymentMutation.isPending}
+      />
+
+      <PurchaseBarcodeModal isOpen={showLabels} onClose={() => setShowLabels(false)} items={labelItems} />
+
+      <SupplierReturnModal
+        isOpen={showReturn}
+        onClose={() => setShowReturn(false)}
+        companyId={companyId!}
+        purchase={purchase}
+      />
+
+      <ConfirmDialog
+        isOpen={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={handleDelete}
+        title="حذف فاتورة الشراء"
+        message="ستخرج كميات هذه الفاتورة من المخزون وتُلغى الدفعة المسجلة معها. لا يمكن الحذف إذا تم بيع البضاعة أو عليها مرتجعات أو دفعات لاحقة."
+        confirmText="حذف"
+        type="danger"
+        isLoading={deletePurchase.isPending}
+      />
+
+      <ConfirmDialog
+        isOpen={!!returnToDelete}
+        onClose={() => setReturnToDelete(null)}
+        onConfirm={handleDeleteReturn}
+        title="حذف المرتجع"
+        message={`ستعود كميات المرتجع ${returnToDelete?.returnNumber || ''} إلى المخزون ويُلغى الخصم من المستحق للمورد.`}
+        confirmText="حذف"
+        type="danger"
+        isLoading={deleteReturn.isPending}
       />
     </Layout>
   );

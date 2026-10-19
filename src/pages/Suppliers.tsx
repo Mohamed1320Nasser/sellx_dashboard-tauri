@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { Plus, Edit, Trash2, Truck, Phone, Mail, Calendar, ShoppingCart, Building } from "lucide-react";
+import { Plus, Edit, Trash2, Truck, Phone, Mail, Calendar, ShoppingCart, Building, FileText } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { Layout } from "../components/layout";
 import { Button, Card, Modal, Input, ConfirmDialog, DataTable, Badge } from "../components/ui";
 import type { Column } from "../components/ui/DataTable";
@@ -108,6 +109,7 @@ const SupplierForm: React.FC<{
 };
 
 const Suppliers: React.FC = () => {
+  const navigate = useNavigate();
   const { company } = useSessionAuthStore();
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -275,6 +277,12 @@ const Suppliers: React.FC = () => {
           searchPlaceholder="البحث في الموردين (الاسم، البريد الإلكتروني، رقم الهاتف...)"
           onSearch={handleSearch}
           actions={[
+            {
+              icon: FileText,
+              label: "كشف الحساب",
+              onClick: (supplier) => navigate(`/suppliers/${supplier.id}/statement`),
+              variant: "primary",
+            },
             {
               icon: Edit,
               label: "تعديل المورد",

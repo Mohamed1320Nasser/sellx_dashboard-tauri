@@ -34,6 +34,8 @@ import SalesCreate from './pages/SalesCreate';
 import SalesDetails from './pages/SalesDetails';
 import Purchases from './pages/Purchases';
 import PurchasesCreate from './pages/PurchasesCreate';
+import PurchaseEdit from './pages/PurchaseEdit';
+import SupplierStatement from './pages/SupplierStatement';
 import PurchasesDetails from './pages/PurchasesDetails';
 import Payments from './pages/Payments';
 import PaymentCreate from './pages/PaymentCreate';
@@ -291,13 +293,14 @@ const App: React.FC = () => {
                                         <Route path="/suppliers" element={<Suppliers />} />
                                         <Route path="/clients" element={<Clients />} />
                                         <Route path="/clients/:id/statement" element={<CustomerStatement />} />
+                                        <Route path="/suppliers/:id/statement" element={<SupplierStatement />} />
                                         <Route path="/sales" element={<Sales />} />
                                         <Route path="/sales/create" element={<SalesCreate />} />
                                         <Route path="/sales/:id" element={<SalesDetails />} />
                                         <Route path="/purchases" element={<Purchases />} />
                                         <Route path="/purchases/create" element={<PurchasesCreate />} />
                                         <Route path="/purchases/:id" element={<PurchasesDetails />} />
-                                        <Route path="/purchases/:id/edit" element={<PurchasesCreate />} />
+                                        <Route path="/purchases/:id/edit" element={<PurchaseEdit />} />
                                         <Route path="/payments" element={<Payments />} />
                                         <Route path="/payments/create" element={<PaymentCreate />} />
                                         <Route path="/payments/:id" element={<PaymentDetails />} />
