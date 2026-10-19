@@ -21,16 +21,24 @@ export const usePurchases = (params: {
   });
 };
 
+/** Everything a purchase, its payments or its returns can change */
+const invalidatePurchaseData = (queryClient: ReturnType<typeof useQueryClient>) => {
+  queryClient.invalidateQueries({ queryKey: ["purchases"] });
+  queryClient.invalidateQueries({ queryKey: ["purchase"] });
+  queryClient.invalidateQueries({ queryKey: ["products"] });
+  queryClient.invalidateQueries({ queryKey: ["payments"] });
+  queryClient.invalidateQueries({ queryKey: ["supplier-statement"] });
+  queryClient.invalidateQueries({ queryKey: ["suppliers"] });
+  queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] });
+};
+
 export const useCreatePurchase = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: purchaseService.create,
     onSuccess: () => {
-      // Invalidate ALL purchases queries to ensure refresh
-      queryClient.invalidateQueries({ queryKey: ["purchases"] });
-      queryClient.invalidateQueries({ queryKey: ["products"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] });
+      invalidatePurchaseData(queryClient);
       toast.success("تم إنشاء عملية الشراء بنجاح");
     },
     onError: (error) => {
@@ -40,15 +48,6 @@ export const useCreatePurchase = () => {
   });
 };
 
-/** Everything a purchase, its payments or its returns can change */
-const invalidatePurchaseData = (queryClient: ReturnType<typeof useQueryClient>) => {
-  queryClient.invalidateQueries({ queryKey: ["purchases"] });
-  queryClient.invalidateQueries({ queryKey: ["purchase"] });
-  queryClient.invalidateQueries({ queryKey: ["products"] });
-  queryClient.invalidateQueries({ queryKey: ["payments"] });
-  queryClient.invalidateQueries({ queryKey: ["supplier-statement"] });
-  queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] });
-};
 
 export const useEditPurchase = () => {
   const queryClient = useQueryClient();

@@ -185,7 +185,14 @@ const Clients: React.FC = () => {
           <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-600 rounded-full flex items-center justify-center text-white font-semibold shadow-lg shadow-primary-500/30">
             {client.name[0].toUpperCase()}
           </div>
-          <span className="font-medium text-gray-900">{client.name}</span>
+          <button
+            type="button"
+            onClick={() => navigate(`/clients/${client.id}/statement`)}
+            title="كشف الحساب"
+            className="font-medium text-primary-700 hover:underline text-right"
+          >
+            {client.name}
+          </button>
         </div>
       ),
     },

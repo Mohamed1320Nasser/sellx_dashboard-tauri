@@ -143,7 +143,14 @@ const Suppliers: React.FC = () => {
           <div className="w-12 h-12 bg-gradient-to-br from-warning-500 to-warning-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-warning-500/30">
             <Building className="w-6 h-6 text-white" />
           </div>
-          <span className="font-medium text-gray-900">{supplier.name}</span>
+          <button
+            type="button"
+            onClick={() => navigate(`/suppliers/${supplier.id}/statement`)}
+            title="كشف الحساب"
+            className="font-medium text-primary-700 hover:underline text-right"
+          >
+            {supplier.name}
+          </button>
         </div>
       ),
     },

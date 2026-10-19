@@ -33,6 +33,12 @@ export const useSale = (id: number, companyId: number) => {
   });
 };
 
+/** Lists a sale can change besides the sales themselves: the customer's count and statement */
+const invalidateCustomerData = (queryClient: ReturnType<typeof useQueryClient>) => {
+  queryClient.invalidateQueries({ queryKey: ["clients"] });
+  queryClient.invalidateQueries({ queryKey: ["client-statement"] });
+};
+
 export const useCreateSale = () => {
   const queryClient = useQueryClient();
 
@@ -43,6 +49,7 @@ export const useCreateSale = () => {
       queryClient.invalidateQueries({ queryKey: ["sales"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] });
       queryClient.invalidateQueries({ queryKey: ["products"] });
+      invalidateCustomerData(queryClient);
       toast.success("تم إنشاء عملية البيع بنجاح");
     },
     onError: (error) => {
@@ -62,6 +69,7 @@ export const useUpdateSale = () => {
       // Invalidate ALL sales queries to ensure refresh
       queryClient.invalidateQueries({ queryKey: ["sales"] });
       queryClient.invalidateQueries({ queryKey: ["sale", variables.id] });
+      invalidateCustomerData(queryClient);
       toast.success("تم تحديث عملية البيع بنجاح");
     },
     onError: (error) => {
@@ -81,6 +89,8 @@ export const useDeleteSale = () => {
       // Invalidate ALL sales queries to ensure refresh
       queryClient.invalidateQueries({ queryKey: ["sales"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+      invalidateCustomerData(queryClient);
       toast.success("تم حذف عملية البيع بنجاح");
     },
     onError: (error) => {
