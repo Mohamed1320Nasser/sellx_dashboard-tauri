@@ -201,7 +201,7 @@ const Returns: React.FC = () => {
 
   const handleDelete = (id: string) => {
     if (window.confirm("هل أنت متأكد من حذف هذا الإرجاع؟")) {
-      deleteMutation.mutate(id);
+      deleteMutation.mutate({ id, companyId: company?.companyId || 0 });
     }
   };
 

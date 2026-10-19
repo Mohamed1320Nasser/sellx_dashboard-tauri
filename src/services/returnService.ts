@@ -30,8 +30,8 @@ export const returnService = {
   ): Promise<Return> => apiClient.put(`/return/single/${id}`, data),
 
   // Delete return
-  delete: (id: string): Promise<{ success: boolean; message: string }> =>
-    apiClient.delete(`/return/single/${id}`),
+  delete: (id: string, companyId: number): Promise<{ success: boolean; message: string }> =>
+    apiClient.delete(`/return/single/${id}`, { params: { companyId } }),
 
   // Get return statistics
   getStatistics: async (companyId: number): Promise<ReturnStatistics> => {
@@ -52,6 +52,6 @@ export const returnService = {
   },
 
   // Get returns by sale ID
-  getBySale: (saleId: number): Promise<Return[]> =>
-    apiClient.get(`/return/sale/${saleId}`),
+  getBySale: (saleId: number, companyId: number): Promise<Return[]> =>
+    apiClient.get(`/return/sale/${saleId}`, { params: { companyId } }),
 };

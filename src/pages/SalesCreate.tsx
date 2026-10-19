@@ -24,7 +24,7 @@ import { companyService } from "../services/companyService";
 const saleBaseSchema = z.object({
   clientType: z.enum(["cash", "existing", "new"]),
   clientId: z.number().optional(),
-  paymentMethod: z.enum(["CASH", "CARD", "CREDIT"]),
+  paymentMethod: z.enum(["CASH", "CARD", "MOBILE_WALLET", "CREDIT"]),
   additionalFee: z.coerce.number().min(0, "الرسوم الإضافية يجب أن تكون أكبر من أو تساوي صفر").default(0),
   additionalFeeLabel: z.string().optional(),
   notes: z.string().optional(),
@@ -199,16 +199,19 @@ const SalesCreate: React.FC = () => {
   // Calculate total
   const additionalFee = watchedAdditionalFee;
   const total = taxableAmount + taxAmount + additionalFee;
+  const roundedTotal = Math.round(total * 100) / 100;
+
+  // Cash tendered by the customer and the change to hand back
+  const [received, setReceived] = useState("");
+  const changeDue = received.trim() === "" ? null : Math.round((Number(received) - roundedTotal) * 100) / 100;
 
   // Barcode scanning handler - now uses the new barcode API
   const handleBarcodeScan = async (barcode: string) => {
-    console.log('🔍 Scanning barcode in sales:', barcode);
     setLastScannedBarcode(barcode);
 
     try {
       // Use authenticated productService
       const result = await productService.findByBarcode(barcode, companyId);
-      console.log('📦 API Response:', result);
 
       // apiClient returns response.data. Backend wraps as:
       //   { msg, status, data: { success: true, data: <product> } }   — on hit
@@ -217,7 +220,6 @@ const SalesCreate: React.FC = () => {
       const product = inner?.success ? inner.data : null;
 
       if (product) {
-        console.log('✅ Product found:', product.name);
         addItem(product);
         setBarcodeInput(""); // Clear input
         toast.success(`تمت الإضافة: ${product.name}`);
@@ -227,7 +229,6 @@ const SalesCreate: React.FC = () => {
           barcodeInputRef.current?.focus();
         }, 100);
       } else {
-        console.log('❌ Product not found for barcode:', barcode);
         toast.error(`المنتج غير موجود: ${barcode}`);
         setBarcodeInput(""); // Clear input
       }
@@ -437,6 +438,12 @@ const SalesCreate: React.FC = () => {
       return;
     }
 
+    // A credit sale is a debt: it must belong to a customer
+    if (data.paymentMethod === "CREDIT" && (data.clientType === "cash" || (data.clientType === "existing" && !data.clientId))) {
+      toast.error("البيع الآجل يتطلب اختيار عميل أو إضافة عميل جديد");
+      return;
+    }
+
     try {
       let clientId = data.clientId;
 
@@ -478,12 +485,13 @@ const SalesCreate: React.FC = () => {
         saleData.discountPercent = data.discountPercent;
       }
 
-      // Add paid amount for partial payments (if not full payment)
-      if (data.paidAmount !== undefined && data.paidAmount >= 0 && data.paidAmount < total) {
-        saleData.paidAmount = data.paidAmount;
+      // Credit (آجل): only the down payment typed in the field is paid (empty = nothing paid).
+      // Every other method is paid in full at the till.
+      if (data.paymentMethod === "CREDIT") {
+        const downPayment = Number.isFinite(data.paidAmount) ? Number(data.paidAmount) : 0;
+        saleData.paidAmount = Math.min(Math.max(downPayment, 0), roundedTotal);
       } else {
-        // Full payment by default
-        saleData.paidAmount = total;
+        saleData.paidAmount = roundedTotal;
       }
 
       // Only add additionalFee if it's greater than 0
@@ -495,8 +503,6 @@ const SalesCreate: React.FC = () => {
       const createdSale = await createSaleMutation.mutateAsync(saleData);
       // Note: Success toast is shown in useSales hook
 
-      console.log('📦 Created sale response:', createdSale);
-      console.log('📦 Sale data from API:', (createdSale as any)?.data);
 
       // Get printer config to check auto-print setting
       const printerConfig = usePrinterConfigStore.getState();
@@ -508,6 +514,7 @@ const SalesCreate: React.FC = () => {
       const saleWithItems = {
         ...saleData_fromAPI,  // Data returned from API
         ...saleData,          // Original sale data (fallback)
+        change: data.paymentMethod === "CASH" && changeDue !== null && changeDue > 0 ? changeDue : 0,
         items: items.map(item => ({
           ...item,
           productName: item.productName,
@@ -515,12 +522,10 @@ const SalesCreate: React.FC = () => {
         }))
       };
 
-      console.log('📦 Final sale with items for printing:', saleWithItems);
 
       // Auto-print if enabled
       if (printerConfig.autoPrintOnPayment) {
         try {
-          console.log('🖨️ Auto-printing receipt...');
           // Fetch full company profile with logo
           const companyId = company?.companyId || company?.id;
           let fullCompany = company?.company || { name: 'POS System' };
@@ -591,11 +596,10 @@ const SalesCreate: React.FC = () => {
         setShowPrintModal(true);
       }
     } catch (error: any) {
+      // The sale/client mutations already showed the server's message
       console.error("[SalesCreate] Error creating sale:", error);
-      const errorMessage = error?.message || "حدث خطأ أثناء إنشاء عملية البيع";
-      toast.error(errorMessage);
     }
-  }, [items, createSaleMutation, createClientMutation, companyId, navigate, total, discountAmount, watch]);
+  }, [items, createSaleMutation, createClientMutation, companyId, navigate, roundedTotal, changeDue, discountAmount, watch]);
 
   // Handle client creation
   const handleClientSubmit = async (data: ClientFormData) => {
@@ -1009,10 +1013,11 @@ const SalesCreate: React.FC = () => {
                 {/* Payment Method - Compact */}
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">الدفع</label>
-                  <div className="grid grid-cols-3 gap-1">
+                  <div className="grid grid-cols-4 gap-1">
                     {[
                       { value: "CASH", label: "نقدي" },
                       { value: "CARD", label: "بطاقة" },
+                      { value: "MOBILE_WALLET", label: "محفظة" },
                       { value: "CREDIT", label: "آجل" },
                     ].map((method) => (
                       <button
@@ -1078,12 +1083,36 @@ const SalesCreate: React.FC = () => {
                 )}
 
                 {watch("paymentMethod") === "CREDIT" && (
-                  <Input
-                    type="number"
-                    placeholder="المبلغ المدفوع مقدماً"
-                    {...register("paidAmount", { valueAsNumber: true })}
-                    className="text-sm"
-                  />
+                  <div className="space-y-1">
+                    <Input
+                      type="number"
+                      min={0}
+                      placeholder="المبلغ المدفوع مقدماً (اتركه فارغاً إن لم يُدفع شيء)"
+                      {...register("paidAmount", { valueAsNumber: true })}
+                      className="text-sm"
+                    />
+                    {clientType === "cash" && (
+                      <p className="text-xs text-amber-700">البيع الآجل يتطلب اختيار عميل</p>
+                    )}
+                  </div>
+                )}
+
+                {watch("paymentMethod") === "CASH" && (
+                  <div className="space-y-1">
+                    <Input
+                      type="number"
+                      min={0}
+                      placeholder="المبلغ المستلم من العميل"
+                      value={received}
+                      onChange={(e) => setReceived(e.target.value)}
+                      className="text-sm"
+                    />
+                    {changeDue !== null && (
+                      <p className={`text-sm font-semibold ${changeDue >= 0 ? "text-green-700" : "text-red-600"}`}>
+                        {changeDue >= 0 ? `الباقي للعميل: ${formatCurrency(changeDue)}` : `المبلغ غير كافٍ، ينقص ${formatCurrency(-changeDue)}`}
+                      </p>
+                    )}
+                  </div>
                 )}
 
                 {/* Additional Fees Section */}

@@ -50,11 +50,11 @@ export const useReturnStatistics = (companyId: number) => {
 };
 
 // Get returns by sale ID
-export const useReturnsBySale = (saleId: number) => {
+export const useReturnsBySale = (saleId: number, companyId: number) => {
   return useQuery({
     queryKey: returnKeys.bySale(saleId),
-    queryFn: () => returnService.getBySale(saleId),
-    enabled: !!saleId,
+    queryFn: () => returnService.getBySale(saleId, companyId),
+    enabled: !!saleId && !!companyId,
   });
 };
 
@@ -79,11 +79,11 @@ export const useCreateReturn = () => {
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["financialReports"] });
 
-      toast.success("Return created successfully");
+      toast.success("تم إنشاء المرتجع بنجاح");
     },
     onError: (error: any) => {
       const message =
-        error?.response?.data?.message || "Failed to create return";
+        error?.response?.data?.msg || "تعذر إنشاء المرتجع";
       toast.error(message);
     },
   });
@@ -120,11 +120,11 @@ export const useUpdateReturnStatus = () => {
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["financialReports"] });
 
-      toast.success("Return status updated successfully");
+      toast.success("تم تحديث حالة المرتجع");
     },
     onError: (error: any) => {
       const message =
-        error?.response?.data?.message || "Failed to update return status";
+        error?.response?.data?.msg || "تعذر تحديث حالة المرتجع";
       toast.error(message);
     },
   });
@@ -135,8 +135,8 @@ export const useDeleteReturn = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: string) => returnService.delete(id),
-    onSuccess: (data, id) => {
+    mutationFn: ({ id, companyId }: { id: string; companyId: number }) => returnService.delete(id, companyId),
+    onSuccess: (data, { id }) => {
       // Invalidate and refetch returns data
       queryClient.invalidateQueries({ queryKey: returnKeys.lists() });
       queryClient.invalidateQueries({ queryKey: returnKeys.detail(id) });
@@ -146,11 +146,11 @@ export const useDeleteReturn = () => {
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["financialReports"] });
 
-      toast.success("Return deleted successfully");
+      toast.success("تم حذف المرتجع");
     },
     onError: (error: any) => {
       const message =
-        error?.response?.data?.message || "Failed to delete return";
+        error?.response?.data?.msg || "تعذر حذف المرتجع";
       toast.error(message);
     },
   });

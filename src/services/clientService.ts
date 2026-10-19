@@ -13,7 +13,7 @@ interface CreateClientRequest {
 
 export interface ClientStatementTransaction {
   date: string;
-  type: "OPENING" | "SALE" | "PAYMENT" | "RETURN";
+  type: "OPENING" | "SALE" | "PAYMENT" | "RETURN" | "REFUND";
   reference: string;
   debit: number;
   credit: number;
@@ -35,7 +35,9 @@ export interface ClientStatementResponse {
     totalSales: number;
     totalPayments: number;
     totalReturns: number;
+    totalRefunds?: number;
     outstandingBalance: number;
+    currentBalance?: number;
     creditLimit: number | null;
     remainingCredit: number | null;
   };

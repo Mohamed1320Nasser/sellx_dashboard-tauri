@@ -35,10 +35,10 @@ const ROLE_PERMISSIONS: Record<string, UserPermissions> = {
     canEditSuppliers: false,
     canDeleteSuppliers: false,
 
-    // Sales Operations
+    // Sales Operations (correcting an issued invoice is for managers)
     canViewSales: true,
     canCreateSales: true,
-    canEditSales: true,
+    canEditSales: false,
     canDeleteSales: false,
     canViewClients: true,
     canCreateClients: true,

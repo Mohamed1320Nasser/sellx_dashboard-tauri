@@ -12,6 +12,9 @@ import toast from 'react-hot-toast';
 import { companyService } from '../services/companyService';
 import { PrintReceiptPreview } from '../components/printer/PrintReceiptPreview';
 import { generateSaleInvoicePdf } from '../components/invoice/generateSaleInvoicePdf';
+import { PermissionGuard } from '../components/common/PermissionGuard';
+import { useClients } from '../hooks/api/useClients';
+import { useUpdateSale } from '../hooks/api/useSales';
 
 const SalesDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -19,8 +22,22 @@ const SalesDetails: React.FC = () => {
   const { company, user } = useSessionAuthStore();
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
+  const [editingClient, setEditingClient] = useState(false);
+  const [newClientId, setNewClientId] = useState('');
 
   const companyId = company?.companyId || company?.company?.id;
+  const updateSaleMutation = useUpdateSale();
+  const { data: clientsData } = useClients({ companyId: companyId || 0, page: 1, limit: 100 });
+  const clients: any[] = (clientsData as any)?.data?.list || [];
+
+  // Manager fixes a wrong customer; the invoice's debt and returns move with it
+  const handleChangeClient = () => {
+    if (!sale) return;
+    updateSaleMutation.mutate(
+      { id: sale.id, data: { companyId, clientId: newClientId ? Number(newClientId) : null } },
+      { onSuccess: () => setEditingClient(false) }
+    );
+  };
 
   // Fetch sale data
   const { data: sale, isLoading, error } = useQuery({
@@ -150,12 +167,16 @@ const SalesDetails: React.FC = () => {
   const paymentMethodText = {
     CASH: 'نقدي',
     CARD: 'بطاقة ائتمان',
+    MOBILE_WALLET: 'محفظة إلكترونية',
+    BANK_TRANSFER: 'تحويل بنكي',
     CREDIT: 'آجل'
   };
 
   const paymentMethodColor = {
     CASH: 'text-green-600 bg-green-50',
     CARD: 'text-blue-600 bg-blue-50',
+    MOBILE_WALLET: 'text-indigo-600 bg-indigo-50',
+    BANK_TRANSFER: 'text-cyan-600 bg-cyan-50',
     CREDIT: 'text-orange-600 bg-orange-50'
   };
 
@@ -247,11 +268,48 @@ const SalesDetails: React.FC = () => {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">العميل</label>
-                    <div className="bg-gray-50 rounded-lg p-3 border">
-                      <span className="text-gray-900">
-                        {sale.client?.name || 'عميل نقدي'}
-                      </span>
-                    </div>
+                    {editingClient ? (
+                      <div className="bg-gray-50 rounded-lg p-2 border space-y-2">
+                        <select
+                          className="w-full rounded-md border border-gray-300 p-2 text-sm"
+                          value={newClientId}
+                          onChange={(e) => setNewClientId(e.target.value)}
+                        >
+                          <option value="">عميل نقدي</option>
+                          {clients.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}{c.phone ? ` - ${c.phone}` : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <div className="flex gap-2">
+                          <Button size="sm" onClick={handleChangeClient} disabled={updateSaleMutation.isPending}>
+                            حفظ
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => setEditingClient(false)}>
+                            إلغاء
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-gray-50 rounded-lg p-3 border flex items-center justify-between">
+                        <span className="text-gray-900">
+                          {sale.client?.name || 'عميل نقدي'}
+                        </span>
+                        <PermissionGuard permission="canEditSales">
+                          <button
+                            type="button"
+                            className="text-xs text-blue-600 hover:underline"
+                            onClick={() => {
+                              setNewClientId(sale.client?.id ? String(sale.client.id) : '');
+                              setEditingClient(true);
+                            }}
+                          >
+                            تغيير العميل
+                          </button>
+                        </PermissionGuard>
+                      </div>
+                    )}
                   </div>
 
                   <div>
@@ -365,16 +423,22 @@ const SalesDetails: React.FC = () => {
                   </div>
 
                   {/* Paid Amount & Remaining */}
-                  {sale.paymentStatus !== 'PAID' && (
+                  {(sale.paymentStatus !== 'PAID' || (sale.returnCredit || 0) > 0) && (
                     <>
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600">المبلغ المدفوع</span>
                         <span className="font-medium text-green-600">{formatCurrency(sale.paidAmount || 0)}</span>
                       </div>
+                      {(sale.returnCredit || 0) > 0 && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">خصم المرتجعات</span>
+                          <span className="font-medium text-amber-600">{formatCurrency(sale.returnCredit)}</span>
+                        </div>
+                      )}
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600">المبلغ المتبقي</span>
                         <span className="font-medium text-red-600">
-                          {formatCurrency((sale.totalAmount || 0) - (sale.paidAmount || 0))}
+                          {formatCurrency(sale.remainingAmount ?? Math.max(0, (sale.totalAmount || 0) - (sale.paidAmount || 0)))}
                         </span>
                       </div>
                     </>

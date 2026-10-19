@@ -35,6 +35,7 @@ const typeConfig: Record<string, { label: string; variant: 'default' | 'primary'
   SALE: { label: 'فاتورة بيع', variant: 'primary' },
   PAYMENT: { label: 'دفعة', variant: 'success' },
   RETURN: { label: 'مرتجع', variant: 'warning' },
+  REFUND: { label: 'استرداد نقدي', variant: 'error' },
 };
 
 const CustomerStatement: React.FC = () => {
@@ -115,6 +116,7 @@ const CustomerStatement: React.FC = () => {
             { label: 'إجمالي المبيعات', value: formatCurrency(summary.totalSales) },
             { label: 'إجمالي المدفوعات', value: formatCurrency(summary.totalPayments) },
             { label: 'إجمالي المرتجعات', value: formatCurrency(summary.totalReturns) },
+            ...(summary.totalRefunds ? [{ label: 'مبالغ مستردة نقداً', value: formatCurrency(summary.totalRefunds) }] : []),
             ...(summary.creditLimit !== null
               ? [{ label: 'حد الائتمان', value: formatCurrency(summary.creditLimit) }]
               : []),

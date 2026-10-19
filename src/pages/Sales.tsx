@@ -267,15 +267,17 @@ const Sales: React.FC = () => {
     setCurrentPage(1);
   }, []);
 
-  // Calculate totals
+  // Totals for everything matching the filters (from the server, not only this page)
   const salesList = (salesData as any)?.data?.list || [];
+  const summary = (salesData as any)?.data?.summary;
   const totalSales = (salesData as any)?.data?.totalCount || 0;
-  const totalRevenue = salesList.reduce((sum: number, sale: any) => sum + (Number(sale.totalAmount) || 0), 0);
-  const totalProfit = salesList.reduce((sum: number, sale: any) => sum + (Number(sale.totalProfit) || 0), 0);
-  const totalAdditionalFees = salesList.reduce((sum: number, sale: any) => sum + (Number(sale.additionalFee) || 0), 0);
-  const paidSales = salesList.filter((sale: any) => sale.paymentStatus === 'PAID').length;
-  const partialSales = salesList.filter((sale: any) => sale.paymentStatus === 'PARTIAL').length;
-  const unpaidSales = salesList.filter((sale: any) => sale.paymentStatus === 'UNPAID').length;
+  const totalRevenue = summary?.totalAmount ?? 0;
+  const totalProfit = summary?.totalProfit ?? 0;
+  const totalAdditionalFees = summary?.additionalFee ?? 0;
+  const paidSales = summary?.paidCount ?? 0;
+  const partialSales = summary?.partialCount ?? 0;
+  const unpaidSales = summary?.unpaidCount ?? 0;
+  const outstanding = Math.max(0, (summary?.totalAmount ?? 0) - (summary?.paidAmount ?? 0));
 
   return (
     <Layout>
@@ -364,8 +366,11 @@ const Sales: React.FC = () => {
             <div className="flex items-center gap-3">
               <AlertCircle className="w-8 h-8 text-red-500" />
               <div>
-                <p className="text-xs text-gray-500">غير مدفوع</p>
-                <p className="text-lg font-bold text-red-600">{unpaidSales}</p>
+                <p className="text-xs text-gray-500">غير مدفوع / جزئي</p>
+                <p className="text-lg font-bold text-red-600">
+                  {unpaidSales} / {partialSales}
+                </p>
+                {outstanding > 0 && <p className="text-xs text-red-500">متبقي {formatCurrency(outstanding)}</p>}
               </div>
             </div>
           </Card>

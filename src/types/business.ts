@@ -1109,7 +1109,7 @@ export interface CreateReturnRequest {
   originalSaleId: number;
   clientId?: number;
   companyId: number;
-  userId: number;
+  userId?: number; // ignored by the server: the logged-in user is recorded
   items: CreateReturnItemRequest[];
   reason?: string;
   notes?: string;

@@ -11,6 +11,10 @@ import { formatCurrency, formatNumber } from "../utils/currencyUtils";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import toast from "react-hot-toast";
+import { useQuery } from "@tanstack/react-query";
+import { saleService } from "../services/saleService";
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
 const returnSchema = z.object({
   originalSaleId: z.number().min(1, "رقم البيع الأصلي مطلوب"),
@@ -34,7 +38,6 @@ const ReturnsCreate: React.FC = () => {
   const navigate = useNavigate();
   const { company, user } = useSessionAuthStore();
   const companyId = company?.companyId || company?.company?.id;
-  const userId = user?.id || 0;
 
   // Form state
   const [items, setItems] = useState<ReturnItem[]>([]);
@@ -47,6 +50,34 @@ const ReturnsCreate: React.FC = () => {
     page: 1,
     limit: 100,
   });
+
+  // Full invoice: what was already returned and what the client still owes on it
+  const { data: saleDetails } = useQuery({
+    queryKey: ["sale", selectedSale?.id, companyId],
+    queryFn: () => saleService.getById(String(selectedSale.id), companyId!),
+    enabled: !!selectedSale?.id && !!companyId,
+    select: (data: any) => data?.data || data,
+  });
+
+  // Price the customer actually paid per unit: line price with the invoice discount and tax spread over it
+  const priceFactor = useMemo(() => {
+    const sale = saleDetails || selectedSale;
+    const subtotal = Number(sale?.subtotal) || 0;
+    if (subtotal <= 0) return 1;
+    return (subtotal - (Number(sale?.discountAmount) || 0) + (Number(sale?.taxAmount) || 0)) / subtotal;
+  }, [saleDetails, selectedSale]);
+
+  const saleLines = (productId: any) =>
+    (selectedSale?.items || []).filter((item: any) => item.product.id === productId);
+  const soldQtyOf = (productId: any) => saleLines(productId).reduce((s: number, l: any) => s + l.quantity, 0);
+  const unitPriceOf = (productId: any) => {
+    const lines = saleLines(productId);
+    const qty = lines.reduce((s: number, l: any) => s + l.quantity, 0);
+    const value = lines.reduce((s: number, l: any) => s + l.quantity * Number(l.unitPrice), 0);
+    return qty ? round2((value / qty) * priceFactor) : 0;
+  };
+  const maxQtyOf = (productId: any) =>
+    Math.max(0, soldQtyOf(productId) - (saleDetails?.returnedQuantities?.[productId] || 0));
 
   // Mutations
   const createReturnMutation = useCreateReturn();
@@ -68,10 +99,12 @@ const ReturnsCreate: React.FC = () => {
     const existingItem = items.find(item => item.productId === product.id);
     let newItems;
     
-    // Find the original sale item to get the maximum allowed quantity
-    const originalSaleItem = selectedSale?.items?.find((item: any) => item.product.id === product.id);
-    const maxQuantity = originalSaleItem?.quantity || 0;
-    
+    const maxQuantity = maxQtyOf(product.id);
+    if (maxQuantity <= 0) {
+      toast.error("تم إرجاع كل الكمية المباعة من هذا المنتج");
+      return;
+    }
+
     if (existingItem) {
       // Check if we can increment the quantity
       if (existingItem.quantity >= maxQuantity) {
@@ -84,7 +117,7 @@ const ReturnsCreate: React.FC = () => {
           : item
       );
     } else {
-      const price = product.sellingPrice || originalSaleItem.unitPrice;
+      const price = unitPriceOf(product.id);
       newItems = [...items, {
         productId: product.id,
         productName: product.name,
@@ -95,18 +128,12 @@ const ReturnsCreate: React.FC = () => {
     }
     
     setItems(newItems);
-    // Auto-update refund amount
-    const newSubtotal = newItems.reduce((sum, item) => sum + item.total, 0);
-    setValue("refundAmount", newSubtotal);
   };
 
   // Remove item from return
   const removeItem = (productId: number) => {
     const newItems = items.filter(item => item.productId !== productId);
     setItems(newItems);
-    // Auto-update refund amount
-    const newSubtotal = newItems.reduce((sum, item) => sum + item.total, 0);
-    setValue("refundAmount", newSubtotal);
   };
 
   // Update item quantity
@@ -116,11 +143,8 @@ const ReturnsCreate: React.FC = () => {
       return;
     }
     
-    // Find the original sale item to get the maximum allowed quantity
-    const originalSaleItem = selectedSale?.items?.find((item: any) => item.product.id === productId);
-    const maxQuantity = originalSaleItem?.quantity || 0;
-    
-    // Limit quantity to the original sale quantity
+    // Limit quantity to what is still returnable on the invoice
+    const maxQuantity = maxQtyOf(productId);
     if (quantity > maxQuantity) {
       quantity = maxQuantity;
     }
@@ -132,9 +156,6 @@ const ReturnsCreate: React.FC = () => {
     );
     
     setItems(newItems);
-    // Auto-update refund amount
-    const newSubtotal = newItems.reduce((sum, item) => sum + item.total, 0);
-    setValue("refundAmount", newSubtotal);
   };
 
   // Check if product is selected
@@ -164,7 +185,6 @@ const ReturnsCreate: React.FC = () => {
       const returnData = {
         originalSaleId: data.originalSaleId,
         clientId: selectedSale.clientId,
-        userId: userId,
         reason: data.reason,
         notes: data.notes,
         refundAmount: data.refundAmount,
@@ -178,10 +198,9 @@ const ReturnsCreate: React.FC = () => {
       };
 
       await createReturnMutation.mutateAsync(returnData);
-      toast.success("تم إنشاء الإرجاع بنجاح");
       navigate('/returns');
     } catch {
-      toast.error("حدث خطأ أثناء إنشاء الإرجاع");
+      // the mutation already showed the server's message
     }
   };
 
@@ -199,22 +218,28 @@ const ReturnsCreate: React.FC = () => {
   const returnAllItems = () => {
     if (!selectedSale || !selectedSale.items) return;
     
-    const allItems = selectedSale.items.map((item: any) => {
-      const price = item.product.sellingPrice || item.unitPrice;
-      return {
-        productId: item.product.id,
-        productName: item.product.name,
-        quantity: item.quantity,
-        unitPrice: price,
-        total: price * item.quantity,
-        reason: "إرجاع كامل للفاتورة",
-      };
-    });
-    
+    const productIds = [...new Set(selectedSale.items.map((item: any) => item.product.id))];
+    const allItems = productIds
+      .map((productId: any) => {
+        const line = saleLines(productId)[0];
+        const quantity = maxQtyOf(productId);
+        const price = unitPriceOf(productId);
+        return {
+          productId,
+          productName: line.product.name,
+          quantity,
+          unitPrice: price,
+          total: round2(price * quantity),
+          reason: "إرجاع كامل للفاتورة",
+        };
+      })
+      .filter((item: any) => item.quantity > 0);
+
+    if (allItems.length === 0) {
+      toast.error("تم إرجاع كل أصناف هذه الفاتورة من قبل");
+      return;
+    }
     setItems(allItems);
-    // Calculate refund amount based on current selling prices
-    const refundTotal = allItems.reduce((sum, item) => sum + item.total, 0);
-    setValue("refundAmount", refundTotal);
   };
 
   // Clear all selected items
@@ -254,20 +279,21 @@ const ReturnsCreate: React.FC = () => {
   // Product options for display
   const productOptions = filteredProducts.map((item: any) => ({
     value: item.product.id,
-    label: `${item.product.name} - ${formatCurrency(item.product.sellingPrice || item.unitPrice)} (باع: ${formatNumber(item.quantity)})`,
+    label: `${item.product.name} - ${formatCurrency(unitPriceOf(item.product.id))} (باع: ${formatNumber(item.quantity)})`,
     product: item.product,
   }));
 
   // Calculate totals
-  const subtotal = items.reduce((sum, item) => sum + item.total, 0);
-  const refundAmount = watch("refundAmount") || subtotal;
+  const subtotal = round2(items.reduce((sum, item) => sum + item.total, 0));
+  // Cash can only be given back for the part the customer paid; the rest reduces his debt
+  const stillOwed = Number(saleDetails?.remainingAmount) || 0;
+  const maxRefund = round2(Math.max(0, subtotal - stillOwed));
+  const refundAmount = watch("refundAmount") ?? maxRefund;
 
-  // Auto-update refund amount when items change
+  // Suggest the full allowed refund whenever the items change
   useEffect(() => {
-    if (items.length > 0) {
-      setValue("refundAmount", subtotal);
-    }
-  }, [items, subtotal, setValue]);
+    setValue("refundAmount", maxRefund);
+  }, [maxRefund, setValue]);
 
   return (
     <Layout>
@@ -376,8 +402,13 @@ const ReturnsCreate: React.FC = () => {
                         onChange={(e) => setValue("refundAmount", parseFloat(e.target.value) || 0)}
                       />
                       <div className="text-xs text-gray-500 mt-1">
-                        المجموع المحسوب: {formatCurrency(subtotal)}
+                        قيمة المرتجع: {formatCurrency(subtotal)} — الحد الأقصى للاسترداد النقدي: {formatCurrency(maxRefund)}
                       </div>
+                      {stillOwed > 0 && subtotal > 0 && (
+                        <div className="text-xs text-amber-700 mt-1">
+                          على الفاتورة مبلغ متبقٍ {formatCurrency(stillOwed)}، يُخصم من قيمة المرتجع من مديونية العميل ولا يُرد نقداً
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -506,7 +537,7 @@ const ReturnsCreate: React.FC = () => {
                       const isSelected = isProductSelected(option.product.id);
                       const selectedQuantity = getSelectedQuantity(option.product.id);
                       const originalSaleItem = filteredProducts[index];
-                      const maxQuantity = originalSaleItem?.quantity || 0;
+                      const maxQuantity = maxQtyOf(option.product.id);
                       const canIncrement = selectedQuantity < maxQuantity;
                       
                       return (
@@ -529,10 +560,10 @@ const ReturnsCreate: React.FC = () => {
                               </p>
                               <div className="flex items-center justify-between">
                                 <span className="text-sm font-semibold text-green-600">
-                                  {formatCurrency(option.product.sellingPrice || originalSaleItem.unitPrice)}
+                                  {formatCurrency(unitPriceOf(option.product.id))}
                                 </span>
                                 <span className="text-xs text-gray-500">
-                                  باع: {formatNumber(originalSaleItem.quantity)}
+                                  باع: {formatNumber(soldQtyOf(option.product.id))} — متاح للإرجاع: {formatNumber(maxQuantity)}
                                 </span>
                               </div>
                               {isSelected && selectedQuantity >= maxQuantity && (
