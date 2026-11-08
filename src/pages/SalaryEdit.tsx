@@ -224,7 +224,7 @@ const SalaryEdit: React.FC = () => {
                 <div className="p-4 bg-gray-50 rounded-lg">
                   <p className="text-sm text-gray-600 mb-1">تاريخ الإنشاء</p>
                   <p className="font-semibold text-gray-900">
-                    {new Date(salaryData.createdAt).toLocaleDateString('ar-EG')}
+                    {new Date(salaryData.createdAt).toLocaleDateString('ar-EG-u-nu-latn')}
                   </p>
                 </div>
               </div>

@@ -83,7 +83,7 @@ export default function NoInternetPage({ onRetry, onOnline }: NoInternetPageProp
   // Format last checked time
   const formatLastChecked = () => {
     if (!lastChecked) return null;
-    return lastChecked.toLocaleTimeString('ar-EG');
+    return lastChecked.toLocaleTimeString('ar-EG-u-nu-latn');
   };
 
   return (

@@ -53,6 +53,7 @@ export interface SellxReceiptData {
   // Payment details
   paid?: number;
   change?: number;
+  received?: number; // cash handed over by the customer (sale receipts)
   paymentMethod?: string;
 
   // ── SELLX-SPECIFIC FIELDS ──
@@ -551,12 +552,12 @@ export async function getDefaultPrinter(): Promise<string | null> {
 export async function testPrint(): Promise<void> {
   await printReceipt({
     receiptNumber: 'TEST-001',
-    date: new Date().toLocaleDateString('ar-EG', {
+    date: new Date().toLocaleDateString('ar-EG-u-nu-latn', {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit'
     }),
-    time: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
+    time: new Date().toLocaleTimeString('ar-SA-u-nu-latn', { hour: '2-digit', minute: '2-digit' }),
     cashier: 'نظام الطباعة',
     companyName: 'اختبار الطابعة',
     companyAddress: 'المملكة العربية السعودية',
@@ -584,4 +585,92 @@ export async function testPrint(): Promise<void> {
     paymentMethod: 'نقداً',
     footerText: 'هذا إيصال تجريبي - اختبار الطابعة',
   });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// END-OF-SHIFT REPORT (Z-report)
+// ═══════════════════════════════════════════════════════════════════════
+
+export interface ShiftReportData {
+  companyName: string;
+  registerName: string;
+  cashier: string;
+  openedAt: string;
+  closedAt: string;
+  openingBalance: number;
+  salesByMethod: { label: string; count: number; total: number }[];
+  totalSales: number;
+  cashSales: number;
+  cashIn: number;
+  cashOut: number;
+  expectedCash: number;
+  actualCash?: number;
+  variance?: number;
+  notes?: string;
+}
+
+const escapeHtml = (value: string) =>
+  value.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]!));
+
+function shiftReportBody(d: ShiftReportData): string {
+  const money = (n: number) => (Math.round(n * 100) / 100).toFixed(2);
+  const row = (label: string, value: string, bold = false) =>
+    `<div style="display:flex;justify-content:space-between;${bold ? 'font-weight:700;' : ''}"><span>${escapeHtml(label)}</span><span dir="ltr">${value}</span></div>`;
+  const hr = '<hr style="border:none;border-top:1px dashed #000;margin:6px 0">';
+  return `
+<div style="font-family:inherit;font-size:12px;padding:8px">
+  <div style="text-align:center;font-weight:700;font-size:15px">${escapeHtml(d.companyName)}</div>
+  <div style="text-align:center;font-weight:700;margin:4px 0">تقرير إغلاق الوردية</div>
+  ${hr}
+  ${row('الصندوق', escapeHtml(d.registerName))}
+  ${row('الكاشير', escapeHtml(d.cashier))}
+  ${row('الفتح', escapeHtml(d.openedAt))}
+  ${row('الإغلاق', escapeHtml(d.closedAt))}
+  ${hr}
+  <div style="font-weight:700;margin-bottom:2px">المبيعات حسب طريقة الدفع</div>
+  ${d.salesByMethod.map(m => row(`${m.label} (${m.count})`, money(m.total))).join('')}
+  ${row('إجمالي المبيعات', money(d.totalSales), true)}
+  ${hr}
+  ${row('الرصيد الافتتاحي', money(d.openingBalance))}
+  ${row('نقدية المبيعات', '+' + money(d.cashSales))}
+  ${row('إيداعات', '+' + money(d.cashIn))}
+  ${row('مصروفات / سحب', '-' + money(d.cashOut))}
+  ${row('النقد المتوقع', money(d.expectedCash), true)}
+  ${d.actualCash !== undefined ? row('النقد الفعلي', money(d.actualCash), true) : ''}
+  ${d.variance !== undefined ? row('الفرق', (d.variance > 0 ? '+' : '') + money(d.variance), true) : ''}
+  ${d.notes ? `${hr}<div>${escapeHtml(d.notes)}</div>` : ''}
+  ${hr}
+  <div style="text-align:center;margin-top:8px">توقيع الكاشير: ____________</div>
+</div>`;
+}
+
+/** Print the end-of-shift report on the receipt printer, or with the browser dialog when none is set up. */
+export async function printShiftReport(data: ShiftReportData): Promise<void> {
+  const config = usePrinterConfigStore.getState();
+  const html = await wrapHtml(shiftReportBody(data), config.paperWidth || '80mm');
+  let printer = '';
+  try {
+    printer = getPrinterForType('receipt');
+  } catch {
+    printer = '';
+  }
+  if (printer) {
+    await sendToPrinter(printer, html);
+    return;
+  }
+  // No receipt printer configured (e.g. the web version): print through a hidden frame
+  const frame = document.createElement('iframe');
+  frame.style.position = 'fixed';
+  frame.style.width = '0';
+  frame.style.height = '0';
+  frame.style.border = '0';
+  document.body.appendChild(frame);
+  const doc = frame.contentWindow!.document;
+  doc.open();
+  doc.write(html);
+  doc.close();
+  await new Promise(resolve => setTimeout(resolve, 300));
+  frame.contentWindow!.focus();
+  frame.contentWindow!.print();
+  setTimeout(() => frame.remove(), 1000);
 }

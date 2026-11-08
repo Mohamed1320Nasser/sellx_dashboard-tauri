@@ -1,6 +1,6 @@
 import React, { useCallback, useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Receipt, DollarSign, Package, Download, CheckCircle, Clock, AlertCircle, Percent, TrendingUp, Printer } from 'lucide-react';
+import { ArrowLeft, Receipt, DollarSign, Package, Download, CheckCircle, Clock, AlertCircle, Percent, TrendingUp, Printer, CreditCard, History, RotateCcw } from 'lucide-react';
 import { Layout } from '../components/layout';
 import { Button, Card, Badge } from '../components/ui';
 import { useSessionAuthStore } from '../stores/sessionAuthStore';
@@ -214,6 +214,16 @@ const SalesDetails: React.FC = () => {
             </div>
           </div>
           <div className="flex items-center space-x-2 space-x-reverse">
+            {(sale.remainingAmount ?? 0) > 0.01 && (
+              <Button
+                onClick={() => navigate(`/payments/create?saleId=${sale.id}`)}
+                size="sm"
+                className="bg-green-600 hover:bg-green-700 text-white"
+              >
+                <CreditCard className="w-4 h-4 ml-1" />
+                تسجيل دفعة ({formatCurrency(sale.remainingAmount)})
+              </Button>
+            )}
             <Button
               onClick={handlePrintReceipt}
               variant="outline"
@@ -600,6 +610,83 @@ const SalesDetails: React.FC = () => {
               )}
             </div>
           </Card>
+
+          {/* Invoice history: how the paid / remaining amounts came about */}
+          {(() => {
+            type Row = { at: Date; label: string; ref?: string; amount: number; kind: 'sale' | 'pay' | 'return' | 'refund' | 'pending' };
+            const rows: Row[] = [
+              { at: new Date(sale.saleDate || sale.createdAt), label: 'إنشاء الفاتورة', amount: sale.totalAmount || 0, kind: 'sale' },
+            ];
+            if ((sale.checkoutPaid || 0) > 0) {
+              rows.push({ at: new Date(sale.saleDate || sale.createdAt), label: 'دفع عند البيع', amount: sale.checkoutPaid, kind: 'pay' });
+            }
+            for (const p of sale.payments || []) {
+              rows.push({ at: new Date(p.createdAt || p.paymentDate), label: 'دفعة', ref: p.notes || undefined, amount: p.amount, kind: 'pay' });
+            }
+            for (const r of sale.returns || []) {
+              const at = new Date(r.processedDate || r.returnDate);
+              if (r.status === 'COMPLETED') {
+                rows.push({ at, label: 'مرتجع', ref: r.returnNumber, amount: r.totalAmount, kind: 'return' });
+                if ((r.refundAmount || 0) > 0) rows.push({ at, label: 'استرداد نقدي', ref: r.returnNumber, amount: r.refundAmount, kind: 'refund' });
+              } else if (r.status === 'PENDING') {
+                rows.push({ at, label: 'مرتجع قيد الانتظار', ref: r.returnNumber, amount: r.totalAmount, kind: 'pending' });
+              }
+            }
+            rows.sort((a, b) => a.at.getTime() - b.at.getTime());
+            // remaining after each step: + invoice / refund, − payments / returns
+            let remaining = 0;
+            const sign = { sale: 1, refund: 1, pay: -1, return: -1, pending: 0 } as const;
+            const style = {
+              sale: 'text-gray-900', pay: 'text-green-600', return: 'text-amber-600', refund: 'text-red-600', pending: 'text-gray-400',
+            } as const;
+            return (
+              <Card padding="lg">
+                <div className="flex items-center mb-4">
+                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                    <History className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900 mr-3">سجل الفاتورة</h3>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="text-gray-500 border-b">
+                        <th className="text-right py-2 px-2 font-medium">التاريخ</th>
+                        <th className="text-right py-2 px-2 font-medium">الحركة</th>
+                        <th className="text-right py-2 px-2 font-medium">المرجع</th>
+                        <th className="text-left py-2 px-2 font-medium">المبلغ</th>
+                        <th className="text-left py-2 px-2 font-medium">المتبقي بعدها</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((row, i) => {
+                        remaining = Math.round((remaining + sign[row.kind] * row.amount) * 100) / 100;
+                        return (
+                          <tr key={i} className="border-b last:border-b-0">
+                            <td className="py-2 px-2 text-gray-600 whitespace-nowrap">{formatTableDate(row.at.toISOString())}</td>
+                            <td className="py-2 px-2 flex items-center gap-1">
+                              {row.kind === 'return' || row.kind === 'pending' ? <RotateCcw className="w-3.5 h-3.5 text-amber-500" /> : null}
+                              {row.label}
+                            </td>
+                            <td className="py-2 px-2 text-gray-500">{row.ref || '—'}</td>
+                            <td className={`py-2 px-2 text-left font-medium ${style[row.kind]}`}>
+                              <span dir="ltr">
+                                {sign[row.kind] < 0 ? '−' : sign[row.kind] > 0 && row.kind !== 'sale' ? '+' : ''}
+                                {formatCurrency(row.amount)}
+                              </span>
+                            </td>
+                            <td className="py-2 px-2 text-left text-gray-900">
+                              {row.kind === 'pending' ? '—' : formatCurrency(Math.max(0, remaining))}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            );
+          })()}
         </div>
       </div>
 

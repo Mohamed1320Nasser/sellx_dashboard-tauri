@@ -3,7 +3,7 @@ import type { Quote } from "../types";
 function formatDate(dateString: string): string {
   try {
     const date = new Date(dateString);
-    return date.toLocaleDateString("ar-EG", {
+    return date.toLocaleDateString("ar-EG-u-nu-latn", {
       year: 'numeric',
       month: 'long',
       day: 'numeric'
@@ -14,7 +14,7 @@ function formatDate(dateString: string): string {
 }
 
 function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('ar-EG', {
+  return new Intl.NumberFormat('ar-EG-u-nu-latn', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   }).format(amount);

@@ -70,8 +70,8 @@ const PaymentDetails: React.FC = () => {
 
       await printReceipt({
         receiptNumber: `PAY-${payment.id}`,
-        date: new Date(payment.paymentDate || payment.createdAt || Date.now()).toLocaleDateString('ar-SA'),
-        time: new Date(payment.paymentDate || payment.createdAt || Date.now()).toLocaleTimeString('ar-SA', {
+        date: new Date(payment.paymentDate || payment.createdAt || Date.now()).toLocaleDateString('ar-SA-u-nu-latn'),
+        time: new Date(payment.paymentDate || payment.createdAt || Date.now()).toLocaleTimeString('ar-SA-u-nu-latn', {
           hour: '2-digit',
           minute: '2-digit',
         }),

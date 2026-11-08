@@ -395,8 +395,8 @@ const PurchasesCreate: React.FC = () => {
           // Map to new print format
           await printReceipt({
             receiptNumber: purchaseWithItems.receiptNumber || purchaseWithItems.invoiceNumber || purchaseWithItems.id || `PURCHASE-${Date.now()}`,
-            date: new Date(purchaseWithItems.purchaseDate || purchaseWithItems.createdAt || Date.now()).toLocaleDateString('ar-SA'),
-            time: new Date(purchaseWithItems.purchaseDate || purchaseWithItems.createdAt || Date.now()).toLocaleTimeString('ar-SA', {
+            date: new Date(purchaseWithItems.purchaseDate || purchaseWithItems.createdAt || Date.now()).toLocaleDateString('ar-SA-u-nu-latn'),
+            time: new Date(purchaseWithItems.purchaseDate || purchaseWithItems.createdAt || Date.now()).toLocaleTimeString('ar-SA-u-nu-latn', {
               hour: '2-digit',
               minute: '2-digit',
             }),
@@ -1236,7 +1236,7 @@ const PurchasesCreate: React.FC = () => {
                         </div>
                         <div>
                           <span className="text-gray-600">تاريخ الشراء:</span>
-                          <span className="font-semibold text-gray-900 mr-2">{purchaseDate.toLocaleDateString('ar-EG')}</span>
+                          <span className="font-semibold text-gray-900 mr-2">{purchaseDate.toLocaleDateString('ar-EG-u-nu-latn')}</span>
                         </div>
                         <div>
                           <span className="text-gray-600">طريقة الدفع:</span>

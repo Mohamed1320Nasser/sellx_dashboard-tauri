@@ -321,7 +321,7 @@ export const PaySalaryPreviewModal: React.FC<PaySalaryPreviewModalProps> = ({
                           <span className="text-xs text-gray-600">{absence.totalDays} يوم</span>
                         </div>
                         <div className="text-xs text-gray-600">
-                          {new Date(absence.startDate).toLocaleDateString('ar-EG')} - {new Date(absence.endDate).toLocaleDateString('ar-EG')}
+                          {new Date(absence.startDate).toLocaleDateString('ar-EG-u-nu-latn')} - {new Date(absence.endDate).toLocaleDateString('ar-EG-u-nu-latn')}
                         </div>
                         {absence.reason && (
                           <div className="text-xs text-gray-500 mt-1">{absence.reason}</div>

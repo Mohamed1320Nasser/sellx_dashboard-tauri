@@ -185,7 +185,7 @@ const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
 
   const formatDisplayDate = (date: string) => {
     if (!date) return '';
-    return new Date(date).toLocaleDateString('ar-SA', {
+    return new Date(date).toLocaleDateString('ar-SA-u-nu-latn', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',

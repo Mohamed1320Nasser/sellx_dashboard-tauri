@@ -27,12 +27,12 @@ export const formatDateInArabic = (
 
   const baseOptions: Intl.DateTimeFormatOptions = {
     calendar: "gregory", // Explicitly use Gregorian calendar
-    timeZone: "Asia/Riyadh", // Saudi timezone
+    timeZone: "Africa/Cairo", // the shop's time zone (same as the server's SHOP_TIME_ZONE)
   };
 
   if (shortFormat) {
     // Short format: DD/MM/YYYY with English numbers
-    return dateObj.toLocaleDateString("ar-SA", {
+    return dateObj.toLocaleDateString("ar-SA-u-nu-latn", {
       ...baseOptions,
       year: "numeric",
       month: "2-digit",
@@ -57,13 +57,13 @@ export const formatDateInArabic = (
         numberingSystem: "latn", // Use Latin (English) numbers
       };
 
-      const datePart = dateObj.toLocaleDateString("ar-SA", dateOptions);
-      const timePart = dateObj.toLocaleTimeString("ar-SA", timeOptions);
+      const datePart = dateObj.toLocaleDateString("ar-SA-u-nu-latn", dateOptions);
+      const timePart = dateObj.toLocaleTimeString("ar-SA-u-nu-latn", timeOptions);
 
       return `${datePart} - ${timePart}`;
     }
 
-    return dateObj.toLocaleDateString("ar-SA", dateOptions);
+    return dateObj.toLocaleDateString("ar-SA-u-nu-latn", dateOptions);
   }
 };
 

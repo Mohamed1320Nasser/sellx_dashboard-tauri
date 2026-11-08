@@ -37,6 +37,10 @@ export const useSale = (id: number, companyId: number) => {
 const invalidateCustomerData = (queryClient: ReturnType<typeof useQueryClient>) => {
   queryClient.invalidateQueries({ queryKey: ["clients"] });
   queryClient.invalidateQueries({ queryKey: ["client-statement"] });
+  // the cash drawer's expected amount follows every sale change
+  queryClient.invalidateQueries({ queryKey: ["current-shift"] });
+  queryClient.invalidateQueries({ queryKey: ["sale"] }); // invoice details page
+  queryClient.invalidateQueries({ queryKey: ["shifts"] });
 };
 
 export const useCreateSale = () => {

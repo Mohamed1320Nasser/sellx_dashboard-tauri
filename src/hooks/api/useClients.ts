@@ -17,6 +17,24 @@ export const useClients = (params: {
   });
 };
 
+// One client with what they owe today (outstandingBalance) and their credit limit
+export const useClientBalance = (clientId: number | undefined, companyId: number) => {
+  return useQuery({
+    queryKey: ["clients", "balance", clientId, companyId],
+    queryFn: async () => {
+      const res: any = await clientService.getById(clientId!, companyId);
+      return (res?.data ?? res) as {
+        id: number;
+        name: string;
+        creditLimit: number | null;
+        outstandingBalance: number;
+      };
+    },
+    enabled: !!clientId && !!companyId,
+    staleTime: 30 * 1000,
+  });
+};
+
 export const useCreateClient = () => {
   const queryClient = useQueryClient();
 

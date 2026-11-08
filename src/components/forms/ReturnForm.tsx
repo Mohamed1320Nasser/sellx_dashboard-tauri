@@ -209,7 +209,7 @@ const ReturnForm: React.FC<ReturnFormProps> = ({
   // Initialize displaySearchTerm when a sale is pre-selected or cleared
   useEffect(() => {
     if (selectedSale) {
-      setDisplaySearchTerm(`${selectedSale.client?.name || "عميل نقدي"} - ${formatCurrency(selectedSale.totalAmount)} - ${new Date(selectedSale.saleDate).toLocaleDateString('ar-EG')} - ${selectedSale.receiptNumber}`);
+      setDisplaySearchTerm(`${selectedSale.client?.name || "عميل نقدي"} - ${formatCurrency(selectedSale.totalAmount)} - ${new Date(selectedSale.saleDate).toLocaleDateString('ar-EG-u-nu-latn')} - ${selectedSale.receiptNumber}`);
     } else {
       setDisplaySearchTerm("");
     }
@@ -260,7 +260,7 @@ const ReturnForm: React.FC<ReturnFormProps> = ({
     const saleId = Number(sale.id);
     setValue("originalSaleId", saleId);
     setSelectedSale(sale);
-    setDisplaySearchTerm(`${sale.client?.name || "عميل نقدي"} - ${formatCurrency(sale.totalAmount)} - ${new Date(sale.saleDate).toLocaleDateString('ar-EG')} - ${sale.receiptNumber}`);
+    setDisplaySearchTerm(`${sale.client?.name || "عميل نقدي"} - ${formatCurrency(sale.totalAmount)} - ${new Date(sale.saleDate).toLocaleDateString('ar-EG-u-nu-latn')} - ${sale.receiptNumber}`);
     setSearchTerm(""); // Clear searchTerm for API to fetch a broader list
     setShowSaleDropdown(false);
     
@@ -356,7 +356,7 @@ const ReturnForm: React.FC<ReturnFormProps> = ({
                           {sale.client?.name || "عميل نقدي"}
                         </div>
                         <div className="text-sm text-gray-600">
-                          {sale.receiptNumber} - {new Date(sale.saleDate).toLocaleDateString('ar-EG')}
+                          {sale.receiptNumber} - {new Date(sale.saleDate).toLocaleDateString('ar-EG-u-nu-latn')}
                         </div>
                         {sale.client?.phone && (
                           <div className="text-xs text-gray-500">

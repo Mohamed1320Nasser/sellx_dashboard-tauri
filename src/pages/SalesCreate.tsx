@@ -1,11 +1,12 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { ArrowLeft, Save, X, ShoppingCart, Plus, Minus, Trash2, Search, Package, Printer } from "lucide-react";
+import { ArrowLeft, Save, X, ShoppingCart, Plus, Minus, Trash2, Search, Package, Printer, AlertTriangle } from "lucide-react";
 import { Layout } from "../components/layout";
 import { Button, Input, Select, Card, Modal } from "../components/ui";
 import { useSessionAuthStore } from "../stores/sessionAuthStore";
 import { useCreateSale } from "../hooks/api/useSales";
-import { useClients, useCreateClient } from "../hooks/api/useClients";
+import { useClients, useCreateClient, useClientBalance } from "../hooks/api/useClients";
+import { useCurrentShift } from "../hooks/api/useShifts";
 import { useProductsInfinite } from "../hooks/api/useProducts";
 import { useCategories } from "../hooks/api/useCategories";
 import { useActiveTaxSettings } from "../hooks/api/useTax";
@@ -21,20 +22,26 @@ import { PrintReceiptPreview } from "../components/printer/PrintReceiptPreview";
 import { usePrinterConfigStore } from "../stores/printerConfigStore";
 import { companyService } from "../services/companyService";
 
+// Number inputs registered with valueAsNumber give NaN when left empty: treat that as "not entered"
+const isBlank = (v: unknown) => v === "" || v === null || v === undefined || (typeof v === "number" && Number.isNaN(v));
+const blankAsZero = (schema: z.ZodTypeAny) => z.preprocess((v) => (isBlank(v) ? 0 : v), schema);
+const blankAsUndefined = (schema: z.ZodTypeAny) => z.preprocess((v) => (isBlank(v) ? undefined : v), schema);
+
 // Define the base schema without refine for proper type inference
 const saleBaseSchema = z.object({
   clientType: z.enum(["cash", "existing", "new"]),
   clientId: z.number().optional(),
   paymentMethod: z.enum(["CASH", "CARD", "MOBILE_WALLET", "CREDIT"]),
-  additionalFee: z.coerce.number().min(0, "الرسوم الإضافية يجب أن تكون أكبر من أو تساوي صفر").default(0),
+  additionalFee: blankAsZero(z.coerce.number().min(0, "الرسوم الإضافية يجب أن تكون أكبر من أو تساوي صفر")) as unknown as z.ZodDefault<z.ZodNumber>,
   additionalFeeLabel: z.string().optional(),
   notes: z.string().optional(),
   // Tax and Discount fields
   taxSettingId: z.string().optional(),
   discountType: z.enum(["none", "amount", "percent"]).default("none"),
-  discountAmount: z.coerce.number().min(0, "الخصم يجب أن يكون أكبر من أو يساوي صفر").default(0),
-  discountPercent: z.coerce.number().min(0).max(100, "نسبة الخصم يجب أن تكون بين 0 و 100").default(0),
-  paidAmount: z.coerce.number().min(0, "المبلغ المدفوع يجب أن يكون أكبر من أو يساوي صفر").optional(),
+  discountAmount: blankAsZero(z.coerce.number().min(0, "الخصم يجب أن يكون أكبر من أو يساوي صفر")) as unknown as z.ZodDefault<z.ZodNumber>,
+  discountPercent: blankAsZero(z.coerce.number().min(0).max(100, "نسبة الخصم يجب أن تكون بين 0 و 100")) as unknown as z.ZodDefault<z.ZodNumber>,
+  // empty = nothing paid now (credit sale)
+  paidAmount: blankAsUndefined(z.coerce.number().min(0, "المبلغ المدفوع يجب أن يكون أكبر من أو يساوي صفر").optional()) as unknown as z.ZodOptional<z.ZodNumber>,
   // New client fields
   newClientName: z.string().optional(),
   newClientPhone: z.string().optional(),
@@ -94,6 +101,22 @@ const SalesCreate: React.FC = () => {
   const [items, setItems] = useState<SaleItem[]>([]);
   const [showClientModal, setShowClientModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  // The cashier can turn the confirmation step off (kept on this device only)
+  const [skipConfirm, setSkipConfirm] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("sellx.sale.skipConfirm") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const toggleSkipConfirm = (value: boolean) => {
+    setSkipConfirm(value);
+    try {
+      localStorage.setItem("sellx.sale.skipConfirm", value ? "1" : "0");
+    } catch {
+      /* storage unavailable: the choice lasts for this screen only */
+    }
+  };
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [printableSale, setPrintableSale] = useState<any>(null);
   const [clientType, setClientType] = useState<"cash" | "existing" | "new">("cash");
@@ -104,6 +127,10 @@ const SalesCreate: React.FC = () => {
   const [barcodeInput, setBarcodeInput] = useState("");
   const [lastScannedBarcode, setLastScannedBarcode] = useState("");
   const barcodeInputRef = useRef<HTMLInputElement>(null);
+
+  // The cashier's open shift: cash sales without one never reach a drawer (warning only)
+  const { data: currentShiftData, isLoading: shiftLoading } = useCurrentShift(companyId || 0);
+  const hasOpenShift = !!currentShiftData?.hasOpenShift;
 
   // Fetch data
   const { data: clientsData } = useClients({
@@ -154,6 +181,10 @@ const SalesCreate: React.FC = () => {
       discountPercent: 0,
     },
   });
+
+  // Balance and credit limit of the chosen customer, shown before the sale is saved
+  const selectedClientId = watch("clientId");
+  const { data: clientBalance } = useClientBalance(clientType === "existing" ? selectedClientId : undefined, companyId || 0);
 
   // Client form
   const {
@@ -427,8 +458,28 @@ const SalesCreate: React.FC = () => {
       toast.error("يجب إضافة منتجات للبيع");
       return;
     }
+    if (skipConfirm) {
+      handleSubmitRef.current?.();
+      return;
+    }
     setShowConfirmModal(true);
-  }, [items.length]);
+  }, [items.length, skipConfirm]);
+
+  // Ctrl/Cmd + Enter completes the sale from anywhere on the screen
+  const handleSubmitRef = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        // never a second sale while one is saving or its receipt is on screen
+        if (createSaleMutation.isPending || showPrintModal) return;
+        if (showConfirmModal) handleSubmitRef.current?.();
+        else handleShowConfirm();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [handleShowConfirm, showConfirmModal, showPrintModal, createSaleMutation.isPending]);
 
   // Handle sale submission
   const handleSaleSubmit = useCallback(async (data: SaleFormData) => {
@@ -516,6 +567,8 @@ const SalesCreate: React.FC = () => {
         ...saleData_fromAPI,  // Data returned from API
         ...saleData,          // Original sale data (fallback)
         change: data.paymentMethod === "CASH" && changeDue !== null && changeDue > 0 ? changeDue : 0,
+        // cash handed over by the customer (printed as المستلم next to the change)
+        received: data.paymentMethod === "CASH" && changeDue !== null && changeDue >= 0 ? Number(received) : undefined,
         clientName:
           saleData_fromAPI.client?.name ||
           ((clientsData as any)?.data?.list || []).find((c: any) => c.id === clientId)?.name ||
@@ -560,6 +613,12 @@ const SalesCreate: React.FC = () => {
       console.error("[SalesCreate] Error creating sale:", error);
     }
   }, [items, createSaleMutation, createClientMutation, companyId, navigate, roundedTotal, changeDue, discountAmount, watch]);
+  // A form that does not pass validation must say why (it used to do nothing at all)
+  const handleInvalid = (formErrors: Record<string, any>) => {
+    const first = Object.values(formErrors)[0];
+    toast.error(first?.message || "تحقق من بيانات البيع");
+  };
+  handleSubmitRef.current = () => handleSubmit(handleSaleSubmit, handleInvalid)();
 
   // Handle client creation
   const handleClientSubmit = async (data: ClientFormData) => {
@@ -643,6 +702,17 @@ const SalesCreate: React.FC = () => {
             </div>
           </div>
           <div className="flex items-center space-x-2 space-x-reverse">
+            <label
+              className="flex items-center gap-1 text-xs text-gray-500 ml-2 cursor-pointer select-none"
+              title="عند الإيقاف يُحفظ البيع مباشرة بدون نافذة التأكيد (Ctrl+Enter للحفظ)"
+            >
+              <input
+                type="checkbox"
+                checked={!skipConfirm}
+                onChange={(e) => toggleSkipConfirm(!e.target.checked)}
+              />
+              تأكيد قبل الحفظ
+            </label>
             <Button
               onClick={handleCancel}
               variant="outline"
@@ -667,6 +737,27 @@ const SalesCreate: React.FC = () => {
           </div>
         </div>
 
+        {/* No open shift: the sale is still allowed, but its cash is not counted in any drawer */}
+        {!shiftLoading && !hasOpenShift && (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
+            <div className="flex items-center gap-2 text-amber-800">
+              <AlertTriangle className="w-5 h-5 flex-shrink-0" />
+              <span className="text-sm">
+                لا توجد وردية مفتوحة لك. يمكنك البيع، لكن نقدية هذه المبيعات لن تُحسب في أي درج نقدية.
+              </span>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => navigate("/shifts")}
+              className="flex-shrink-0 border-amber-400 text-amber-800 hover:bg-amber-100"
+            >
+              فتح وردية
+            </Button>
+          </div>
+        )}
+
         {/* Barcode Scanner Input */}
         <form onSubmit={handleBarcodeSubmit} className="flex gap-2">
           <div className="relative flex-1">
@@ -690,7 +781,7 @@ const SalesCreate: React.FC = () => {
         </form>
 
         {/* POS Layout - Products Left, Cart Right */}
-        <form onSubmit={handleSubmit(handleSaleSubmit)}>
+        <form onSubmit={handleSubmit(handleSaleSubmit, handleInvalid)}>
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-[calc(100vh-180px)]">
 
             {/* LEFT SIDE - Products (8 columns) */}
@@ -952,6 +1043,21 @@ const SalesCreate: React.FC = () => {
                     placeholder="اختر العميل..."
                   />
                 )}
+                {clientType === "existing" && clientBalance && (() => {
+                  const owes = clientBalance.outstandingBalance || 0;
+                  const limit = clientBalance.creditLimit;
+                  const newDebt = watch("paymentMethod") === "CREDIT"
+                    ? Math.max(0, roundedTotal - (Number(watch("paidAmount")) || 0))
+                    : 0;
+                  const over = limit !== null && owes + newDebt > limit + 0.01;
+                  return (
+                    <div className={`rounded px-2 py-1.5 text-xs ${over ? "bg-red-50 text-red-700" : "bg-gray-50 text-gray-600"}`}>
+                      <span>المديونية الحالية: <b>{formatCurrency(owes)}</b></span>
+                      {limit !== null && <span> — حد الائتمان: <b>{formatCurrency(limit)}</b></span>}
+                      {over && <div className="mt-0.5 font-medium">هذا البيع الآجل يتجاوز حد الائتمان</div>}
+                    </div>
+                  );
+                })()}
 
                 {clientType === "new" && (
                   <div className="space-y-2">
@@ -983,7 +1089,14 @@ const SalesCreate: React.FC = () => {
                       <button
                         key={method.value}
                         type="button"
-                        onClick={() => setValue("paymentMethod", method.value as any)}
+                        onClick={() => {
+                          setValue("paymentMethod", method.value as any);
+                          // A credit sale is a debt, so it needs a customer: go straight to the list
+                          if (method.value === "CREDIT" && clientType === "cash") {
+                            setClientType("existing");
+                            setValue("clientType", "existing");
+                          }
+                        }}
                         className={`py-1.5 px-2 rounded text-xs font-medium transition-all ${
                           watch("paymentMethod") === method.value
                             ? "bg-primary-600 text-white"
@@ -1285,6 +1398,14 @@ const SalesCreate: React.FC = () => {
             <p className="text-gray-600 text-center">
               هل أنت متأكد من إتمام عملية البيع؟
             </p>
+            <label className="flex items-center justify-center gap-2 text-sm text-gray-500">
+              <input
+                type="checkbox"
+                checked={skipConfirm}
+                onChange={(e) => toggleSkipConfirm(e.target.checked)}
+              />
+              لا تسألني مرة أخرى (الحفظ مباشرة — اختصار Ctrl+Enter)
+            </label>
 
             {/* Actions */}
             <div className="flex justify-end gap-3 pt-2">
@@ -1295,7 +1416,7 @@ const SalesCreate: React.FC = () => {
                 إلغاء
               </Button>
               <Button
-                onClick={handleSubmit(handleSaleSubmit)}
+                onClick={handleSubmit(handleSaleSubmit, handleInvalid)}
                 disabled={createSaleMutation.isPending}
                 className="bg-primary-600 hover:bg-primary-700"
               >

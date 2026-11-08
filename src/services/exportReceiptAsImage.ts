@@ -49,7 +49,7 @@ function formatCurrency(amount: number): string {
  */
 function formatDate(date: Date | string): string {
   const d = date instanceof Date ? date : new Date(date);
-  return d.toLocaleDateString('ar-EG', {
+  return d.toLocaleDateString('ar-EG-u-nu-latn', {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
@@ -61,7 +61,7 @@ function formatDate(date: Date | string): string {
  */
 function formatTime(date: Date | string): string {
   const d = date instanceof Date ? date : new Date(date);
-  return d.toLocaleTimeString('ar-EG', {
+  return d.toLocaleTimeString('ar-EG-u-nu-latn', {
     hour: '2-digit',
     minute: '2-digit',
   });

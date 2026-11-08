@@ -64,21 +64,25 @@ export const useCreateReturn = () => {
 
   return useMutation({
     mutationFn: (data: CreateReturnRequest) => returnService.create(data),
-    onSuccess: (data, variables) => {
-      // Invalidate and refetch returns list
-      queryClient.invalidateQueries({ queryKey: returnKeys.lists() });
-      queryClient.invalidateQueries({
-        queryKey: returnKeys.statistics(variables.companyId),
-      });
-
-      // Invalidate sales data to update return counts
+    onSuccess: (data: any) => {
+      // Refresh by prefix; an approved-on-creation return also changes stock, the sale and the customer
+      queryClient.invalidateQueries({ queryKey: returnKeys.all });
       queryClient.invalidateQueries({ queryKey: ["sales"] });
-
-      // Invalidate analytics and dashboard data
+      queryClient.invalidateQueries({ queryKey: ["sale"] });
+      queryClient.invalidateQueries({ queryKey: ["stockMovements"] });
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+      queryClient.invalidateQueries({ queryKey: ["clients"] });
+      queryClient.invalidateQueries({ queryKey: ["shifts"] });
+      queryClient.invalidateQueries({ queryKey: ["current-shift"] });
       queryClient.invalidateQueries({ queryKey: ["analytics"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["financialReports"] });
 
+      const status = (data?.data ?? data)?.status;
+      if (status === "COMPLETED") {
+        toast.success("تم إنشاء المرتجع واعتماده");
+        return;
+      }
       toast.success("تم إنشاء المرتجع بنجاح");
     },
     onError: (error: any) => {
@@ -109,8 +113,10 @@ export const useUpdateReturnStatus = () => {
       queryClient.invalidateQueries({ queryKey: ["stockMovements"] });
       queryClient.invalidateQueries({ queryKey: ["products"] });
       queryClient.invalidateQueries({ queryKey: ["sales"] });
+      queryClient.invalidateQueries({ queryKey: ["sale"] });
       queryClient.invalidateQueries({ queryKey: ["clients"] });
       queryClient.invalidateQueries({ queryKey: ["shifts"] });
+      queryClient.invalidateQueries({ queryKey: ["current-shift"] });
       queryClient.invalidateQueries({ queryKey: ["analytics"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["financialReports"] });

@@ -181,6 +181,12 @@ export function SellxReceipt({ data }: Props) {
                 <span className="receipt__value">{formatPrice(data.remaining!)}</span>
               </div>
             )}
+            {data.received !== undefined && data.received > 0 && (
+              <div className="receipt__row">
+                <span className="receipt__label">المستلم</span>
+                <span className="receipt__value">{formatPrice(data.received)}</span>
+              </div>
+            )}
             {data.change !== undefined && data.change > 0 && (
               <div className="receipt__row">
                 <span className="receipt__label">الباقي</span>

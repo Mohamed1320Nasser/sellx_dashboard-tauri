@@ -28,6 +28,16 @@ import { formatTableDate } from "../utils/dateUtils";
 import { formatCurrency } from "../utils/currencyUtils";
 import type { Shift, CashMovement } from "../services/shiftService";
 import { useNavigate } from "react-router-dom";
+import { printShiftReport } from "../services/printService";
+import toast from "react-hot-toast";
+
+const METHOD_LABELS: Record<string, string> = {
+  CASH: "نقدي",
+  CARD: "بطاقة",
+  MOBILE_WALLET: "محفظة",
+  BANK_TRANSFER: "تحويل بنكي",
+  CREDIT: "آجل",
+};
 
 const Shifts: React.FC = () => {
   const navigate = useNavigate();
@@ -39,6 +49,7 @@ const Shifts: React.FC = () => {
   // Modals state
   const [showOpenModal, setShowOpenModal] = useState(false);
   const [showCloseModal, setShowCloseModal] = useState(false);
+  const [printAfterClose, setPrintAfterClose] = useState(true);
   const [showCashMovementModal, setShowCashMovementModal] = useState(false);
 
   // Form state
@@ -196,10 +207,49 @@ const Shifts: React.FC = () => {
     resetOpenForm();
   };
 
+  // End-of-shift report from the current summary (before closing: actual cash from the form)
+  const buildShiftReport = (actualCash?: number) => {
+    if (!currentShift || !currentSummary) return null;
+    const methods = Object.entries(currentSummary.salesByPaymentMethod || {}).map(([key, v]) => ({
+      label: METHOD_LABELS[key] || key,
+      count: v.count,
+      total: v.total,
+    }));
+    return {
+      companyName: (company as any)?.company?.name || (company as any)?.name || "",
+      registerName: (currentShift as any).register?.name || "",
+      cashier: (currentShift as any).user?.fullname || user?.name || "",
+      openedAt: new Date(currentShift.startTime).toLocaleString("ar-EG-u-nu-latn"),
+      closedAt: new Date().toLocaleString("ar-EG-u-nu-latn"),
+      openingBalance: currentSummary.openingBalance,
+      salesByMethod: methods,
+      totalSales: currentSummary.totalSalesAmount,
+      cashSales: currentSummary.cashSales,
+      cashIn: currentSummary.cashMovements.cashIn,
+      cashOut: currentSummary.cashMovements.cashOut,
+      expectedCash: currentSummary.expectedCash,
+      actualCash,
+      variance: actualCash !== undefined ? Math.round((actualCash - currentSummary.expectedCash) * 100) / 100 : undefined,
+      notes: closeFormData.closingNotes || undefined,
+    };
+  };
+
+  const handlePrintShiftReport = async (actualCash?: number) => {
+    const report = buildShiftReport(actualCash);
+    if (!report) return;
+    try {
+      await printShiftReport(report);
+    } catch (error: any) {
+      toast.error(error?.message || "تعذرت طباعة تقرير الوردية");
+    }
+  };
+
   const handleCloseShift = async () => {
     if (!currentShift || !closeFormData.actualCash) {
       return;
     }
+    // printed after closing, built now while the open shift's summary is still loaded
+    const report = printAfterClose ? buildShiftReport(parseFloat(closeFormData.actualCash)) : null;
 
     await closeShiftMutation.mutateAsync({
       id: currentShift.id,
@@ -212,6 +262,11 @@ const Shifts: React.FC = () => {
 
     setShowCloseModal(false);
     resetCloseForm();
+    if (report) {
+      printShiftReport(report).catch((error: any) =>
+        toast.error(error?.message || "تعذرت طباعة تقرير الوردية")
+      );
+    }
   };
 
   const handleCashMovement = async () => {
@@ -522,11 +577,29 @@ const Shifts: React.FC = () => {
                     {formatCurrency(currentSummary.openingBalance)}
                   </span>
                 </div>
+                {Object.keys(currentSummary.salesByPaymentMethod || {}).length > 0 && (
+                  <div className="rounded-md border border-gray-200 bg-white p-2 text-xs space-y-1">
+                    <div className="font-medium text-gray-700">المبيعات حسب طريقة الدفع</div>
+                    {Object.entries(currentSummary.salesByPaymentMethod).map(([key, v]) => (
+                      <div key={key} className="flex justify-between text-gray-600">
+                        <span>{METHOD_LABELS[key] || key} ({v.count})</span>
+                        <span>{formatCurrency(v.total)}</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between font-medium text-gray-800 border-t pt-1">
+                      <span>إجمالي المبيعات</span>
+                      <span>{formatCurrency(currentSummary.totalSalesAmount)}</span>
+                    </div>
+                  </div>
+                )}
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">مبيعات نقدية:</span>
                   <span className="font-medium text-green-600">
                     +{formatCurrency(currentSummary.cashSales)}
                   </span>
+                </div>
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>إيداعات +{formatCurrency(currentSummary.cashMovements.cashIn)} — مصروفات/سحب −{formatCurrency(currentSummary.cashMovements.cashOut)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">حركات نقدية (صافي):</span>
@@ -612,6 +685,22 @@ const Shifts: React.FC = () => {
                     })
                   }
                 />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <input type="checkbox" checked={printAfterClose} onChange={(e) => setPrintAfterClose(e.target.checked)} />
+                  طباعة تقرير الوردية بعد الإغلاق
+                </label>
+                <button
+                  type="button"
+                  className="text-sm text-primary-600 hover:underline"
+                  onClick={() =>
+                    handlePrintShiftReport(closeFormData.actualCash ? parseFloat(closeFormData.actualCash) : undefined)
+                  }
+                >
+                  معاينة / طباعة الآن
+                </button>
               </div>
 
               <div className="flex space-x-3 space-x-reverse pt-4">

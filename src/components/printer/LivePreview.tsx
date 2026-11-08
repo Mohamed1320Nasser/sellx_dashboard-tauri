@@ -69,7 +69,7 @@ export function LivePreview() {
           )}
 
           <div className="text-[10px]">
-            التاريخ: {new Date().toLocaleDateString('ar-EG', {
+            التاريخ: {new Date().toLocaleDateString('ar-EG-u-nu-latn', {
               year: 'numeric',
               month: '2-digit',
               day: '2-digit',

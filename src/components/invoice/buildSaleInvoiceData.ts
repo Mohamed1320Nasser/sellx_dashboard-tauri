@@ -25,12 +25,12 @@ export async function buildSaleInvoiceData(params: {
   const { sale, company, cashier } = params;
 
   const saleDate = new Date(sale.saleDate || sale.createdAt);
-  const dateLabel = saleDate.toLocaleDateString("ar-EG", {
+  const dateLabel = saleDate.toLocaleDateString("ar-EG-u-nu-latn", {
     year: "numeric",
     month: "long",
     day: "2-digit",
   });
-  const timeLabel = saleDate.toLocaleTimeString("ar-EG", {
+  const timeLabel = saleDate.toLocaleTimeString("ar-EG-u-nu-latn", {
     hour: "2-digit",
     minute: "2-digit",
     hour12: true,

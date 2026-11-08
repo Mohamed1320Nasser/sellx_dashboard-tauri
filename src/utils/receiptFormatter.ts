@@ -61,13 +61,13 @@ export function formatThermalReceipt(sale: SaleData): string {
   const remainingAmount = sale.totalAmount - sale.paidAmount;
 
   // Format date
-  const saleDate = new Date(sale.saleDate).toLocaleDateString("ar-EG", {
+  const saleDate = new Date(sale.saleDate).toLocaleDateString("ar-EG-u-nu-latn", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
   });
 
-  const saleTime = new Date(sale.saleDate).toLocaleTimeString("ar-EG", {
+  const saleTime = new Date(sale.saleDate).toLocaleTimeString("ar-EG-u-nu-latn", {
     hour: "2-digit",
     minute: "2-digit",
   });

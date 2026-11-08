@@ -148,7 +148,7 @@ function buildReportHtml<T>(
   ].join(";");
 
   // ── Branded header band ──
-  const generatedAt = new Intl.DateTimeFormat("ar-EG", {
+  const generatedAt = new Intl.DateTimeFormat("ar-EG-u-nu-latn", {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date());
@@ -424,7 +424,7 @@ export async function exportReportToExcel<T>(
   // Generated-at line
   ws.mergeCells(`A${r}:${lastCol}${r}`);
   const gen = ws.getCell(`A${r}`);
-  gen.value = `تاريخ الإصدار: ${new Intl.DateTimeFormat("ar-EG", {
+  gen.value = `تاريخ الإصدار: ${new Intl.DateTimeFormat("ar-EG-u-nu-latn", {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date())}`;

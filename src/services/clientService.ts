@@ -56,8 +56,9 @@ export const clientService = {
   }): Promise<BackendApiResponse<PaginatedResponse<Client>>> =>
     apiClient.get("/client/list", { params }),
 
-  getById: (id: number): Promise<Client> =>
-    apiClient.get(`/client/single/${id}`),
+  // companyId is required by the server's role check
+  getById: (id: number, companyId: number): Promise<Client> =>
+    apiClient.get(`/client/single/${id}`, { params: { companyId } }),
 
   edit: (id: number, data: Partial<CreateClientRequest>): Promise<Client> =>
     apiClient.put(`/client/single/${id}`, data),

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Save, X, Plus } from 'lucide-react';
 import { Layout } from '../components/layout';
 import { Button, Card, Input, Select } from '../components/ui';
@@ -11,6 +11,13 @@ import { usePurchases } from '../hooks/api/usePurchases';
 import { formatCurrency } from '../utils/currencyUtils';
 import toast from 'react-hot-toast';
 import { toLocalDay } from '../utils/dateUtils';
+import { saleService } from '../services/saleService';
+
+// What is still owed, as computed by the server (after returns). The totals already include tax.
+const saleRemaining = (sale: any): number =>
+  Math.max(0, Number(sale?.remainingAmount ?? (sale?.totalAmount || 0) - (sale?.paidAmount || 0)));
+const purchaseRemaining = (purchase: any): number =>
+  Math.max(0, Number(purchase?.remainingAmount ?? (purchase?.totalAmount || 0) - (purchase?.paidAmount || 0)));
 
 const PaymentCreate: React.FC = () => {
   const navigate = useNavigate();
@@ -56,8 +63,13 @@ const PaymentCreate: React.FC = () => {
       toast.success('تم إنشاء الدفعة بنجاح');
       queryClient.invalidateQueries({ queryKey: ['payments'] });
       queryClient.invalidateQueries({ queryKey: ['sales'] });
+      queryClient.invalidateQueries({ queryKey: ['sale'] }); // the invoice details page
       queryClient.invalidateQueries({ queryKey: ['purchases'] });
-      navigate('/payments');
+      queryClient.invalidateQueries({ queryKey: ['clients'] });
+      queryClient.invalidateQueries({ queryKey: ['client-statement'] });
+      queryClient.invalidateQueries({ queryKey: ['current-shift'] });
+      // back to the invoice the payment was recorded from
+      navigate(presetSaleId ? `/sales/${presetSaleId}` : '/payments');
     },
     onError: (error: any) => {
       const errorMessage = error?.response?.data?.msg || error?.message || 'حدث خطأ أثناء إنشاء الدفعة';
@@ -90,14 +102,14 @@ const PaymentCreate: React.FC = () => {
 
     // Validate amount against remaining balance
     if (selectedSale && formData.amount) {
-      const remainingAmount = selectedSale.totalAmount - (selectedSale.paidAmount || 0);
+      const remainingAmount = saleRemaining(selectedSale);
       if (parseFloat(formData.amount) > remainingAmount) {
         newErrors.amount = `المبلغ لا يمكن أن يتجاوز ${formatCurrency(remainingAmount)}`;
       }
     }
 
     if (selectedPurchase && formData.amount) {
-      const remainingAmount = (selectedPurchase.totalAmount || 0) + (selectedPurchase.taxAmount || 0) - (selectedPurchase.paidAmount || 0);
+      const remainingAmount = purchaseRemaining(selectedPurchase);
       if (parseFloat(formData.amount) > remainingAmount) {
         newErrors.amount = `المبلغ لا يمكن أن يتجاوز ${formatCurrency(remainingAmount)}`;
       }
@@ -157,7 +169,7 @@ const PaymentCreate: React.FC = () => {
   const handleSaleSelect = (sale: any) => {
     setSelectedSale(sale);
     // Calculate remaining amount for the sale
-    const remainingAmount = sale.totalAmount - (sale.paidAmount || 0);
+    const remainingAmount = saleRemaining(sale);
     setFormData(prev => ({
       ...prev,
       saleId: sale.id.toString(),
@@ -171,8 +183,7 @@ const PaymentCreate: React.FC = () => {
   const handlePurchaseSelect = (purchase: any) => {
     setSelectedPurchase(purchase);
     // Calculate remaining amount for the purchase
-    const totalAmount = (purchase.totalAmount || 0) + (purchase.taxAmount || 0);
-    const remainingAmount = totalAmount - (purchase.paidAmount || 0);
+    const remainingAmount = purchaseRemaining(purchase);
     setFormData(prev => ({
       ...prev,
       purchaseId: purchase.id.toString(),
@@ -183,17 +194,43 @@ const PaymentCreate: React.FC = () => {
     setErrors({});
   };
 
+  // Only invoices that still owe money, unless the user asks to see all
+  const [showSettled, setShowSettled] = useState(false);
+
   const filteredSales = salesData?.data?.list?.filter((sale: any) =>
+    (showSettled || saleRemaining(sale) > 0.01) && (
     sale.id.toString().includes(searchTerm) ||
     sale.receiptNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    sale.client?.name?.toLowerCase().includes(searchTerm.toLowerCase())
+    sale.client?.name?.toLowerCase().includes(searchTerm.toLowerCase()))
   ) || [];
 
   const filteredPurchases = purchasesData?.data?.list?.filter((purchase: any) =>
+    (showSettled || purchaseRemaining(purchase) > 0.01) && (
     purchase.id.toString().includes(searchTerm) ||
     purchase.invoiceNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    purchase.supplier?.name?.toLowerCase().includes(searchTerm.toLowerCase())
+    purchase.supplier?.name?.toLowerCase().includes(searchTerm.toLowerCase()))
   ) || [];
+
+  // Opened from an invoice ("تسجيل دفعة"): select it straight away
+  const [searchParams] = useSearchParams();
+  const presetSaleId = searchParams.get('saleId');
+  useEffect(() => {
+    if (!presetSaleId || selectedSale) return;
+    const inList = salesData?.data?.list?.find((s: any) => String(s.id) === presetSaleId);
+    if (inList) {
+      handleSaleSelect(inList);
+      return;
+    }
+    // older invoice not on the first page: load it on its own
+    saleService
+      .getById(presetSaleId, companyId || 0)
+      .then((res: any) => {
+        const sale = res?.data ?? res;
+        if (sale?.id) handleSaleSelect(sale);
+      })
+      .catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presetSaleId, salesData]);
 
   return (
     <Layout>
@@ -259,6 +296,11 @@ const PaymentCreate: React.FC = () => {
                   />
                 </div>
 
+                <label className="flex items-center gap-2 text-sm text-gray-600">
+                  <input type="checkbox" checked={showSettled} onChange={(e) => setShowSettled(e.target.checked)} />
+                  عرض الفواتير المدفوعة بالكامل أيضاً
+                </label>
+
                 {/* Invoice List */}
                 <div className="max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pr-2">
@@ -306,7 +348,7 @@ const PaymentCreate: React.FC = () => {
                               <div>
                                 <p className="text-sm font-medium text-gray-700">المبلغ المتبقي</p>
                                 <p className="text-sm font-semibold text-red-600">
-                                  {formatCurrency(sale.totalAmount - (sale.paidAmount || 0))}
+                                  {formatCurrency(saleRemaining(sale))}
                                 </p>
                               </div>
                             </div>
@@ -316,11 +358,11 @@ const PaymentCreate: React.FC = () => {
                               <div className="flex items-center justify-between">
                                 <span className="text-xs text-gray-500">حالة الدفع</span>
                                 <span className={`text-xs px-2 py-1 rounded-full ${
-                                  (sale.totalAmount - (sale.paidAmount || 0)) > 0
+                                  saleRemaining(sale) > 0
                                     ? 'bg-red-100 text-red-600'
                                     : 'bg-green-100 text-green-600'
                                 }`}>
-                                  {(sale.totalAmount - (sale.paidAmount || 0)) > 0 ? 'غير مكتمل' : 'مكتمل'}
+                                  {saleRemaining(sale) > 0 ? 'غير مكتمل' : 'مكتمل'}
                                 </span>
                               </div>
                             </div>
@@ -349,7 +391,7 @@ const PaymentCreate: React.FC = () => {
                               </div>
                               <div className="text-right">
                                 <p className="text-lg font-bold text-gray-900">
-                                  {formatCurrency((purchase.totalAmount || 0) + (purchase.taxAmount || 0))}
+                                  {formatCurrency(purchase.totalAmount || 0)}
                                 </p>
                               </div>
                             </div>
@@ -371,7 +413,7 @@ const PaymentCreate: React.FC = () => {
                               <div>
                                 <p className="text-sm font-medium text-gray-700">المبلغ المتبقي</p>
                                 <p className="text-sm font-semibold text-red-600">
-                                  {formatCurrency((purchase.totalAmount || 0) + (purchase.taxAmount || 0) - (purchase.paidAmount || 0))}
+                                  {formatCurrency(purchaseRemaining(purchase))}
                                 </p>
                               </div>
                             </div>
@@ -381,11 +423,11 @@ const PaymentCreate: React.FC = () => {
                               <div className="flex items-center justify-between">
                                 <span className="text-xs text-gray-500">حالة الدفع</span>
                                 <span className={`text-xs px-2 py-1 rounded-full ${
-                                  ((purchase.totalAmount || 0) + (purchase.taxAmount || 0) - (purchase.paidAmount || 0)) > 0
+                                  purchaseRemaining(purchase) > 0
                                     ? 'bg-red-100 text-red-600'
                                     : 'bg-green-100 text-green-600'
                                 }`}>
-                                  {((purchase.totalAmount || 0) + (purchase.taxAmount || 0) - (purchase.paidAmount || 0)) > 0 ? 'غير مكتمل' : 'مكتمل'}
+                                  {purchaseRemaining(purchase) > 0 ? 'غير مكتمل' : 'مكتمل'}
                                 </span>
                               </div>
                             </div>
@@ -509,7 +551,7 @@ const PaymentCreate: React.FC = () => {
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-600">المبلغ المتبقي:</span>
                       <span className="font-medium text-red-600">
-                        {formatCurrency(selectedSale.totalAmount - (selectedSale.paidAmount || 0))}
+                        {formatCurrency(saleRemaining(selectedSale))}
                       </span>
                     </div>
                   </div>
@@ -524,7 +566,7 @@ const PaymentCreate: React.FC = () => {
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-600">المبلغ الإجمالي:</span>
                       <span className="font-medium">
-                        {formatCurrency((selectedPurchase.totalAmount || 0) + (selectedPurchase.taxAmount || 0))}
+                        {formatCurrency(selectedPurchase.totalAmount || 0)}
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
@@ -534,7 +576,7 @@ const PaymentCreate: React.FC = () => {
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-600">المبلغ المتبقي:</span>
                       <span className="font-medium text-red-600">
-                        {formatCurrency((selectedPurchase.totalAmount || 0) + (selectedPurchase.taxAmount || 0) - (selectedPurchase.paidAmount || 0))}
+                        {formatCurrency(purchaseRemaining(selectedPurchase))}
                       </span>
                     </div>
                   </div>

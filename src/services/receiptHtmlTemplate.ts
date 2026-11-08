@@ -119,12 +119,12 @@ export async function generateReceiptHTML(data: ReceiptTemplateData): Promise<st
 
   // Format date
   const dateObj = new Date(orderDate);
-  const formattedDate = dateObj.toLocaleDateString('ar-EG', {
+  const formattedDate = dateObj.toLocaleDateString('ar-EG-u-nu-latn', {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
   });
-  const formattedTime = dateObj.toLocaleTimeString('ar-EG', {
+  const formattedTime = dateObj.toLocaleTimeString('ar-EG-u-nu-latn', {
     hour: '2-digit',
     minute: '2-digit',
   });
@@ -502,7 +502,7 @@ export async function generateReceiptHTML(data: ReceiptTemplateData): Promise<st
     </div>
     ` : ''}
 
-    <div class="footer-date">تم الطباعة: ${new Date().toLocaleString('ar-EG')}</div>
+    <div class="footer-date">تم الطباعة: ${new Date().toLocaleString('ar-EG-u-nu-latn')}</div>
   </div>
 </body>
 </html>
@@ -539,12 +539,12 @@ export function saleToReceiptData(params: {
   return {
     // Receipt identification
     receiptNumber: sale.receiptNumber || `SALE-${sale.id}`,
-    date: new Date(sale.saleDate || sale.createdAt).toLocaleDateString('ar-EG', {
+    date: new Date(sale.saleDate || sale.createdAt).toLocaleDateString('ar-EG-u-nu-latn', {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit'
     }),
-    time: new Date(sale.saleDate || sale.createdAt).toLocaleTimeString('ar-EG', {
+    time: new Date(sale.saleDate || sale.createdAt).toLocaleTimeString('ar-EG-u-nu-latn', {
       hour: '2-digit',
       minute: '2-digit',
       hour12: true
@@ -590,6 +590,7 @@ export function saleToReceiptData(params: {
           : total - paid) * 100) / 100),
         // change handed back at the till (only the POS knows the cash received)
         change: Math.max(0, parseFloat(sale.change || 0)),
+        received: sale.received !== undefined && sale.received !== null ? parseFloat(sale.received) : undefined,
       };
     })(),
     paymentMethod: SALE_PAYMENT_LABELS[String(sale.paymentMethod || 'CASH').toUpperCase()] || 'نقداً',
@@ -634,9 +635,9 @@ export function purchaseToReceiptData(params: Parameters<typeof saleToReceiptDat
   return {
     ...base,
     receiptNumber: purchase.invoiceNumber || `PURCHASE-${purchase.id}`,
-    date: when.toLocaleDateString('ar-EG', { year: 'numeric', month: '2-digit', day: '2-digit' }),
+    date: when.toLocaleDateString('ar-EG-u-nu-latn', { year: 'numeric', month: '2-digit', day: '2-digit' }),
     // The purchase date is a calendar day only; the time comes from when it was entered
-    time: new Date(purchase.createdAt || Date.now()).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: true }),
+    time: new Date(purchase.createdAt || Date.now()).toLocaleTimeString('ar-EG-u-nu-latn', { hour: '2-digit', minute: '2-digit', hour12: true }),
     subtotal: parseFloat(purchase.subtotal ?? total - parseFloat(purchase.taxAmount ?? purchase.tax ?? 0)),
     discount: 0,
     tax: parseFloat(purchase.taxAmount ?? purchase.tax ?? 0),

@@ -116,7 +116,7 @@ const QuoteView: React.FC = () => {
     lines.push(`       ${company?.name || 'عرض سعري'}       `);
     lines.push("================================");
     lines.push(`رقم العرض: ${quote.quoteNumber}`);
-    lines.push(`التاريخ: ${new Date(quote.createdAt).toLocaleDateString("ar-EG")}`);
+    lines.push(`التاريخ: ${new Date(quote.createdAt).toLocaleDateString("ar-EG-u-nu-latn")}`);
     lines.push("--------------------------------");
 
     if (quote.customerName) {
@@ -157,7 +157,7 @@ const QuoteView: React.FC = () => {
     lines.push("================================");
 
     if (quote.validUntil) {
-      lines.push(`صالح حتى: ${new Date(quote.validUntil).toLocaleDateString("ar-EG")}`);
+      lines.push(`صالح حتى: ${new Date(quote.validUntil).toLocaleDateString("ar-EG-u-nu-latn")}`);
     }
 
     if (quote.notes) {

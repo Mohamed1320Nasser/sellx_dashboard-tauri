@@ -1116,6 +1116,7 @@ export interface CreateReturnRequest {
   reason?: string;
   notes?: string;
   refundAmount?: number;
+  completeNow?: boolean; // approve in the same step (managers only)
 }
 
 export interface UpdateReturnStatusRequest {

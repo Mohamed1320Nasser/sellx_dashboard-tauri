@@ -72,8 +72,8 @@ const PurchasesDetails: React.FC = () => {
 
       await printReceipt({
         receiptNumber: purchase.invoiceNumber || purchase.id?.toString() || `PURCHASE-${Date.now()}`,
-        date: new Date(purchase.purchaseDate || purchase.createdAt || Date.now()).toLocaleDateString('ar-SA'),
-        time: new Date(purchase.purchaseDate || purchase.createdAt || Date.now()).toLocaleTimeString('ar-SA', {
+        date: new Date(purchase.purchaseDate || purchase.createdAt || Date.now()).toLocaleDateString('ar-SA-u-nu-latn'),
+        time: new Date(purchase.purchaseDate || purchase.createdAt || Date.now()).toLocaleTimeString('ar-SA-u-nu-latn', {
           hour: '2-digit',
           minute: '2-digit',
         }),

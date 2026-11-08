@@ -42,6 +42,10 @@ const ReturnsCreate: React.FC = () => {
   // Form state
   const [items, setItems] = useState<ReturnItem[]>([]);
   const [selectedSale, setSelectedSale] = useState<any>(null);
+  // Managers can approve right away; a cashier's return waits for a manager
+  const canApprove = user?.role === "MANAGER" || user?.role === "ADMIN";
+  const [completeNow, setCompleteNow] = useState(true);
+  const productsRef = React.useRef<HTMLDivElement>(null);
   const [productSearch, setProductSearch] = useState("");
 
   // Fetch data
@@ -188,6 +192,7 @@ const ReturnsCreate: React.FC = () => {
         reason: data.reason,
         notes: data.notes,
         refundAmount: data.refundAmount,
+        completeNow: canApprove && completeNow,
         items: items.map(item => ({
           productId: String(item.productId),
           quantity: item.quantity,
@@ -212,6 +217,8 @@ const ReturnsCreate: React.FC = () => {
     setSelectedSale(sale);
     setValue("originalSaleId", parseInt(saleId));
     setItems([]); // Clear existing items when sale changes
+    // the products to return are further down: bring them into view
+    if (sale) setTimeout(() => productsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
   };
 
   // Return all items from the sale
@@ -412,6 +419,12 @@ const ReturnsCreate: React.FC = () => {
                     </div>
                   </div>
 
+                  {canApprove && (
+                    <label className="md:col-span-2 flex items-center gap-2 text-sm text-gray-700">
+                      <input type="checkbox" checked={completeNow} onChange={(e) => setCompleteNow(e.target.checked)} />
+                      اعتماد المرتجع فوراً (إرجاع المخزون وخصم المديونية / الاسترداد الآن)
+                    </label>
+                  )}
                   <div className="md:col-span-2">
                     <Input
                       label="ملاحظات"
@@ -473,6 +486,7 @@ const ReturnsCreate: React.FC = () => {
           </div>
 
           {/* Product Selection */}
+          <div ref={productsRef} />
           <Card padding="lg">
             <div className="space-y-6">
               <div className="flex items-center justify-between">

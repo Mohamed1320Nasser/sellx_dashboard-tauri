@@ -146,7 +146,7 @@ const UserManagement: React.FC = () => {
           <Calendar className="w-4 h-4" />
           <span>
             {record.createdAt
-              ? new Date(record.createdAt).toLocaleDateString("ar-EG", {
+              ? new Date(record.createdAt).toLocaleDateString("ar-EG-u-nu-latn", {
                   year: "numeric",
                   month: "2-digit",
                   day: "2-digit",
