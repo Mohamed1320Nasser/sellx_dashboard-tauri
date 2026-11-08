@@ -185,8 +185,8 @@ export const useConvertQuoteToSale = () => {
   const { handleError } = useApiErrorHandler();
 
   return useMutation({
-    mutationFn: ({ id, companyId }: { id: string; companyId: number }) =>
-      quoteService.convertToSale(id, companyId),
+    mutationFn: ({ id, companyId, clientId }: { id: string; companyId: number; clientId?: number }) =>
+      quoteService.convertToSale(id, companyId, clientId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["quotes"] });
       queryClient.invalidateQueries({ queryKey: ["sales"] });

@@ -25,6 +25,7 @@ import { productService } from "../services/productService";
 import { formatCurrency } from "../utils/currencyUtils";
 import toast from "react-hot-toast";
 import { useScanner } from "../hooks/useScanner";
+import { toLocalDay } from '../utils/dateUtils';
 
 interface QuoteItem {
   productId: string;
@@ -106,7 +107,7 @@ const QuoteEdit: React.FC = () => {
       // Set valid until
       if (quote.validUntil) {
         const date = new Date(quote.validUntil);
-        setValidUntil(date.toISOString().split('T')[0]);
+        setValidUntil(toLocalDay(date));
       }
 
       // Set tax

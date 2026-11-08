@@ -6,6 +6,7 @@ import { Button, Input, Select, Modal, DatePicker } from "../ui";
 import { Calendar, User, FileText, AlertCircle, Shield, Clock, Wallet } from "lucide-react";
 import type { Absence, AbsenceType, LeaveCategory, CreateAbsenceRequest, UpdateAbsenceRequest } from "../../types";
 import { useSessionAuthStore } from "../../stores/sessionAuthStore";
+import { toLocalDay } from '../../utils/dateUtils';
 
 const absenceSchema = z.object({
   userId: z.string().min(1, "يجب اختيار الموظف"),
@@ -226,7 +227,7 @@ const AbsenceForm: React.FC<AbsenceFormProps> = ({
             value={startDateValue}
             onChange={(date) => {
               setStartDateValue(date);
-              setValue("startDate", date ? date.toISOString().split('T')[0] : "");
+              setValue("startDate", date ? toLocalDay(date) : "");
             }}
             error={errors.startDate?.message}
           />
@@ -243,7 +244,7 @@ const AbsenceForm: React.FC<AbsenceFormProps> = ({
             value={endDateValue}
             onChange={(date) => {
               setEndDateValue(date);
-              setValue("endDate", date ? date.toISOString().split('T')[0] : "");
+              setValue("endDate", date ? toLocalDay(date) : "");
             }}
             error={errors.endDate?.message}
             minDate={startDateValue}

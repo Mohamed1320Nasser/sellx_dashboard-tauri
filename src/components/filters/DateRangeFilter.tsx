@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Calendar, ChevronDown, X, RotateCcw, Clock } from 'lucide-react';
+import { toLocalDay } from '../../utils/dateUtils';
 
 export interface DateRange {
   startDate: string;
@@ -70,7 +71,7 @@ const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
       label: 'اليوم',
       icon: <Clock className="w-3 h-3" />,
       getValue: () => {
-        const today = new Date().toISOString().split('T')[0];
+        const today = toLocalDay(new Date());
         return { startDate: today, endDate: today };
       },
     },
@@ -80,7 +81,7 @@ const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
       getValue: () => {
         const yesterday = new Date();
         yesterday.setDate(yesterday.getDate() - 1);
-        const dateStr = yesterday.toISOString().split('T')[0];
+        const dateStr = toLocalDay(yesterday);
         return { startDate: dateStr, endDate: dateStr };
       },
     },
@@ -92,8 +93,8 @@ const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
         const start = new Date();
         start.setDate(start.getDate() - 6);
         return {
-          startDate: start.toISOString().split('T')[0],
-          endDate: end.toISOString().split('T')[0],
+          startDate: toLocalDay(start),
+          endDate: toLocalDay(end),
         };
       },
     },
@@ -105,8 +106,8 @@ const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
         const start = new Date();
         start.setDate(start.getDate() - 29);
         return {
-          startDate: start.toISOString().split('T')[0],
-          endDate: end.toISOString().split('T')[0],
+          startDate: toLocalDay(start),
+          endDate: toLocalDay(end),
         };
       },
     },
@@ -118,8 +119,8 @@ const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
         const start = new Date(now.getFullYear(), now.getMonth(), 1);
         const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
         return {
-          startDate: start.toISOString().split('T')[0],
-          endDate: end.toISOString().split('T')[0],
+          startDate: toLocalDay(start),
+          endDate: toLocalDay(end),
         };
       },
     },
@@ -131,8 +132,8 @@ const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
         const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
         const end = new Date(now.getFullYear(), now.getMonth(), 0);
         return {
-          startDate: start.toISOString().split('T')[0],
-          endDate: end.toISOString().split('T')[0],
+          startDate: toLocalDay(start),
+          endDate: toLocalDay(end),
         };
       },
     },
@@ -144,8 +145,8 @@ const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
         const start = new Date(now.getFullYear(), 0, 1);
         const end = new Date(now.getFullYear(), 11, 31);
         return {
-          startDate: start.toISOString().split('T')[0],
-          endDate: end.toISOString().split('T')[0],
+          startDate: toLocalDay(start),
+          endDate: toLocalDay(end),
         };
       },
     },

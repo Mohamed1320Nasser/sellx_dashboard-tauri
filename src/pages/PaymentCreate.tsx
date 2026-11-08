@@ -10,6 +10,7 @@ import { useSales } from '../hooks/api/useSales';
 import { usePurchases } from '../hooks/api/usePurchases';
 import { formatCurrency } from '../utils/currencyUtils';
 import toast from 'react-hot-toast';
+import { toLocalDay } from '../utils/dateUtils';
 
 const PaymentCreate: React.FC = () => {
   const navigate = useNavigate();
@@ -24,7 +25,7 @@ const PaymentCreate: React.FC = () => {
     paymentStatus: PaymentStatus.COMPLETED,
     reference: '',
     notes: '',
-    paymentDate: new Date().toISOString().split('T')[0],
+    paymentDate: toLocalDay(new Date()),
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});

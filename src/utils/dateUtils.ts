@@ -117,3 +117,11 @@ export const formatDetailDate = (
 export const formatDate = (date: string | Date | null | undefined): string => {
   return formatTableDate(date);
 };
+
+/**
+ * Calendar day of a date in the user's own time zone, as YYYY-MM-DD.
+ * Use this instead of toISOString().split('T')[0], which gives the UTC day
+ * (yesterday's date between midnight and 2–3 a.m. in Cairo).
+ */
+export const toLocalDay = (date: Date): string =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;

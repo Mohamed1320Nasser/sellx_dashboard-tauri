@@ -7,6 +7,7 @@ import { useSessionAuthStore } from '../stores/sessionAuthStore';
 import { useExpense, useUpdateExpense } from '../hooks/api/useExpenses';
 import { useExpenseCategories } from '../hooks/api/useExpenseCategories';
 import toast from 'react-hot-toast';
+import { toLocalDay } from '../utils/dateUtils';
 
 const ExpenseEdit: React.FC = () => {
   const navigate = useNavigate();
@@ -100,7 +101,7 @@ const ExpenseEdit: React.FC = () => {
           amount: parseFloat(formData.amount),
           categoryId: formData.categoryId,
           paymentMethod: formData.paymentMethod,
-          expenseDate: expenseDate.toISOString().split('T')[0],
+          expenseDate: toLocalDay(expenseDate),
           notes: formData.notes.trim() || undefined,
         },
         companyId: companyId!,

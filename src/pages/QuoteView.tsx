@@ -23,6 +23,7 @@ import {
 import { Layout } from "../components/layout";
 import { Button, Card, Badge, Modal } from "../components/ui";
 import { useQuote, useDeleteQuote, useConvertQuoteToSale, useEmailQuote } from "../hooks/api/useQuotes";
+import { useClients } from "../hooks/api/useClients";
 import { useSessionAuthStore } from "../stores/sessionAuthStore";
 import { formatTableDate } from "../utils/dateUtils";
 import { formatCurrency, formatNumber } from "../utils/currencyUtils";
@@ -44,6 +45,9 @@ const QuoteView: React.FC = () => {
   const { data: quote, isLoading, error } = useQuote(id || "", companyId);
   const deleteMutation = useDeleteQuote();
   const convertToSaleMutation = useConvertQuoteToSale();
+  const [convertClientId, setConvertClientId] = useState("");
+  const { data: clientsData } = useClients({ companyId: companyId || 0, page: 1, limit: 100 });
+  const clients: any[] = (clientsData as any)?.data?.list || [];
   const emailMutation = useEmailQuote();
 
   // Helper function to check if quote is expired
@@ -191,13 +195,20 @@ const QuoteView: React.FC = () => {
   };
 
   const handleConvertToSale = () => {
+    // Pre-pick the customer the quote was written for (same phone, or else same name)
+    const contact = quote?.customerContact?.trim();
+    const name = quote?.customerName?.trim();
+    const match =
+      (contact && clients.find((c) => c.phone?.trim() === contact)) ||
+      (name && clients.find((c) => c.name?.trim() === name));
+    setConvertClientId(match ? String(match.id) : "");
     setConvertingQuote(true);
   };
 
   const confirmConvertToSale = () => {
     if (id && companyId) {
       convertToSaleMutation.mutate(
-        { id, companyId },
+        { id, companyId, clientId: convertClientId ? Number(convertClientId) : undefined },
         {
           onSuccess: (data: any) => {
             setConvertingQuote(false);
@@ -789,6 +800,14 @@ const QuoteView: React.FC = () => {
                     </span>
                   </div>
                 )}
+                {Number(quote.additionalFee) > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">{quote.additionalFeeLabel || "رسوم إضافية"}:</span>
+                    <span className="text-gray-900">
+                      {formatCurrency(Number(quote.additionalFee))} {quote.currency}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between text-lg font-bold pt-2 border-t border-indigo-200">
                   <span className="text-gray-900">المجموع الكلي:</span>
                   <span className="text-indigo-600">
@@ -797,6 +816,33 @@ const QuoteView: React.FC = () => {
                 </div>
               </div>
             </div>
+
+            {/* Customer account for the invoice */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">العميل (حساب الفاتورة)</label>
+              <select
+                value={convertClientId}
+                onChange={(e) => setConvertClientId(e.target.value)}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              >
+                <option value="">بدون عميل</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                    {c.phone ? ` - ${c.phone}` : ""}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-gray-500">
+                الفاتورة تُنشأ غير مدفوعة، لذلك يُفضّل ربطها بعميل حتى تظهر في كشف حسابه.
+              </p>
+            </div>
+
+            {expired && (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">
+                انتهت صلاحية هذا العرض السعري. تأكد من الأسعار قبل التحويل.
+              </div>
+            )}
 
             {/* Conversion Info */}
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">

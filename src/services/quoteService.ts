@@ -41,8 +41,9 @@ export const quoteService = {
     apiClient.get(`/quote/single/${id}/print`),
 
   // Convert quote to sale
-  convertToSale: (id: string, companyId: number): Promise<{ success: boolean; saleId: number; sale: any }> =>
-    apiClient.post(`/quote/convert-to-sale/${id}`, { companyId }),
+  // clientId: the customer whose account carries the invoice (it is unpaid at conversion)
+  convertToSale: (id: string, companyId: number, clientId?: number): Promise<{ success: boolean; saleId: number; sale: any }> =>
+    apiClient.post(`/quote/convert-to-sale/${id}`, { companyId, ...(clientId && { clientId }) }),
 
   // Email quote to customer
   email: (id: string, companyId: number): Promise<{ success: boolean; message: string }> =>
