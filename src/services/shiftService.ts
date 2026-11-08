@@ -156,5 +156,9 @@ export const shiftService = {
     hasOpenShift: boolean;
     shift: Shift | null;
     summary: ShiftSummary | null;
-  }> => apiClient.get("/shift/current", { params: { companyId } }),
+  }> =>
+    // apiClient resolves to the envelope { msg, status, data }; callers read hasOpenShift/shift directly
+    apiClient
+      .get("/shift/current", { params: { companyId } })
+      .then((res: any) => res?.data ?? res),
 };

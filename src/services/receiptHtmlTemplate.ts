@@ -513,6 +513,14 @@ export async function generateReceiptHTML(data: ReceiptTemplateData): Promise<st
  * Helper function to convert sale/company/cashier data to ReceiptTemplateData
  * OLD FORMAT - Used by generateReceiptHTML (old template system)
  */
+const SALE_PAYMENT_LABELS: Record<string, string> = {
+  CASH: 'نقداً',
+  CARD: 'بطاقة',
+  MOBILE_WALLET: 'محفظة إلكترونية',
+  BANK_TRANSFER: 'تحويل بنكي',
+  CREDIT: 'آجل',
+};
+
 export function saleToReceiptData(params: {
   sale: any;
   company: any;
@@ -568,13 +576,24 @@ export function saleToReceiptData(params: {
     taxRate: parseFloat(sale.taxRate || 15),
     total: parseFloat(sale.totalAmount || sale.total || 0),
 
-    // Payment details
-    paid: parseFloat(sale.paidAmount || sale.paid || sale.totalAmount || 0),
-    change: Math.max(0, parseFloat(sale.paidAmount || 0) - parseFloat(sale.totalAmount || sale.total || 0)),
-    paymentMethod: sale.paymentMethod === 'CASH' ? 'نقداً' :
-                  sale.paymentMethod === 'CARD' ? 'بطاقة' :
-                  sale.paymentMethod === 'BANK_TRANSFER' ? 'تحويل بنكي' :
-                  'نقداً',
+    // Payment details. paidAmount can be 0 (unpaid credit sale), so don't fall back on "falsy".
+    ...(() => {
+      const total = parseFloat(sale.totalAmount || sale.total || 0);
+      const rawPaid = sale.paidAmount ?? sale.paid;
+      const paid = rawPaid !== undefined && rawPaid !== null && rawPaid !== '' ? parseFloat(rawPaid) : total;
+      return {
+        paid,
+        // what the customer still owes on this invoice (credit sales)
+        // (the saved sale's remainingAmount already accounts for returns)
+        remaining: Math.max(0, Math.round((sale.remainingAmount !== undefined && sale.remainingAmount !== null
+          ? parseFloat(sale.remainingAmount)
+          : total - paid) * 100) / 100),
+        // change handed back at the till (only the POS knows the cash received)
+        change: Math.max(0, parseFloat(sale.change || 0)),
+      };
+    })(),
+    paymentMethod: SALE_PAYMENT_LABELS[String(sale.paymentMethod || 'CASH').toUpperCase()] || 'نقداً',
+    clientName: sale.client?.name || sale.clientName,
 
     // SELLX-SPECIFIC
     isPurchase: false,

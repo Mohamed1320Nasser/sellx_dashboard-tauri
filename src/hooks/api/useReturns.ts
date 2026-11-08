@@ -101,21 +101,16 @@ export const useUpdateReturnStatus = () => {
       id: string;
       data: UpdateReturnStatusRequest;
     }) => returnService.updateStatus(id, data),
-    onSuccess: (data) => {
-      // Invalidate and refetch returns data
-      queryClient.invalidateQueries({ queryKey: returnKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: returnKeys.detail(data.id) });
-      queryClient.invalidateQueries({
-        queryKey: returnKeys.statistics(data.companyId),
-      });
-
-      // Invalidate stock movements if status is COMPLETED
-      if (data.status === "COMPLETED") {
-        queryClient.invalidateQueries({ queryKey: ["stockMovements"] });
-        queryClient.invalidateQueries({ queryKey: ["products"] });
-      }
-
-      // Invalidate analytics and dashboard data
+    onSuccess: () => {
+      // The API wraps the return ({ data: ... }), so don't rely on its fields here:
+      // refresh every returns query (lists, details, statistics) by prefix.
+      queryClient.invalidateQueries({ queryKey: returnKeys.all });
+      // Completing a return puts stock back and gives credit on the sale / customer
+      queryClient.invalidateQueries({ queryKey: ["stockMovements"] });
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+      queryClient.invalidateQueries({ queryKey: ["sales"] });
+      queryClient.invalidateQueries({ queryKey: ["clients"] });
+      queryClient.invalidateQueries({ queryKey: ["shifts"] });
       queryClient.invalidateQueries({ queryKey: ["analytics"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["financialReports"] });

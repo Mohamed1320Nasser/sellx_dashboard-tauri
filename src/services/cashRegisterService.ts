@@ -47,7 +47,10 @@ export const cashRegisterService = {
   getList: (
     companyId: number
   ): Promise<{ cashRegisters: CashRegister[] }> =>
-    apiClient.get("/cash-register/list", { params: { companyId } }),
+    // apiClient resolves to the envelope { msg, status, data }; callers read cashRegisters directly
+    apiClient
+      .get("/cash-register/list", { params: { companyId } })
+      .then((res: any) => res?.data ?? res),
 
   getById: (
     id: string,

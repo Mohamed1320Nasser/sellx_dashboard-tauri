@@ -373,7 +373,7 @@ const SalesDetails: React.FC = () => {
 
                 <div className="space-y-3">
                   {/* Subtotal */}
-                  {sale.subtotal && (
+                  {sale.subtotal != null && (
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-600">المجموع الفرعي</span>
                       <span className="font-medium text-gray-900">{formatCurrency(sale.subtotal)}</span>
@@ -402,7 +402,7 @@ const SalesDetails: React.FC = () => {
                   )}
 
                   {/* Additional Fee */}
-                  {sale.additionalFee && sale.additionalFee > 0 && (
+                  {Number(sale.additionalFee) > 0 && (
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-600">
                         {sale.additionalFeeLabel || "رسوم إضافية"}
@@ -563,7 +563,7 @@ const SalesDetails: React.FC = () => {
                           ))}
                         </tbody>
                         <tfoot className="bg-gray-50">
-                          {sale.additionalFee && sale.additionalFee > 0 && (
+                          {Number(sale.additionalFee) > 0 && (
                             <tr>
                               <td colSpan={colSpan} className="px-6 py-2 text-right text-sm text-gray-600">
                                 {sale.additionalFeeLabel || "رسوم إضافية"}:

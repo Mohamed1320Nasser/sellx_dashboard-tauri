@@ -16,6 +16,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import toast from "react-hot-toast";
 import { printReceipt } from "../services/printService";
+import { saleToReceiptData } from "../services/receiptHtmlTemplate";
 import { PrintReceiptPreview } from "../components/printer/PrintReceiptPreview";
 import { usePrinterConfigStore } from "../stores/printerConfigStore";
 import { companyService } from "../services/companyService";
@@ -515,11 +516,15 @@ const SalesCreate: React.FC = () => {
         ...saleData_fromAPI,  // Data returned from API
         ...saleData,          // Original sale data (fallback)
         change: data.paymentMethod === "CASH" && changeDue !== null && changeDue > 0 ? changeDue : 0,
+        clientName:
+          saleData_fromAPI.client?.name ||
+          ((clientsData as any)?.data?.list || []).find((c: any) => c.id === clientId)?.name ||
+          (data.clientType === "new" ? data.newClientName : undefined),
         items: items.map(item => ({
           ...item,
           productName: item.productName,
           product: { name: item.productName }
-        }))
+        })),
       };
 
 
@@ -537,53 +542,8 @@ const SalesCreate: React.FC = () => {
             }
           }
 
-          // Map to new print format
-          await printReceipt({
-            receiptNumber: saleWithItems.receiptNumber || saleWithItems.id || `SALE-${Date.now()}`,
-            date: new Date(saleWithItems.createdAt || Date.now()).toLocaleDateString('ar-SA'),
-            time: new Date(saleWithItems.createdAt || Date.now()).toLocaleTimeString('ar-SA', {
-              hour: '2-digit',
-              minute: '2-digit',
-            }),
-            cashier: user?.name || user?.username || 'نظام نقاط البيع',
-
-            // Company info
-            companyName: fullCompany?.name || 'نظام نقاط البيع',
-            companyAddress: fullCompany?.address,
-            companyPhone: fullCompany?.phone,
-            companyTaxId: fullCompany?.taxId || fullCompany?.taxNumber,
-            companyLogo: fullCompany?.logoUrl,
-
-            // Items
-            items: saleWithItems.items.map((item: any) => ({
-              productName: item.productName || item.product?.name || '',
-              variantName: item.variantName,
-              quantity: item.quantity,
-              unitPrice: item.price || item.unitPrice,
-              total: (item.quantity * (item.price || item.unitPrice)),
-            })),
-
-            // Totals
-            subtotal: saleWithItems.subtotal || (saleWithItems.total - (saleWithItems.tax || 0)),
-            discount: saleWithItems.discount,
-            discountPercentage: saleWithItems.discountPercentage,
-            tax: saleWithItems.tax,
-            taxRate: fullCompany?.taxRate || 15,
-            total: saleWithItems.total,
-
-            // Payment
-            paid: saleWithItems.paid || saleWithItems.total,
-            change: saleWithItems.change || 0,
-            paymentMethod: saleWithItems.paymentMethod === 'cash' ? 'نقداً' :
-                          saleWithItems.paymentMethod === 'card' ? 'بطاقة' :
-                          saleWithItems.paymentMethod === 'bank_transfer' ? 'تحويل بنكي' :
-                          saleWithItems.paymentMethod || 'نقداً',
-
-            // SELLX-SPECIFIC
-            isPurchase: false,
-            additionalFee: saleWithItems.additionalFee || saleWithItems.deliveryFee,
-            additionalFeeLabel: saleWithItems.additionalFee || saleWithItems.deliveryFee ? "رسوم إضافية" : undefined,
-          });
+          // Same mapping as the preview: payment method, paid / remaining and the customer
+          await printReceipt(saleToReceiptData({ sale: saleWithItems, company: fullCompany, cashier: user }));
           toast.success('تم الطباعة تلقائياً');
         } catch (printError) {
           console.error('Auto-print error:', printError);
