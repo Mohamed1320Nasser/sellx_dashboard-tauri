@@ -48,7 +48,7 @@
       },
       "allowDowngrades": false,
       "nsis": {
-        "installMode": "perMachine",
+        "installMode": "currentUser",
         "displayLanguageSelector": true,
         "languages": ["English", "Arabic"],
         "installerIcon": "icons/icon.ico",
@@ -61,6 +61,16 @@
     "linux": {
       "deb": {
         "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0"]
+      }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ3QTk1MUMyMUQ0NENCNQpSV1MxVE5RaEhKVjZEWnZudzN2NnFXYmdOQWRZd21wWFNSZmdUWVAxUGRJbzhuY2ZEVEs4TjFBaAo=",
+      "endpoints": ["https://api.sellx.monasser.me/desktop/updates/{{target}}/{{arch}}/{{current_version}}"],
+      "windows": {
+        "installMode": "passive"
       }
     }
   }

@@ -1,5 +1,18 @@
 name: Build Tauri Apps
 
+# Builds the desktop app for Windows and macOS on every push to main.
+# On a `v*` tag it also publishes the release to installed apps:
+#   1. the signed update bundle goes to the SellX API (POST /desktop/releases);
+#      every installed app finds it within 4 hours (or at next launch) and shows the update banner;
+#   2. the Windows setup.exe replaces the one behind the fixed download link (POST /desktop/installers);
+#   3. the installers are attached to a GitHub Release.
+# Release steps: docs/desktop-release-runbook.md
+#
+# Required repository secrets:
+#   TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD  updater signing key (every build)
+#   DESKTOP_RELEASE_TOKEN                                          same value as the backend's (tags only)
+# Optional: APPLE_* (macOS signing), repository variable SELLX_API_URL (default below).
+
 on:
   push:
     branches: [main, master]
@@ -12,6 +25,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  SELLX_API_URL: ${{ vars.SELLX_API_URL || 'https://api.sellx.monasser.me' }}
+
 jobs:
   build:
     strategy:
@@ -22,20 +38,23 @@ jobs:
             os: windows-latest
             target: x86_64-pc-windows-msvc
             bundles: nsis
+            platform: windows-x86_64
             artifact: sellx-pos-windows-x64
             artifact_path: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
 
           - name: macOS (Apple Silicon)
             os: macos-latest
             target: aarch64-apple-darwin
-            bundles: dmg
+            bundles: app,dmg
+            platform: darwin-aarch64
             artifact: sellx-pos-macos-arm64
             artifact_path: src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
 
           - name: macOS (Intel)
             os: macos-latest
             target: x86_64-apple-darwin
-            bundles: dmg
+            bundles: app,dmg
+            platform: darwin-x86_64
             artifact: sellx-pos-macos-x64
             artifact_path: src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
 
@@ -51,6 +70,52 @@ jobs:
         with:
           node-version: 20
           cache: npm
+
+      # Fails in seconds instead of after a full native build.
+      - name: Preflight — signing key, release token and version
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          DESKTOP_RELEASE_TOKEN: ${{ secrets.DESKTOP_RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY secret is not set. The updater is on, so every build must be signed with the updater key (docs/desktop-release-runbook.md)."
+            exit 1
+          fi
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            node scripts/release-version.mjs check "$GITHUB_REF_NAME"
+            if [ -z "${DESKTOP_RELEASE_TOKEN:-}" ]; then
+              echo "::error::DESKTOP_RELEASE_TOKEN secret is not set; this release could not reach installed apps."
+              exit 1
+            fi
+            git fetch --force --no-tags origin "+refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+            if [ "$(git cat-file -t "$GITHUB_REF_NAME")" != "tag" ]; then
+              echo "::error::$GITHUB_REF_NAME is not an annotated tag. Use git tag -a $GITHUB_REF_NAME -m \"what changed\": the message is shown to users as the update notes."
+              exit 1
+            fi
+          fi
+
+      # Empty APPLE_* variables make the macOS bundler try (and fail) to sign,
+      # so they are only exported when the secrets really exist.
+      - name: macOS signing (only when configured)
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            value="${!name:-}"
+            if [ -n "$value" ]; then
+              delimiter="EOF_$(openssl rand -hex 8)"
+              { echo "$name<<$delimiter"; echo "$value"; echo "$delimiter"; } >> "$GITHUB_ENV"
+            fi
+          done
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -68,14 +133,6 @@ jobs:
 
       - name: Build Tauri app
         env:
-          # macOS code signing (optional — leave secrets empty if not yet configured)
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          # Tauri updater signing (optional — leave empty if not yet configured)
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npx tauri build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
@@ -87,6 +144,64 @@ jobs:
           path: ${{ matrix.artifact_path }}
           if-no-files-found: error
           retention-days: 30
+
+      # The update bundle: on Windows the signed setup.exe itself, on macOS the .app.tar.gz.
+      - name: Publish the update to installed apps
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          DESKTOP_RELEASE_TOKEN: ${{ secrets.DESKTOP_RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          platform="${{ matrix.platform }}"
+          bundle_dir="src-tauri/target/${{ matrix.target }}/release/bundle"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            bundle="$(ls "$bundle_dir"/nsis/*-setup.exe | head -n 1)"
+          else
+            bundle="$(ls "$bundle_dir"/macos/*.app.tar.gz | head -n 1)"
+          fi
+          if [ -z "$bundle" ] || [ ! -f "$bundle.sig" ]; then
+            echo "::error::Update bundle or its .sig is missing for $platform (is createUpdaterArtifacts on and the key set?)."
+            exit 1
+          fi
+          git tag -l --format='%(contents)' "$GITHUB_REF_NAME" | sed '/-----BEGIN PGP SIGNATURE-----/,$d' > release-notes.txt
+          status="$(curl -sS -o publish.json -w '%{http_code}' --max-time 900 \
+            -X POST "${SELLX_API_URL%/}/desktop/releases" \
+            -H "X-Release-Token: $DESKTOP_RELEASE_TOKEN" \
+            --form-string "platform=$platform" \
+            --form-string "version=$version" \
+            --form-string "signature=$(cat "$bundle.sig")" \
+            -F "notes=<release-notes.txt" \
+            -F "bundle=@$bundle")"
+          cat publish.json; echo
+          case "$status" in
+            201) echo "Published $platform $version." ;;
+            409) echo "::warning::$platform $version was already published; nothing to do." ;;
+            *) echo "::error::Publishing $platform $version failed with HTTP $status."; exit 1 ;;
+          esac
+
+      - name: Publish the installer to the download link
+        if: startsWith(github.ref, 'refs/tags/v') && runner.os == 'Windows'
+        shell: bash
+        env:
+          DESKTOP_RELEASE_TOKEN: ${{ secrets.DESKTOP_RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          setup="$(ls src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*-setup.exe | head -n 1)"
+          status="$(curl -sS -o installer.json -w '%{http_code}' --max-time 1800 \
+            -X POST "${SELLX_API_URL%/}/desktop/installers" \
+            -H "X-Release-Token: $DESKTOP_RELEASE_TOKEN" \
+            --form-string "platform=windows-x86_64" \
+            --form-string "version=$version" \
+            -F "installer=@$setup;type=application/x-msdownload")"
+          cat installer.json; echo
+          case "$status" in
+            201) echo "Download link now serves $version." ;;
+            409) echo "::warning::Installer $version (or newer) is already on the download link." ;;
+            *) echo "::error::Publishing the installer failed with HTTP $status."; exit 1 ;;
+          esac
 
   # On version tags (v1.0.0 etc.), collect artifacts and publish a GitHub Release.
   release:

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import Sidebar from './Sidebar';
 import Header from './Header';
+import DesktopUpdateBanner from './DesktopUpdateBanner';
 import { useUIStore } from '../../stores/uiStore';
 import { usePermissions } from '../../hooks/usePermissions';
 
@@ -54,6 +55,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 {/* Page content with professional spacing */}
                 <main className="flex-1 overflow-auto bg-gray-50">
                     <div className="pl-6 pr-4 sm:pl-8 sm:pr-6 lg:pl-12 lg:pr-8 py-6 transition-all duration-300 ease-in-out">
+                        <DesktopUpdateBanner />
                         {children}
                     </div>
                 </main>
