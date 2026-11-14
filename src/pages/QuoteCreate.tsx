@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useRef, useCallback } from "react";
+import React, { useState, useMemo, useRef, useCallback, useEffect } from "react";
+import { usePriceLists, usePriceListPrices } from "../hooks/api/usePriceLists";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
@@ -30,6 +31,8 @@ interface QuoteItem {
   productName: string;
   quantity: number;
   unitPrice: number;
+  /** Default (retail) price, so the line can be repriced when the list changes */
+  basePrice: number;
   lineTotal: number;
   stockQuantity: number;
 }
@@ -83,6 +86,41 @@ const QuoteCreate: React.FC = () => {
 
   // Mutations
   const createQuoteMutation = useCreateQuote();
+
+  // Price list: from the chosen client, and can be changed for this quote
+  const { data: priceLists = [] } = usePriceLists(companyId || 0);
+  const defaultPriceList = priceLists.find((l) => l.isDefault);
+  const [chosenPriceListId, setChosenPriceListId] = useState("");
+  const selectedPriceList = priceLists.find((l) => l.id === chosenPriceListId) || defaultPriceList;
+  const listIsDefault = !selectedPriceList || selectedPriceList.isDefault;
+  const { data: listPrices } = usePriceListPrices(companyId || 0, listIsDefault ? null : selectedPriceList!.id);
+  const priceFor = useCallback(
+    (productId: string | number, basePrice: number) => {
+      if (listIsDefault) return Number(basePrice) || 0;
+      const price = listPrices?.[String(productId)];
+      return price === undefined ? Number(basePrice) || 0 : price;
+    },
+    [listIsDefault, listPrices]
+  );
+  const customerPriceListId =
+    clientType === "existing" && selectedClientId
+      ? ((clientsData as any)?.data?.list || []).find((c: any) => c.id === selectedClientId)?.priceListId ?? null
+      : null;
+  useEffect(() => {
+    if (!defaultPriceList) return;
+    const fromCustomer = priceLists.find((l) => l.id === customerPriceListId);
+    setChosenPriceListId(fromCustomer ? fromCustomer.id : defaultPriceList.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientType, selectedClientId, customerPriceListId, defaultPriceList?.id]);
+  useEffect(() => {
+    if (!listIsDefault && !listPrices) return;
+    setItems((prev) =>
+      prev.map((item) => {
+        const unitPrice = priceFor(item.productId, item.basePrice);
+        return unitPrice === item.unitPrice ? item : { ...item, unitPrice, lineTotal: item.quantity * unitPrice };
+      })
+    );
+  }, [priceFor, listIsDefault, listPrices]);
 
   // Hardware hooks - Barcode scanner
   useScanner({
@@ -182,8 +220,9 @@ const QuoteCreate: React.FC = () => {
         productId,
         productName: product.name,
         quantity: 1,
-        unitPrice: product.sellingPrice,
-        lineTotal: product.sellingPrice,
+        unitPrice: priceFor(productId, product.sellingPrice),
+        basePrice: Number(product.sellingPrice) || 0,
+        lineTotal: priceFor(productId, product.sellingPrice),
         stockQuantity: stock,
       };
       setItems([...items, newItem]);
@@ -278,6 +317,7 @@ const QuoteCreate: React.FC = () => {
         discountPercent: discountType === "percent" && discountPercent > 0 ? discountPercent : undefined,
         validUntil: validUntil || undefined,
         notes: notes || undefined,
+        ...(selectedPriceList && { priceListId: selectedPriceList.id }),
         items: items.map((item) => ({
           productId: item.productId,
           quantity: item.quantity,
@@ -289,7 +329,7 @@ const QuoteCreate: React.FC = () => {
     } catch (error) {
       console.error("Error creating quote:", error);
     }
-  }, [items, createQuoteMutation, companyId, customerName, customerPhone, currency, selectedTaxId, discountType, calculatedDiscount, discountPercent, validUntil, notes, navigate]);
+  }, [items, createQuoteMutation, companyId, customerName, customerPhone, currency, selectedTaxId, discountType, calculatedDiscount, discountPercent, validUntil, notes, navigate, selectedPriceList]);
 
   // Handle cancel
   const handleCancel = useCallback(() => {
@@ -489,7 +529,7 @@ const QuoteCreate: React.FC = () => {
                             {stock} متاح
                           </span>
                           <span className={`font-bold text-sm ${isSelected ? "text-primary-700" : "text-primary-600"}`}>
-                            {formatCurrency(product.sellingPrice)}
+                            {formatCurrency(priceFor(product.id, product.sellingPrice))}
                           </span>
                         </div>
                       </button>
@@ -611,6 +651,26 @@ const QuoteCreate: React.FC = () => {
                   onChange={(value) => handleClientSelect(value)}
                   placeholder="اختر العميل..."
                 />
+              )}
+
+              {priceLists.length > 1 && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">قائمة الأسعار</label>
+                  <div className="flex flex-wrap gap-1">
+                    {priceLists.map((list) => (
+                      <button
+                        key={list.id}
+                        type="button"
+                        onClick={() => setChosenPriceListId(list.id)}
+                        className={`py-1.5 px-3 rounded text-xs font-medium transition-all ${
+                          selectedPriceList?.id === list.id ? "bg-emerald-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                        }`}
+                      >
+                        {list.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               )}
 
               <div className="space-y-2">

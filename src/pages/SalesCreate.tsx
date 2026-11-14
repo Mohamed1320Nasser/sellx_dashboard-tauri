@@ -6,6 +6,7 @@ import { Button, Input, Select, Card, Modal } from "../components/ui";
 import { useSessionAuthStore } from "../stores/sessionAuthStore";
 import { useCreateSale } from "../hooks/api/useSales";
 import { useClients, useCreateClient, useClientBalance } from "../hooks/api/useClients";
+import { usePriceLists, usePriceListPrices } from "../hooks/api/usePriceLists";
 import { useCurrentShift } from "../hooks/api/useShifts";
 import { useProductsInfinite } from "../hooks/api/useProducts";
 import { useCategories } from "../hooks/api/useCategories";
@@ -87,6 +88,8 @@ interface SaleItem {
   productName: string;
   quantity: number;
   unitPrice: number;
+  /** The product's default (retail) price, so the line can be repriced when the list changes */
+  basePrice: number;
   total: number;
   stock: number;
 }
@@ -185,6 +188,50 @@ const SalesCreate: React.FC = () => {
   // Balance and credit limit of the chosen customer, shown before the sale is saved
   const selectedClientId = watch("clientId");
   const { data: clientBalance } = useClientBalance(clientType === "existing" ? selectedClientId : undefined, companyId || 0);
+
+  // Price list: filled in from the customer, and can be changed for this sale
+  const { data: priceLists = [] } = usePriceLists(companyId || 0);
+  const defaultPriceList = priceLists.find((l) => l.isDefault);
+  const [chosenPriceListId, setChosenPriceListId] = useState("");
+  const selectedPriceList = priceLists.find((l) => l.id === chosenPriceListId) || defaultPriceList;
+  const listIsDefault = !selectedPriceList || selectedPriceList.isDefault;
+  const { data: listPrices, isFetching: listPricesLoading } = usePriceListPrices(
+    companyId || 0,
+    listIsDefault ? null : selectedPriceList!.id
+  );
+  const priceFor = useCallback(
+    (productId: string | number, basePrice: number) => {
+      if (listIsDefault) return Number(basePrice) || 0;
+      const price = listPrices?.[String(productId)];
+      return price === undefined ? Number(basePrice) || 0 : price;
+    },
+    [listIsDefault, listPrices]
+  );
+
+  // A customer brings their own list; cash and new customers buy at the default list
+  const customerPriceListId =
+    clientType === "existing"
+      ? ((clientsData as any)?.data?.list || []).find((c: any) => c.id === selectedClientId)?.priceListId ??
+        (clientBalance as any)?.priceListId ??
+        null
+      : null;
+  useEffect(() => {
+    if (!defaultPriceList) return;
+    const fromCustomer = priceLists.find((l) => l.id === customerPriceListId);
+    setChosenPriceListId(fromCustomer ? fromCustomer.id : defaultPriceList.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientType, selectedClientId, customerPriceListId, defaultPriceList?.id]);
+
+  // Reprice the cart whenever the list (or its prices) change
+  useEffect(() => {
+    if (!listIsDefault && !listPrices) return;
+    setItems((prev) =>
+      prev.map((item) => {
+        const unitPrice = priceFor(item.productId, item.basePrice);
+        return unitPrice === item.unitPrice ? item : { ...item, unitPrice, total: item.quantity * unitPrice };
+      })
+    );
+  }, [priceFor, listIsDefault, listPrices]);
 
   // Client form
   const {
@@ -352,12 +399,14 @@ const SalesCreate: React.FC = () => {
       setItems(newItems);
     } else {
       // Add new item
+      const unitPrice = priceFor(product.id, product.sellingPrice);
       const newItem: SaleItem = {
         productId: product.id,
         productName: product.name,
         quantity: 1,
-        unitPrice: product.sellingPrice,
-        total: product.sellingPrice,
+        unitPrice,
+        basePrice: Number(product.sellingPrice) || 0,
+        total: unitPrice,
         stock,
       };
       setItems([...items, newItem]);
@@ -489,6 +538,10 @@ const SalesCreate: React.FC = () => {
       toast.error("يجب إضافة منتجات للبيع");
       return;
     }
+    if (!listIsDefault && (listPricesLoading || !listPrices)) {
+      toast.error("جاري تحميل أسعار القائمة، حاول بعد لحظة");
+      return;
+    }
 
     // A credit sale is a debt: it must belong to a customer
     if (data.paymentMethod === "CREDIT" && (data.clientType === "cash" || (data.clientType === "existing" && !data.clientId))) {
@@ -523,6 +576,7 @@ const SalesCreate: React.FC = () => {
           unitPrice: item.unitPrice,
         })),
         companyId: companyId!,
+        ...(selectedPriceList && { priceListId: selectedPriceList.id }),
       };
 
       // Add tax if selected
@@ -612,7 +666,7 @@ const SalesCreate: React.FC = () => {
       // The sale/client mutations already showed the server's message
       console.error("[SalesCreate] Error creating sale:", error);
     }
-  }, [items, createSaleMutation, createClientMutation, companyId, navigate, roundedTotal, changeDue, discountAmount, watch]);
+  }, [items, createSaleMutation, createClientMutation, companyId, navigate, roundedTotal, changeDue, discountAmount, watch, selectedPriceList, listIsDefault, listPricesLoading, listPrices]);
   // A form that does not pass validation must say why (it used to do nothing at all)
   const handleInvalid = (formErrors: Record<string, any>) => {
     const first = Object.values(formErrors)[0];
@@ -669,7 +723,7 @@ const SalesCreate: React.FC = () => {
   // product page fetched so far.
   const productOptions = allLoadedProducts.map((product: any) => ({
     value: product.id,
-    label: `${product.name} - ${formatCurrency(product.sellingPrice)} (المتاح: ${formatNumber(product.currentStock || product.stockQuantity)})`,
+    label: `${product.name} - ${formatCurrency(priceFor(product.id, product.sellingPrice))} (المتاح: ${formatNumber(product.currentStock || product.stockQuantity)})`,
     product,
   }));
 
@@ -901,7 +955,7 @@ const SalesCreate: React.FC = () => {
                               {stock} متاح
                             </span>
                             <span className={`font-bold text-sm ${isSelected ? "text-primary-700" : "text-primary-600"}`}>
-                              {formatCurrency(option.product.sellingPrice)}
+                              {formatCurrency(priceFor(option.product.id, option.product.sellingPrice))}
                             </span>
                           </div>
                         </button>
@@ -1058,6 +1112,31 @@ const SalesCreate: React.FC = () => {
                     </div>
                   );
                 })()}
+
+                {priceLists.length > 1 && (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">قائمة الأسعار</label>
+                    <div className="flex flex-wrap gap-1">
+                      {priceLists.map((list) => (
+                        <button
+                          key={list.id}
+                          type="button"
+                          onClick={() => setChosenPriceListId(list.id)}
+                          className={`py-1.5 px-3 rounded text-xs font-medium transition-all ${
+                            selectedPriceList?.id === list.id
+                              ? "bg-emerald-600 text-white"
+                              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                          }`}
+                        >
+                          {list.name}
+                        </button>
+                      ))}
+                    </div>
+                    {customerPriceListId && selectedPriceList?.id === customerPriceListId && (
+                      <p className="mt-1 text-[11px] text-emerald-700">قائمة العميل</p>
+                    )}
+                  </div>
+                )}
 
                 {clientType === "new" && (
                   <div className="space-y-2">

@@ -57,6 +57,7 @@ const Header: React.FC = () => {
             '/payments': 'المدفوعات',
             '/stock-movements': 'حركة المخزون',
             '/stocktakes': 'جرد المخزون',
+            '/price-lists': 'قوائم الأسعار',
             '/financial-reports': 'التقارير المالية',
         };
         

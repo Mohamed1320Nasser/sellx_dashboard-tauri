@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import ProductListPrices from '../components/products/ProductListPrices';
 import { ArrowLeft, Save, X, Package, AlertCircle } from 'lucide-react';
 import { Layout } from '../components/layout';
 import { Button, Input, Textarea, Select, Card } from '../components/ui';
@@ -322,6 +323,11 @@ const ProductEdit: React.FC = () => {
             </Card>
           </div>
         </form>
+        {id && companyId && (
+          <div className="mt-6">
+            <ProductListPrices productId={id} companyId={Number(companyId)} />
+          </div>
+        )}
       </div>
     </Layout>
   );

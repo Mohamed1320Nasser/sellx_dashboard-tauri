@@ -18,6 +18,7 @@ import {
     CreditCard,
     TrendingUp,
     ClipboardCheck,
+    Tags,
     FileText,
     Calculator,
     Calendar,
@@ -124,6 +125,12 @@ const navigationItems: NavigationItem[] = [
                 href: '/stocktakes',
                 icon: ClipboardCheck,
                 permission: 'canViewProducts',
+            },
+            {
+                name: 'قوائم الأسعار',
+                href: '/price-lists',
+                icon: Tags,
+                permission: 'canEditProducts',
             },
             {
                 name: 'المرتجعات',

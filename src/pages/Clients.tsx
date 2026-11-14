@@ -17,6 +17,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import type { Client } from "../types";
 import { formatTableDate } from "../utils/dateUtils";
+import { usePriceLists } from "../hooks/api/usePriceLists";
 
 const clientSchema = z.object({
   name: z.string().min(1, "اسم العميل مطلوب"),
@@ -25,6 +26,7 @@ const clientSchema = z.object({
   address: z.string().optional(),
   creditLimit: z.string().optional(),
   openingBalance: z.string().optional(),
+  priceListId: z.string().optional(),
 });
 
 type ClientFormData = z.infer<typeof clientSchema>;
@@ -55,14 +57,18 @@ const ClientForm: React.FC<{
         (client as any)?.openingBalance !== undefined && (client as any)?.openingBalance !== null
           ? String((client as any).openingBalance)
           : "",
+      priceListId: (client as any)?.priceListId || "",
     },
   });
+  const { data: priceLists = [] } = usePriceLists(companyId);
 
   const handleFormSubmit = (data: ClientFormData) => {
-    const { creditLimit, openingBalance, ...rest } = data;
+    const { creditLimit, openingBalance, priceListId, ...rest } = data;
     onSubmit({
       ...rest,
       companyId,
+      // Only sent when the company has more than one list; "" = the default list
+      ...(priceLists.length > 1 ? { priceListId: priceListId || null } : {}),
       ...(creditLimit !== undefined && creditLimit !== ""
         ? { creditLimit: parseFloat(creditLimit) }
         : {}),
@@ -130,6 +136,25 @@ const ClientForm: React.FC<{
           disabled={loading}
         />
       </div>
+
+      {priceLists.length > 1 && (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">قائمة الأسعار</label>
+          <select
+            {...register("priceListId")}
+            disabled={loading}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-primary-500 focus:ring-primary-500"
+          >
+            {priceLists.map((list) => (
+              <option key={list.id} value={list.isDefault ? "" : list.id}>
+                {list.name}
+                {list.isDefault ? " (الأساسية)" : ""}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-gray-500">تُختار تلقائياً في شاشة البيع عند اختيار هذا العميل، ويمكن تغييرها في الفاتورة.</p>
+        </div>
+      )}
 
       <div className="flex justify-end space-x-4 space-x-reverse">
         {onCancel && (
@@ -215,6 +240,18 @@ const Clients: React.FC = () => {
           <span>{client.phone || "غير محدد"}</span>
         </div>
       ),
+    },
+    {
+      key: "priceList",
+      label: "قائمة الأسعار",
+      render: (client: Client) =>
+        (client as any).priceList ? (
+          <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700">
+            {(client as any).priceList.name}
+          </span>
+        ) : (
+          <span className="text-xs text-gray-400">الأساسية</span>
+        ),
     },
     {
       key: "_count",
