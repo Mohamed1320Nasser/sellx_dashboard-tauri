@@ -164,6 +164,7 @@ export enum StockMovementType {
   SALE = "SALE",
   ADJUSTMENT = "ADJUSTMENT",
   RETURN = "RETURN",
+  STOCKTAKE = "STOCKTAKE",
 }
 
 export interface StockMovement {

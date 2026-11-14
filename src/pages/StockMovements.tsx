@@ -127,6 +127,7 @@ const StockMovements: React.FC = () => {
     { value: StockMovementType.SALE, label: 'بيع' },
     { value: StockMovementType.ADJUSTMENT, label: 'تعديل' },
     { value: StockMovementType.RETURN, label: 'إرجاع' },
+    { value: StockMovementType.STOCKTAKE, label: 'جرد' },
   ], []);
 
   // Table filters configuration
@@ -182,6 +183,11 @@ const StockMovements: React.FC = () => {
             label: 'إرجاع',
             color: 'bg-orange-100 text-orange-800 border-orange-200',
             icon: RotateCcw
+          },
+          [StockMovementType.STOCKTAKE]: {
+            label: 'جرد',
+            color: 'bg-indigo-100 text-indigo-800 border-indigo-200',
+            icon: Package
           },
         };
         const config = typeConfig[movement.type as StockMovementType];

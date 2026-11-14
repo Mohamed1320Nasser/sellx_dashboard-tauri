@@ -17,6 +17,7 @@ import {
     UserPlus,
     CreditCard,
     TrendingUp,
+    ClipboardCheck,
     FileText,
     Calculator,
     Calendar,
@@ -117,6 +118,12 @@ const navigationItems: NavigationItem[] = [
                 href: '/stock-movements',
                 icon: TrendingUp,
                 permission: 'canViewStockMovements',
+            },
+            {
+                name: 'جرد المخزون',
+                href: '/stocktakes',
+                icon: ClipboardCheck,
+                permission: 'canViewProducts',
             },
             {
                 name: 'المرتجعات',

@@ -38,6 +38,7 @@ const StockMovementAnalytics: React.FC<StockMovementAnalyticsProps> = () => {
       [StockMovementType.SALE]: 'بيع',
       [StockMovementType.ADJUSTMENT]: 'تعديل',
       [StockMovementType.RETURN]: 'إرجاع',
+      [StockMovementType.STOCKTAKE]: 'جرد',
     };
     return labels[type];
   };
@@ -48,6 +49,7 @@ const StockMovementAnalytics: React.FC<StockMovementAnalyticsProps> = () => {
       [StockMovementType.SALE]: 'bg-red-500',
       [StockMovementType.ADJUSTMENT]: 'bg-blue-500',
       [StockMovementType.RETURN]: 'bg-orange-500',
+      [StockMovementType.STOCKTAKE]: 'bg-indigo-500',
     };
     return colors[type];
   };
@@ -58,6 +60,7 @@ const StockMovementAnalytics: React.FC<StockMovementAnalyticsProps> = () => {
       [StockMovementType.SALE]: TrendingDown,
       [StockMovementType.ADJUSTMENT]: Package,
       [StockMovementType.RETURN]: RotateCcw,
+      [StockMovementType.STOCKTAKE]: Package,
     };
     return icons[type];
   };

@@ -56,10 +56,12 @@ const Header: React.FC = () => {
             '/returns': 'المرتجعات',
             '/payments': 'المدفوعات',
             '/stock-movements': 'حركة المخزون',
+            '/stocktakes': 'جرد المخزون',
             '/financial-reports': 'التقارير المالية',
         };
         
-        const pageTitle = pageTitles[path] || 'الصفحة';
+        // Detail pages (/stocktakes/123) take the title of their section
+        const pageTitle = pageTitles[path] || pageTitles['/' + path.split('/')[1]] || 'الصفحة';
         
         return {
             title: pageTitle,

@@ -41,6 +41,8 @@ import Payments from './pages/Payments';
 import PaymentCreate from './pages/PaymentCreate';
 import PaymentDetails from './pages/PaymentDetails';
 import StockMovements from './pages/StockMovements';
+import Stocktakes from './pages/Stocktakes';
+import StocktakeDetails from './pages/StocktakeDetails';
 import FinancialReports from './pages/FinancialReports';
 import CategoryReport from './pages/CategoryReport';
 import CustomerStatement from './pages/CustomerStatement';
@@ -306,6 +308,8 @@ const App: React.FC = () => {
                                         <Route path="/payments/:id" element={<PaymentDetails />} />
                                         <Route path="/payments/:id/edit" element={<PaymentCreate />} />
                                         <Route path="/stock-movements" element={<StockMovements />} />
+                                        <Route path="/stocktakes" element={<Stocktakes />} />
+                                        <Route path="/stocktakes/:id" element={<StocktakeDetails />} />
                                         <Route path="/financial-reports" element={<FinancialReports />} />
                                         <Route path="/category-report" element={<CategoryReport />} />
                                         <Route path="/analytics" element={<Analytics />} />
