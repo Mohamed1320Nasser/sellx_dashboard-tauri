@@ -20,6 +20,7 @@ import { SellxReceipt } from '../components/receipts/SellxReceipt';
 import { BarcodeLabel as BarcodeLabelComponent } from '../components/receipts/BarcodeLabel';
 import { getPrinterForType, getMissingPrinterError, type PrinterType } from './printerAssignmentService';
 import JsBarcode from 'jsbarcode';
+import { ensurePrinterMode } from './printerModeService';
 
 // ═══════════════════════════════════════════════════════════════════════
 // TYPES
@@ -58,6 +59,10 @@ export interface SellxReceiptData {
 
   // ── SELLX-SPECIFIC FIELDS ──
   isPurchase?: boolean; // true = purchase receipt, false/undefined = sale receipt
+  isQuote?: boolean; // price quote: "عرض سعر", no payment block, printed on the quote printer
+  validUntil?: string; // quotes: last day the prices hold
+  /** Narrow paper (58mm): items as name line + "qty × price = total" line, set by printReceipt */
+  compact?: boolean;
   supplierName?: string; // Purchase receipts: who the goods came from
   clientName?: string; // Sale receipts: the customer whose account carries the invoice
   remaining?: number; // Purchase receipts: amount still owed on the invoice
@@ -268,6 +273,7 @@ function generateReceiptHtml(data: SellxReceiptData): string {
     ...data,
     showQrCode: config.showQrCode && data.showQrCode,
     showOrderId: config.showOrderId,
+    compact: config.paperWidth === '58mm',
   };
 
   // ── DEBUG: Verify items count before rendering ──
@@ -377,6 +383,8 @@ export async function printReceipt(data: SellxReceiptData): Promise<void> {
 
   if (data.isPurchase) {
     printerType = 'purchase';
+  } else if (data.isQuote) {
+    printerType = 'quote';
   }
   // Future: Add more detection logic
   // else if (data.isQuote) printerType = 'quote';
@@ -388,6 +396,9 @@ export async function printReceipt(data: SellxReceiptData): Promise<void> {
   if (!printer) {
     throw new Error(getMissingPrinterError(printerType));
   }
+
+  // A printer shared with barcode labels may need switching back to receipt mode
+  await ensurePrinterMode('receipt', printer);
 
   // Generate HTML
   const body = generateReceiptHtml(data);
@@ -486,6 +497,8 @@ export async function printBarcode(label: BarcodeLabel, quantity: number = 1): P
     svgPreview: barcodeSvg.substring(0, 150) + '...',
   });
 
+  await ensurePrinterMode('label');
+
   // Print quantity copies (using barcode printer)
   console.log(`🖨️ SENDING ${quantity} BARCODE LABEL(S) TO PRINTER:`, printer);
   for (let i = 0; i < quantity; i++) {
@@ -547,45 +560,60 @@ export async function getDefaultPrinter(): Promise<string | null> {
 }
 
 /**
- * Test print function - prints a sample receipt
- * Useful for testing printer configuration
+ * Guess the paper width from the printer's name ("POS-58", "XP-80C"...). null when the name doesn't say.
+ */
+export function guessPaperWidth(printerName?: string): '58mm' | '80mm' | null {
+  const name = (printerName || '').toLowerCase();
+  if (/(^|[^0-9])58([^0-9]|$)/.test(name)) return '58mm';
+  if (/(^|[^0-9])80([^0-9]|$)/.test(name)) return '80mm';
+  return null;
+}
+
+/** A frame with both edges marked and a 1-10 scale: if a side is missing on paper, the width is wrong */
+function paperWidthTestBody(width: string): string {
+  const cells = Array.from({ length: 10 }, (_, i) => `<span>${i + 1}</span>`).join('');
+  return `<div class="receipt">
+  <div class="receipt__type-header">اختبار عرض الورق: ${width}</div>
+  <div class="receipt__width-test"><span>◀ الحافة اليمنى</span><span>اليسرى ▶</span></div>
+  <div class="receipt__width-scale">${cells}</div>
+  <div class="receipt__subheader">يجب أن يظهر الإطار كاملًا والأرقام من 1 إلى 10.</div>
+  <div class="receipt__subheader">إذا انقطع أي جانب فاختر عرض الورق الآخر من الإعدادات.</div>
+</div>`;
+}
+
+/**
+ * Test print: the paper-width check followed by a sample receipt, on the receipt printer
  */
 export async function testPrint(): Promise<void> {
-  await printReceipt({
+  const config = usePrinterConfigStore.getState();
+  const printer = getPrinterForType('receipt');
+  if (!printer) {
+    throw new Error(getMissingPrinterError('receipt'));
+  }
+  await ensurePrinterMode('receipt', printer);
+
+  const now = new Date();
+  const sample = generateReceiptHtml({
     receiptNumber: 'TEST-001',
-    date: new Date().toLocaleDateString('ar-EG-u-nu-latn', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit'
-    }),
-    time: new Date().toLocaleTimeString('ar-SA-u-nu-latn', { hour: '2-digit', minute: '2-digit' }),
-    cashier: 'نظام الطباعة',
+    date: now.toLocaleDateString('ar-EG-u-nu-latn', { year: 'numeric', month: '2-digit', day: '2-digit' }),
+    time: now.toLocaleTimeString('ar-EG-u-nu-latn', { hour: '2-digit', minute: '2-digit', hour12: true }),
+    cashier: 'اختبار الطابعة',
     companyName: 'اختبار الطابعة',
-    companyAddress: 'المملكة العربية السعودية',
-    companyPhone: '05xxxxxxxx',
     items: [
-      {
-        productName: 'منتج تجريبي 1',
-        quantity: 2,
-        unitPrice: 50,
-        total: 100,
-      },
-      {
-        productName: 'منتج تجريبي 2',
-        quantity: 1,
-        unitPrice: 75,
-        total: 75,
-      },
+      { productName: 'منتج تجريبي باسم طويل للتأكد من التفاف السطر', quantity: 2, unitPrice: 50, total: 100 },
+      { productName: 'منتج تجريبي 2', quantity: 1, unitPrice: 75, total: 75 },
     ],
     subtotal: 175,
-    tax: 26.25,
-    taxRate: 15,
-    total: 201.25,
-    paid: 250,
-    change: 48.75,
+    total: 175,
+    paid: 200,
+    received: 200,
+    change: 25,
     paymentMethod: 'نقداً',
-    footerText: 'هذا إيصال تجريبي - اختبار الطابعة',
+    footerText: 'إيصال تجريبي - اختبار الطابعة',
   });
+  const width = config.paperWidth || '80mm';
+  const html = await wrapHtml(paperWidthTestBody(width) + sample, width);
+  await sendToPrinter(printer, html);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -656,6 +684,7 @@ export async function printShiftReport(data: ShiftReportData): Promise<void> {
     printer = '';
   }
   if (printer) {
+    await ensurePrinterMode('receipt', printer);
     await sendToPrinter(printer, html);
     return;
   }

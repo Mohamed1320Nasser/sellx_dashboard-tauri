@@ -315,6 +315,67 @@
   margin-top: 3mm;
 }
 
+/* Paper width test print */
+.receipt__width-test {
+  display: flex;
+  justify-content: space-between;
+  border: 2px solid #000;
+  padding: 6px 2px;
+  font-size: 10px;
+  font-weight: bold;
+  margin: 4px 0;
+}
+
+.receipt__width-scale {
+  display: flex;
+  border: 1px solid #000;
+  margin-bottom: 6px;
+}
+
+.receipt__width-scale span {
+  flex: 1;
+  text-align: center;
+  font-size: 10px;
+  font-weight: bold;
+  border-left: 1px solid #000;
+}
+
+.receipt__width-scale span:last-child {
+  border-left: none;
+}
+
+/* 58mm items: name on one line, "qty × price ... total" under it */
+.receipt__lines {
+  margin: 2px 0;
+}
+
+.receipt__line {
+  padding: 3px 0;
+  border-bottom: 1px dashed #999;
+}
+
+.receipt__line:last-child {
+  border-bottom: none;
+}
+
+.receipt__line-name {
+  font-size: 11px;
+  font-weight: bold;
+  line-height: 1.25;
+  word-break: break-word;
+}
+
+.receipt__line-calc {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  direction: rtl;
+}
+
+.receipt__line-total {
+  font-weight: bold;
+}
+
 /* Responsive adjustments for 58mm paper */
 @media (max-width: 220px) {
   .receipt {

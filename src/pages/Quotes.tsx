@@ -8,14 +8,12 @@ import { useSessionAuthStore } from "../stores/sessionAuthStore";
 import {
   useQuotes,
   useDeleteQuote,
-  usePrintQuote,
   useConvertQuoteToSale,
   useEmailQuote,
-  useGenerateQuotePdf,
 } from "../hooks/api/useQuotes";
 import { formatTableDate } from "../utils/dateUtils";
 import { formatCurrency } from "../utils/currencyUtils";
-import { printReceipt } from "../services/printService";
+import { downloadQuotePdf, printQuoteA4, printQuoteThermal } from "../services/quotePrintService";
 import toast from "react-hot-toast";
 import type { Quote } from "../types";
 
@@ -38,10 +36,8 @@ const Quotes: React.FC = () => {
   });
 
   const deleteMutation = useDeleteQuote();
-  const printMutation = usePrintQuote();
   const convertToSaleMutation = useConvertQuoteToSale();
   const emailMutation = useEmailQuote();
-  const generatePdfMutation = useGenerateQuotePdf();
 
   // Helper function to check if quote is expired
   const isExpired = (validUntil?: string) => {
@@ -162,10 +158,24 @@ const Quotes: React.FC = () => {
     }
   };
 
-  const handlePrintA4 = (quote: Quote) => {
-    // Open A4 print view in new tab
-    window.open(`/quotes/${quote.id}/print`, '_blank');
+  /** One runner for every print button: shows progress, then success or the reason it failed */
+  const runPrint = async (job: () => Promise<void>, busy: string, done: string) => {
+    const id = "quote-print";
+    toast.loading(busy, { id });
+    try {
+      await job();
+      toast.success(done, { id });
+    } catch (error: any) {
+      console.error("Quote print error:", error);
+      toast.error(error?.message || "فشلت الطباعة", { id });
+    }
   };
+
+  const handlePrintA4 = (quote: Quote) =>
+    runPrint(() => printQuoteA4(quote), "جاري تجهيز الطباعة...", "تم فتح نافذة الطباعة");
+
+  const handleDownloadPdf = (quote: Quote) =>
+    runPrint(() => downloadQuotePdf(quote), "جاري إنشاء ملف PDF...", "تم تحميل ملف PDF");
 
   const handleConvertToSale = (quote: Quote) => {
     setConvertingQuote(quote);
@@ -196,41 +206,8 @@ const Quotes: React.FC = () => {
     emailMutation.mutate({ id, companyId });
   };
 
-  const handlePrintThermal = async (quote: Quote) => {
-    try {
-      // Convert quote to receipt format for printing
-      const receiptData = {
-        id: quote.id,
-        receiptNumber: quote.quoteNumber,
-        createdAt: quote.createdAt,
-        subtotal: parseFloat(quote.subtotal.toString()),
-        discountAmount: parseFloat(quote.totalDiscount?.toString() || '0'),
-        taxRate: parseFloat(quote.taxPercent?.toString() || '0'),
-        taxAmount: parseFloat(quote.taxAmount?.toString() || '0'),
-        total: parseFloat(quote.total.toString()),
-        paidAmount: parseFloat(quote.total.toString()),
-        items: (quote.items || []).map((item: any) => ({
-          productName: item.productName || '',
-          quantity: item.quantity || 0,
-          unitPrice: parseFloat(item.unitPrice?.toString() || '0'),
-          totalPrice: parseFloat(item.lineTotal?.toString() || '0'),
-        })),
-      };
-
-      // TODO: Convert quote to SellxReceiptData format
-      // await printReceipt({
-      //   sale: receiptData,
-      //   company: company?.company || { name: 'POS System' },
-      //   cashier: 'Quote'
-      // });
-      console.warn('Quote printing disabled - needs conversion to SellxReceiptData format');
-
-      toast.success('تم طباعة العرض السعري');
-    } catch (error) {
-      console.error('Print error:', error);
-      toast.error('فشل في الطباعة');
-    }
-  };
+  const handlePrintThermal = (quote: Quote) =>
+    runPrint(() => printQuoteThermal(quote), "جاري الطباعة...", "تم إرسال العرض السعري للطابعة");
 
   const statusOptions = useMemo(() => [
     { value: "", label: "جميع الحالات" },
@@ -401,7 +378,13 @@ const Quotes: React.FC = () => {
             {
               icon: FileDown,
               label: "تحميل PDF",
-              onClick: (quote) => generatePdfMutation.mutate({ quote, company }),
+              onClick: (quote) => handleDownloadPdf(quote),
+              variant: "primary",
+            },
+            {
+              icon: FileText,
+              label: "طباعة A4",
+              onClick: (quote) => handlePrintA4(quote),
               variant: "primary",
             },
             {

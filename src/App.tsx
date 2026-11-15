@@ -3,6 +3,7 @@ import { BrowserRouter, HashRouter, Routes, Route, Navigate } from 'react-router
 import { QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { Toaster } from 'react-hot-toast';
+import { PrinterModePrompt } from './components/printer/PrinterModePrompt';
 import { queryClient } from './config/queryClient';
 import { useSessionAuthStore } from './stores/sessionAuthStore';
 import { useUIStore } from './stores/uiStore';
@@ -52,7 +53,6 @@ import Quotes from './pages/Quotes';
 import QuoteCreate from './pages/QuoteCreate';
 import QuoteEdit from './pages/QuoteEdit';
 import QuoteView from './pages/QuoteView';
-import QuotePrint from './pages/QuotePrint';
 import Returns from './pages/Returns';
 import ReturnsCreate from './pages/ReturnsCreate';
 import ReturnsDetails from './pages/ReturnsDetails';
@@ -328,7 +328,6 @@ const App: React.FC = () => {
                                         <Route path="/quotes/create" element={<QuoteCreate />} />
                                         <Route path="/quotes/:id" element={<QuoteView />} />
                                         <Route path="/quotes/:id/edit" element={<QuoteEdit />} />
-                                        <Route path="/quotes/:id/print" element={<QuotePrint />} />
                                         <Route path="/settings/app-config" element={<AppConfig />} />
                                         <Route path="/settings/printer" element={<PrinterSettings />} />
                                         <Route path="/settings/company" element={<CompanySettings />} />
@@ -347,6 +346,8 @@ const App: React.FC = () => {
                             }
                         />
                     </Routes>
+
+                    <PrinterModePrompt />
 
                     <Toaster
                         position="top-center"

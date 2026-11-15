@@ -1,5 +1,5 @@
 /**
- * Maps a sale or a purchase into the data the thermal receipt (SellxReceipt) shows.
+ * Maps a sale, a purchase or a price quote into the data the thermal receipt (SellxReceipt) shows.
  * The A4 invoice uses components/invoice/buildSaleInvoiceData instead.
  */
 const SALE_PAYMENT_LABELS: Record<string, string> = {
@@ -62,7 +62,7 @@ export function saleToReceiptData(params: {
     discount: parseFloat(sale.discountAmount || sale.discount || 0),
     discountPercentage: parseFloat(sale.discountPercent || sale.discountPercentage || 0),
     tax: parseFloat(sale.taxAmount || sale.tax || 0),
-    taxRate: parseFloat(sale.taxRate || 15),
+    taxRate: parseFloat(sale.taxRate || 0),
     total: parseFloat(sale.totalAmount || sale.total || 0),
 
     // Payment details. paidAmount can be 0 (unpaid credit sale), so don't fall back on "falsy".
@@ -147,5 +147,35 @@ export function purchaseToReceiptData(params: Parameters<typeof saleToReceiptDat
     additionalFee: parseFloat(purchase.shippingCost ?? 0),
     additionalFeeLabel: parseFloat(purchase.shippingCost ?? 0) > 0 ? 'شحن وتحميل' : undefined,
     footerText: params.footerText || ' ',
+  };
+}
+
+/**
+ * A price quote on the thermal printer: "عرض سعر", the customer, items, totals and how long it is valid.
+ * No payment block, since nothing has been paid.
+ */
+export function quoteToReceiptData(params: Parameters<typeof saleToReceiptData>[0]): any {
+  const { sale: quote } = params;
+  const base = saleToReceiptData({
+    ...params,
+    sale: {
+      ...quote,
+      receiptNumber: quote.quoteNumber,
+      saleDate: quote.quoteDate || quote.createdAt,
+      totalAmount: quote.total ?? quote.totalAmount,
+      discountAmount: quote.totalDiscount ?? quote.discountAmount,
+      taxRate: quote.taxPercent ?? quote.taxRate,
+      items: (quote.items || []).map((it: any) => ({ ...it, totalPrice: it.lineTotal ?? it.totalPrice })),
+    },
+  });
+  const { paid: _p, remaining: _r, change: _c, received: _rc, paymentMethod: _pm, ...rest } = base;
+  return {
+    ...rest,
+    isQuote: true,
+    clientName: quote.customerName || quote.client?.name || undefined,
+    validUntil: quote.validUntil
+      ? new Date(quote.validUntil).toLocaleDateString('ar-EG-u-nu-latn', { year: 'numeric', month: '2-digit', day: '2-digit' })
+      : undefined,
+    additionalFeeLabel: quote.additionalFeeLabel || base.additionalFeeLabel,
   };
 }

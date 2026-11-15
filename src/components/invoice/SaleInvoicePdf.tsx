@@ -338,9 +338,9 @@ export const SaleInvoicePdf: React.FC<{ data: SaleInvoiceData }> = ({ data }) =>
   const hasFee = data.additionalFee > 0;
   const isPartial = data.remainingAmount > 0;
   const pill =
-    data.paymentStatus === "UNPAID"
+    data.pillTone === "red"
       ? { backgroundColor: "#fee2e2", color: "#b91c1c" }
-      : data.paymentStatus === "PARTIAL"
+      : data.pillTone === "amber"
         ? { backgroundColor: "#fef3c7", color: "#b45309" }
         : { backgroundColor: COLOR.badgePaidBg, color: COLOR.badgePaidInk };
 
@@ -401,12 +401,12 @@ export const SaleInvoicePdf: React.FC<{ data: SaleInvoiceData }> = ({ data }) =>
             )}
           </View>
           <View style={styles.infoCell}>
-            <Text style={styles.infoLabel}>طريقة الدفع</Text>
-            <Text style={styles.infoValue}>{data.paymentMethodLabel}</Text>
-            <Text style={[styles.payPill, pill]}>{data.paymentStatusLabel}</Text>
+            <Text style={styles.infoLabel}>{data.middleLabel}</Text>
+            <Text style={styles.infoValue}>{data.middleValue}</Text>
+            <Text style={[styles.payPill, pill]}>{data.pillLabel}</Text>
           </View>
           <View style={[styles.infoCell, styles.infoCellLast]}>
-            <Text style={styles.infoLabel}>{data.kind === "purchase" ? "المستخدم" : "الكاشير"}</Text>
+            <Text style={styles.infoLabel}>{data.staffLabel}</Text>
             <Text style={styles.infoValue}>{data.cashierName || "—"}</Text>
           </View>
         </View>
@@ -510,7 +510,7 @@ export const SaleInvoicePdf: React.FC<{ data: SaleInvoiceData }> = ({ data }) =>
 
         {/* Signatures */}
         <View style={styles.signatures} wrap={false}>
-          <Text style={styles.sigLine}>{data.kind === "purchase" ? "توقيع المورد" : "توقيع المستلم"}</Text>
+          <Text style={styles.sigLine}>{data.signatureLabel}</Text>
           <Text style={styles.sigLine}>ختم الشركة / التوقيع</Text>
         </View>
 

@@ -28,6 +28,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { isTauri } from './tauriBridge';
 import { usePrinterConfigStore } from '../stores/printerConfigStore';
 import { useSessionAuthStore } from '../stores/sessionAuthStore';
+import { ensurePrinterMode } from './printerModeService';
 
 export interface BarcodeData {
   barcode: string;
@@ -83,6 +84,9 @@ export async function printBarcode(data: BarcodeData, quantity: number = 1): Pro
       'تأكد أن الطابعة في وضع TSPL وأن ورق اللاصق محمّل.'
     );
   }
+
+  // A printer shared with receipts may need switching to label mode first
+  await ensurePrinterMode('label');
 
   const vendorId = vidHex ? parseInt(vidHex, 16) : 0;
   const productId = pidHex ? parseInt(pidHex, 16) : 0;

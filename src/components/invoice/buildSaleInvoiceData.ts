@@ -1,5 +1,5 @@
 import QRCode from "qrcode";
-import type { InvoiceKind, InvoiceStatus, SaleInvoiceData, SaleInvoiceLineItem } from "./saleInvoiceTypes";
+import type { InvoiceKind, InvoiceStatus, PillTone, SaleInvoiceData, SaleInvoiceLineItem } from "./saleInvoiceTypes";
 import { amountInWords } from "../../utils/amountInWords";
 
 const PAYMENT_METHOD_LABELS: Record<string, string> = {
@@ -16,13 +16,15 @@ const PAYMENT_STATUS_LABELS: Record<InvoiceStatus, string> = {
   UNPAID: "غير مدفوعة",
 };
 
+const STATUS_TONES: Record<InvoiceStatus, PillTone> = { PAID: "green", PARTIAL: "amber", UNPAID: "red" };
+
 const num = (v: unknown, fallback = 0) => {
   const n = typeof v === "number" ? v : parseFloat(String(v ?? ""));
   return Number.isFinite(n) ? n : fallback;
 };
 
 /**
- * Maps a sale or a purchase (as the API returns it, or as built right after saving) into the
+ * Maps a sale, a purchase or a price quote (as the API returns it, or as built right after saving) into the
  * flat data the A4 invoice shows. The PDF download and the A4 print both use this, so they match.
  */
 export async function buildSaleInvoiceData(params: {
@@ -36,8 +38,11 @@ export async function buildSaleInvoiceData(params: {
 }): Promise<SaleInvoiceData> {
   const { sale, company, cashier, kind = "sale", showQrCode = false, footerText } = params;
   const isPurchase = kind === "purchase";
+  const isQuote = kind === "quote";
 
-  const when = new Date((isPurchase ? sale.purchaseDate : sale.saleDate) || sale.createdAt || Date.now());
+  const when = new Date(
+    (isPurchase ? sale.purchaseDate : isQuote ? sale.quoteDate : sale.saleDate) || sale.createdAt || Date.now()
+  );
   const dateLabel = when.toLocaleDateString("ar-EG-u-nu-latn", { year: "numeric", month: "long", day: "2-digit" });
   const timeLabel = new Date(sale.createdAt || when).toLocaleTimeString("ar-EG-u-nu-latn", {
     hour: "2-digit",
@@ -55,27 +60,35 @@ export async function buildSaleInvoiceData(params: {
       categoryName: item.product?.category?.name || undefined,
       quantity,
       unitPrice,
-      total: num(item.totalPrice ?? item.total, quantity * unitPrice),
+      total: num(item.totalPrice ?? item.lineTotal ?? item.total, quantity * unitPrice),
     };
   });
 
   const totalAmount = num(sale.totalAmount ?? sale.total);
-  const paidAmount = num(sale.paidAmount ?? sale.paid, isPurchase ? 0 : totalAmount);
+  // a quote has nothing paid and nothing owed
+  const paidAmount = isQuote ? 0 : num(sale.paidAmount ?? sale.paid, isPurchase ? 0 : totalAmount);
   const taxAmount = num(sale.taxAmount ?? sale.tax);
-  const discountAmount = num(sale.discountAmount ?? sale.discount);
+  const discountAmount = num(sale.discountAmount ?? sale.totalDiscount ?? sale.discount);
   const additionalFee = num(isPurchase ? sale.shippingCost : sale.additionalFee);
   const itemsTotal = items.reduce((s, it) => s + it.total, 0);
   const subtotal = num(sale.subtotal, itemsTotal);
   // The API's remaining amount already counts returns; otherwise total - paid
-  const remainingAmount = Math.max(
-    0,
-    Math.round(num(sale.remainingAmount, totalAmount - paidAmount) * 100) / 100
-  );
+  const remainingAmount = isQuote
+    ? 0
+    : Math.max(0, Math.round(num(sale.remainingAmount, totalAmount - paidAmount) * 100) / 100);
   const paymentStatus: InvoiceStatus =
     (sale.paymentStatus as InvoiceStatus) ||
     (remainingAmount <= 0.009 ? "PAID" : paidAmount > 0 ? "PARTIAL" : "UNPAID");
 
-  const party = isPurchase ? sale.supplier : sale.client;
+  const party = isPurchase
+    ? sale.supplier
+    : isQuote
+      ? {
+          name: sale.customerName || sale.client?.name,
+          phone: sale.customerContact || sale.client?.phone,
+          email: sale.customerEmail || sale.client?.email,
+        }
+      : sale.client;
   const companyName = company?.name || company?.company?.name || "";
   const companyTaxNumber = company?.taxNumber || company?.taxId || company?.company?.taxNumber;
 
@@ -91,12 +104,16 @@ export async function buildSaleInvoiceData(params: {
       })
     : "";
 
+  const validUntil = isQuote && sale.validUntil ? new Date(sale.validUntil) : null;
+  const expired = !!validUntil && validUntil.getTime() < new Date().setHours(0, 0, 0, 0);
   const method = String(sale.paymentMethod || (isPurchase && paidAmount <= 0 ? "CREDIT" : "CASH")).toUpperCase();
 
   return {
     kind,
-    title: isPurchase ? "فاتورة شراء" : "فاتورة بيع",
-    receiptNumber: (isPurchase ? sale.invoiceNumber : sale.receiptNumber) || `${isPurchase ? "PUR" : "SALE"}-${sale.id ?? ""}`,
+    title: isPurchase ? "فاتورة شراء" : isQuote ? "عرض سعر" : "فاتورة بيع",
+    receiptNumber:
+      (isPurchase ? sale.invoiceNumber : isQuote ? sale.quoteNumber : sale.receiptNumber) ||
+      `${isPurchase ? "PUR" : isQuote ? "QT" : "SALE"}-${sale.id ?? ""}`,
     dateLabel,
     timeLabel,
 
@@ -108,19 +125,30 @@ export async function buildSaleInvoiceData(params: {
     companyLogoUrl: company?.logoUrl || company?.company?.logoUrl,
 
     partyLabel: isPurchase ? "المورد" : "العميل",
-    clientName: party?.name || sale.clientName || sale.supplierName || (isPurchase ? "—" : "عميل نقدي"),
+    clientName: party?.name || sale.clientName || sale.supplierName || (isPurchase || isQuote ? "—" : "عميل نقدي"),
     clientPhone: party?.phone || undefined,
     clientEmail: party?.email || undefined,
 
     cashierName: sale.user?.fullname || cashier?.fullname || cashier?.name || cashier?.username,
+    staffLabel: isPurchase ? "المستخدم" : isQuote ? "أعدّه" : "الكاشير",
     notes: sale.notes || undefined,
+
+    middleLabel: isQuote ? "صالح حتى" : "طريقة الدفع",
+    middleValue: isQuote
+      ? validUntil
+        ? validUntil.toLocaleDateString("ar-EG-u-nu-latn", { year: "numeric", month: "long", day: "2-digit" })
+        : "غير محدد"
+      : PAYMENT_METHOD_LABELS[method] || "نقدًا",
+    pillLabel: isQuote ? (expired ? "منتهي الصلاحية" : "ساري") : PAYMENT_STATUS_LABELS[paymentStatus] || PAYMENT_STATUS_LABELS.PAID,
+    pillTone: isQuote ? (expired ? "red" : "green") : STATUS_TONES[paymentStatus] || "green",
+    signatureLabel: isPurchase ? "توقيع المورد" : isQuote ? "توقيع العميل بالموافقة" : "توقيع المستلم",
 
     items,
 
     subtotal,
     discountAmount,
     taxAmount,
-    taxRate: sale.taxRate != null && num(sale.taxRate) > 0 ? num(sale.taxRate) : undefined,
+    taxRate: num(sale.taxRate ?? sale.taxPercent) > 0 ? num(sale.taxRate ?? sale.taxPercent) : undefined,
     additionalFee,
     additionalFeeLabel: isPurchase ? "شحن وتحميل" : sale.additionalFeeLabel || undefined,
     totalAmount,

@@ -1,7 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { quoteService } from "../../services/quoteService";
 import { useApiErrorHandler } from "../useApiErrorHandler";
-import { generateQuotePdf } from "../../utils/quotePdfGenerator";
 import toast from "react-hot-toast";
 import type {
   CreateQuoteRequest,
@@ -217,19 +216,3 @@ export const useEmailQuote = () => {
   });
 };
 
-// Generate Quote PDF
-export const useGenerateQuotePdf = () => {
-  return useMutation({
-    mutationFn: async ({ quote, company }: { quote: Quote; company?: any }) => {
-      await generateQuotePdf(quote, company);
-      return quote;
-    },
-    onSuccess: () => {
-      toast.success("تم تحميل العرض السعري بنجاح");
-    },
-    onError: (error) => {
-      const errorMessage = error instanceof Error ? error.message : "حدث خطأ أثناء إنشاء ملف PDF";
-      toast.error(errorMessage);
-    },
-  });
-};

@@ -8,7 +8,8 @@ export interface SaleInvoiceLineItem {
   total: number;
 }
 
-export type InvoiceKind = "sale" | "purchase";
+export type InvoiceKind = "sale" | "purchase" | "quote";
+export type PillTone = "green" | "amber" | "red";
 export type InvoiceStatus = "PAID" | "PARTIAL" | "UNPAID";
 
 /** Everything the A4 invoice shows, already formatted for display (PDF and print use the same data) */
@@ -34,7 +35,17 @@ export interface SaleInvoiceData {
   clientEmail?: string;
 
   cashierName?: string;
+  /** "الكاشير" / "المستخدم" / "أعدّه" */
+  staffLabel: string;
   notes?: string;
+
+  /** Middle info cell: payment method for sales/purchases, validity for quotes */
+  middleLabel: string;
+  middleValue: string;
+  pillLabel: string;
+  pillTone: PillTone;
+  /** Left signature line: "توقيع المستلم" / "توقيع المورد" / "توقيع العميل بالموافقة" */
+  signatureLabel: string;
 
   items: SaleInvoiceLineItem[];
 

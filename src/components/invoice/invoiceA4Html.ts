@@ -15,14 +15,14 @@ const amount = (n: number) =>
   new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 const money = (n: number, negative = false) => `${negative ? "-" : ""}${amount(n)} ج.م`;
 
-const STATUS_COLORS: Record<string, [string, string]> = {
-  PAID: ["#dcfce7", "#15803d"],
-  PARTIAL: ["#fef3c7", "#b45309"],
-  UNPAID: ["#fee2e2", "#b91c1c"],
+const PILL_COLORS: Record<string, [string, string]> = {
+  green: ["#dcfce7", "#15803d"],
+  amber: ["#fef3c7", "#b45309"],
+  red: ["#fee2e2", "#b91c1c"],
 };
 
 export function invoiceA4Html(d: SaleInvoiceData, fontCss = ""): string {
-  const [pillBg, pillInk] = STATUS_COLORS[d.paymentStatus] || STATUS_COLORS.PAID;
+  const [pillBg, pillInk] = PILL_COLORS[d.pillTone] || PILL_COLORS.green;
   const initial = esc(d.companyName?.trim()?.[0] || "؟");
   const row = (label: string, value: string, cls = "") =>
     `<div class="t-row ${cls}"><span>${label}</span><span class="num">${value}</span></div>`;
@@ -112,12 +112,12 @@ tbody tr { page-break-inside: avoid; }
       ${d.clientPhone || d.clientEmail ? `<div class="sub"><span class="num">${esc([d.clientPhone, d.clientEmail].filter(Boolean).join(" · "))}</span></div>` : ""}
     </div>
     <div class="cell">
-      <div class="label">طريقة الدفع</div>
-      <div class="value">${esc(d.paymentMethodLabel)}</div>
-      <span class="pill">${esc(d.paymentStatusLabel)}</span>
+      <div class="label">${esc(d.middleLabel)}</div>
+      <div class="value">${esc(d.middleValue)}</div>
+      <span class="pill">${esc(d.pillLabel)}</span>
     </div>
     <div class="cell">
-      <div class="label">${d.kind === "purchase" ? "المستخدم" : "الكاشير"}</div>
+      <div class="label">${esc(d.staffLabel)}</div>
       <div class="value">${esc(d.cashierName || "—")}</div>
     </div>
   </div>
@@ -166,7 +166,7 @@ tbody tr { page-break-inside: avoid; }
   </div>
 
   <div class="signs">
-    <div>${d.kind === "purchase" ? "توقيع المورد" : "توقيع المستلم"}</div>
+    <div>${esc(d.signatureLabel)}</div>
     <div>ختم الشركة / التوقيع</div>
   </div>
 

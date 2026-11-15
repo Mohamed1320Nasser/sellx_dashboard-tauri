@@ -43,7 +43,7 @@ export function SellxReceipt({ data }: Props) {
 
       {/* Receipt Type Header */}
       <div className="receipt__type-header">
-        {data.headerText || (data.isPurchase ? "فاتورة مشتريات" : "فاتورة بيع")}
+        {data.isQuote ? "عرض سعر" : data.headerText || (data.isPurchase ? "فاتورة مشتريات" : "فاتورة بيع")}
       </div>
 
       <hr className="receipt__divider" />
@@ -51,7 +51,7 @@ export function SellxReceipt({ data }: Props) {
       {/* Receipt Info */}
       <div className="receipt__info">
         <div className="receipt__row">
-          <span className="receipt__label">رقم الفاتورة</span>
+          <span className="receipt__label">{data.isQuote ? "رقم العرض" : "رقم الفاتورة"}</span>
           <span className="receipt__value">{data.receiptNumber}</span>
         </div>
         <div className="receipt__row">
@@ -63,7 +63,7 @@ export function SellxReceipt({ data }: Props) {
           <span className="receipt__value" dir="ltr">{data.time}</span>
         </div>
         <div className="receipt__row">
-          <span className="receipt__label">الكاشير</span>
+          <span className="receipt__label">{data.isQuote ? "أعدّه" : "الكاشير"}</span>
           <span className="receipt__value">{data.cashier}</span>
         </div>
         {data.clientName && (
@@ -82,7 +82,27 @@ export function SellxReceipt({ data }: Props) {
 
       <hr className="receipt__divider" />
 
-      {/* Items Table */}
+      {/* Items: on 58mm paper each item takes two lines so nothing has to shrink */}
+      {data.compact ? (
+        <div className="receipt__lines">
+          {items.map((item, i) => (
+            <div className="receipt__line" key={i}>
+              <div className="receipt__line-name">
+                {item.productName}
+                {item.variantName ? ` - ${item.variantName}` : ""}
+              </div>
+              <div className="receipt__line-calc">
+                <span>
+                  {item.quantity} × {formatPrice(item.unitPrice)}
+                </span>
+                <span className="receipt__line-total">
+                  {formatPrice(item.total || item.quantity * item.unitPrice)}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
       <table className="receipt__table">
         <thead>
           <tr>
@@ -117,6 +137,7 @@ export function SellxReceipt({ data }: Props) {
           ))}
         </tbody>
       </table>
+      )}
 
       <hr className="receipt__divider" />
 
@@ -193,6 +214,16 @@ export function SellxReceipt({ data }: Props) {
                 <span className="receipt__value">{formatPrice(data.change)}</span>
               </div>
             )}
+          </div>
+        </>
+      )}
+
+      {data.isQuote && data.validUntil && (
+        <>
+          <hr className="receipt__divider" />
+          <div className="receipt__row">
+            <span className="receipt__label">صالح حتى</span>
+            <span className="receipt__value">{data.validUntil}</span>
           </div>
         </>
       )}

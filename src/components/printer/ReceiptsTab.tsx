@@ -1,10 +1,29 @@
-import React from 'react';
-import { Receipt } from 'lucide-react';
+import React, { useState } from 'react';
+import { Receipt, AlertTriangle, Ruler } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { guessPaperWidth, testPrint } from '../../services/printService';
 import { Card, Input, Toggle, Select } from '../ui';
 import { usePrinterConfigStore } from '../../stores/printerConfigStore';
 
 export const ReceiptsTab: React.FC = () => {
   const config = usePrinterConfigStore();
+  const [testing, setTesting] = useState(false);
+  const receiptPrinter = config.getPrinterForType('receipt');
+  const guessed = guessPaperWidth(receiptPrinter);
+  const mismatch = guessed && guessed !== config.paperWidth;
+
+  const handleWidthTest = async () => {
+    setTesting(true);
+    toast.loading('جاري طباعة اختبار العرض...', { id: 'width-test' });
+    try {
+      await testPrint();
+      toast.success('تم الإرسال للطابعة - تأكد أن الإطار ظاهر كاملًا', { id: 'width-test' });
+    } catch (error: any) {
+      toast.error(error?.message || 'فشلت الطباعة', { id: 'width-test' });
+    } finally {
+      setTesting(false);
+    }
+  };
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -53,10 +72,37 @@ export const ReceiptsTab: React.FC = () => {
           </button>
         </div>
 
-        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+        {mismatch && (
+          <div className="mt-4 p-3 bg-amber-50 border border-amber-300 rounded-lg flex items-start gap-2">
+            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="text-sm text-amber-900">
+              اسم الطابعة <b dir="ltr">{receiptPrinter}</b> يدل على ورق {guessed}، والمختار {config.paperWidth}.
+              إذا ظهرت الفاتورة مقطوعة من الجانب فاختر {guessed}.{' '}
+              <button
+                type="button"
+                className="font-semibold underline"
+                onClick={() => config.updateConfig({ paperWidth: guessed! })}
+              >
+                استخدم {guessed}
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-blue-800">
-            💡 اختر عرض الورق المناسب لطابعتك. معظم طابعات الإيصالات تستخدم 80mm
+            💡 اختر عرض الورق المناسب لطابعتك، ثم اطبع اختبار العرض: يجب أن يظهر الإطار كاملًا.
           </p>
+          <button
+            type="button"
+            onClick={handleWidthTest}
+            disabled={testing || !receiptPrinter}
+            title={receiptPrinter ? '' : 'اختر طابعة الفواتير أولًا'}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm font-semibold text-blue-700 bg-white border border-blue-300 rounded-lg hover:bg-blue-100 disabled:opacity-50"
+          >
+            <Ruler className="w-4 h-4" />
+            {testing ? 'جاري الطباعة...' : 'طباعة اختبار العرض'}
+          </button>
         </div>
       </Card>
 

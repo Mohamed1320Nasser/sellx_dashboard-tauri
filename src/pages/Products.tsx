@@ -17,6 +17,7 @@ import { qk } from "../config/queryKeys";
 import { productService } from "../services/productService";
 import type { Product } from "../types";
 import { printBarcode } from "../services/smartPrintService";
+import { ensurePrinterMode } from "../services/printerModeService";
 import { PrintBarcodeModal } from "../components/modals/PrintBarcodeModal";
 import toast from 'react-hot-toast';
 
@@ -308,6 +309,13 @@ const Products: React.FC = () => {
     const printable = selectedProducts.filter((p) => p.sku);
     if (printable.length === 0) {
       toast.error("لا توجد منتجات تحتوي على باركود للطباعة");
+      return;
+    }
+    // ask about the printer mode once for the whole batch, not per product
+    try {
+      await ensurePrinterMode("label");
+    } catch {
+      toast("تم إلغاء الطباعة");
       return;
     }
     setBulkBusy(true);

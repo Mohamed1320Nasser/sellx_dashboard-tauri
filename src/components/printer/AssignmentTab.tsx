@@ -14,6 +14,7 @@ import {
   type PrinterAssignments,
 } from '../../services/printerAssignmentService';
 import toast from 'react-hot-toast';
+import { PrinterModeCard } from './PrinterModeCard';
 
 // Printer types with Arabic labels and icons (like Sultana's PRINTER_ROLES)
 const PRINTER_TYPES: {
@@ -291,6 +292,8 @@ export const AssignmentTab: React.FC = () => {
           </div>
         )}
       </Card>
+
+      <PrinterModeCard />
 
       {/* Current Assignments Summary */}
       {printers.length > 0 && (

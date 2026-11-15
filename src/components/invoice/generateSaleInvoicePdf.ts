@@ -5,6 +5,7 @@ import { buildSaleInvoiceData } from "./buildSaleInvoiceData";
 import { invoiceA4Html } from "./invoiceA4Html";
 import { printA4Document } from "../../services/printService";
 import { usePrinterConfigStore } from "../../stores/printerConfigStore";
+import type { InvoiceKind } from "./saleInvoiceTypes";
 
 // Builds the unified sale invoice PDF and triggers a browser download.
 // Used by both the Sales list "تحميل PDF" action and the Sale Details page.
@@ -12,7 +13,7 @@ export async function generateSaleInvoicePdf(params: {
   sale: any;
   company: any;
   cashier?: any;
-  kind?: "sale" | "purchase";
+  kind?: InvoiceKind;
 }): Promise<void> {
   const config = usePrinterConfigStore.getState();
   const data = await buildSaleInvoiceData({ ...params, showQrCode: config.showQrCode, footerText: config.footerText });
@@ -24,7 +25,7 @@ export async function generateSaleInvoicePdf(params: {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `فاتورة-${data.receiptNumber}.pdf`;
+  link.download = `${data.kind === "quote" ? "عرض-سعر" : "فاتورة"}-${data.receiptNumber}.pdf`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -36,7 +37,7 @@ export async function printSaleInvoiceA4(params: {
   sale: any;
   company: any;
   cashier?: any;
-  kind?: "sale" | "purchase";
+  kind?: InvoiceKind;
 }): Promise<void> {
   const config = usePrinterConfigStore.getState();
   const data = await buildSaleInvoiceData({ ...params, showQrCode: config.showQrCode, footerText: config.footerText });
