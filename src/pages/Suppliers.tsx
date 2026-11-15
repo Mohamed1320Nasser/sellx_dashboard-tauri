@@ -19,10 +19,11 @@ import type { Supplier } from "../types";
 import { formatTableDate } from "../utils/dateUtils";
 
 const supplierSchema = z.object({
-  name: z.string().min(1, "اسم المورد مطلوب"),
-  email: z.string().email("البريد الإلكتروني غير صحيح").optional().or(z.literal("")),
-  phone: z.string().optional(),
-  address: z.string().optional(),
+  name: z.string().trim().min(1, "اسم المورد مطلوب"),
+  phone: z.string().trim().min(1, "رقم الهاتف مطلوب"),
+  // Optional: an empty box is fine, a filled one must be a real email
+  email: z.string().trim().email("البريد الإلكتروني غير صحيح").optional().or(z.literal("")),
+  address: z.string().trim().optional(),
 });
 
 type SupplierFormData = z.infer<typeof supplierSchema>;
@@ -55,7 +56,7 @@ const SupplierForm: React.FC<{
   return (
     <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-6">
       <Input
-        label="اسم المورد"
+        label="اسم المورد *"
         placeholder="أدخل اسم المورد"
         {...register("name")}
         error={errors.name?.message}
@@ -64,25 +65,26 @@ const SupplierForm: React.FC<{
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Input
-          label="البريد الإلكتروني"
+          label="رقم الهاتف *"
+          placeholder="أدخل رقم الهاتف"
+          inputMode="tel"
+          {...register("phone")}
+          error={errors.phone?.message}
+          disabled={loading}
+        />
+
+        <Input
+          label="البريد الإلكتروني (اختياري)"
           type="email"
           placeholder="أدخل البريد الإلكتروني"
           {...register("email")}
           error={errors.email?.message}
           disabled={loading}
         />
-
-        <Input
-          label="رقم الهاتف"
-          placeholder="أدخل رقم الهاتف"
-          {...register("phone")}
-          error={errors.phone?.message}
-          disabled={loading}
-        />
       </div>
 
       <Input
-        label="العنوان"
+        label="العنوان (اختياري)"
         placeholder="أدخل العنوان"
         {...register("address")}
         error={errors.address?.message}

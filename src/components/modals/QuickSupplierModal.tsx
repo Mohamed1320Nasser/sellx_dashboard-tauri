@@ -20,7 +20,7 @@ const QuickSupplierModal: React.FC<Props> = ({ isOpen, onClose, companyId, initi
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
-  const [error, setError] = useState("");
+  const [errors, setErrors] = useState<{ name?: string; phone?: string }>({});
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -28,22 +28,23 @@ const QuickSupplierModal: React.FC<Props> = ({ isOpen, onClose, companyId, initi
     setName(initialName || "");
     setPhone("");
     setAddress("");
-    setError("");
+    setErrors({});
     setTimeout(() => nameRef.current?.focus(), 50);
   }, [isOpen, initialName]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (saving) return;
-    if (!name.trim()) {
-      setError("اسم المورد مطلوب");
-      return;
-    }
+    const e2: { name?: string; phone?: string } = {};
+    if (!name.trim()) e2.name = "اسم المورد مطلوب";
+    if (!phone.trim()) e2.phone = "رقم الهاتف مطلوب";
+    setErrors(e2);
+    if (e2.name || e2.phone) return;
     setSaving(true);
     try {
       const res: any = await supplierService.create({
         name: name.trim(),
-        phone: phone.trim() || undefined,
+        phone: phone.trim(),
         address: address.trim() || undefined,
         companyId,
       });
@@ -62,9 +63,9 @@ const QuickSupplierModal: React.FC<Props> = ({ isOpen, onClose, companyId, initi
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="مورد جديد" size="sm">
       <form onSubmit={handleSubmit} className="space-y-4">
-        <Input ref={nameRef} label="اسم المورد *" value={name} onChange={e => setName(e.target.value)} error={error} />
-        <Input label="الهاتف" value={phone} onChange={e => setPhone(e.target.value)} inputMode="tel" />
-        <Input label="العنوان" value={address} onChange={e => setAddress(e.target.value)} />
+        <Input ref={nameRef} label="اسم المورد *" value={name} onChange={e => setName(e.target.value)} error={errors.name} />
+        <Input label="رقم الهاتف *" value={phone} onChange={e => setPhone(e.target.value)} inputMode="tel" error={errors.phone} />
+        <Input label="العنوان (اختياري)" value={address} onChange={e => setAddress(e.target.value)} />
         <div className="flex justify-end gap-2 border-t pt-4">
           <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
             إلغاء
