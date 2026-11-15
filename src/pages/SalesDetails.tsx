@@ -504,7 +504,8 @@ const SalesDetails: React.FC = () => {
                 (() => {
                   // Check if any item has cost/profit data
                   const showCostProfit = sale.items.some((item: any) => item.costPrice !== undefined && item.costPrice !== null);
-                  const colSpan = showCostProfit ? 5 : 3;
+                  // Footer label covers المنتج / السعر / الكمية; amounts sit under المجموع (and التكلفة / الربح)
+                  const colSpan = 3;
 
                   return (
                     <div className="overflow-hidden border border-gray-200 rounded-lg">
@@ -581,7 +582,12 @@ const SalesDetails: React.FC = () => {
                               <td className="px-6 py-2 text-sm font-medium text-gray-900">
                                 {formatCurrency(sale.additionalFee)}
                               </td>
-                              {showCostProfit && <td></td>}
+                              {showCostProfit && (
+                                <>
+                                  <td></td>
+                                  <td></td>
+                                </>
+                              )}
                             </tr>
                           )}
                           <tr>
@@ -592,9 +598,16 @@ const SalesDetails: React.FC = () => {
                               {formatCurrency(sale.totalAmount)}
                             </td>
                             {showCostProfit && (
-                              <td className="px-6 py-4 text-sm font-bold text-emerald-600">
-                                {formatCurrency(sale.totalProfit || 0)}
-                              </td>
+                              <>
+                                <td className="px-6 py-4 text-sm font-medium text-gray-600">
+                                  {sale.totalCost !== null && sale.totalCost !== undefined
+                                    ? formatCurrency(sale.totalCost)
+                                    : ''}
+                                </td>
+                                <td className="px-6 py-4 text-sm font-bold text-emerald-600">
+                                  {formatCurrency(sale.totalProfit || 0)}
+                                </td>
+                              </>
                             )}
                           </tr>
                         </tfoot>

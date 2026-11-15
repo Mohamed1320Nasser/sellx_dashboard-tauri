@@ -60,10 +60,15 @@ const Sales: React.FC = () => {
       key: "receiptNumber",
       label: "رقم الفاتورة",
       render: (sale: Sale) => (
-        <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => navigate(`/sales/${sale.id}`)}
+          className="flex items-center gap-2 whitespace-nowrap hover:underline"
+          title="عرض الفاتورة"
+        >
           <Receipt className="w-4 h-4 text-primary-500" />
-          <span className="font-bold text-primary-600">#{(sale as any).receiptNumber || sale.id}</span>
-        </div>
+          <span className="font-bold text-primary-600" dir="ltr">{(sale as any).receiptNumber || `#${sale.id}`}</span>
+        </button>
       ),
     },
     {
@@ -272,6 +277,8 @@ const Sales: React.FC = () => {
   const summary = (salesData as any)?.data?.summary;
   const totalSales = (salesData as any)?.data?.totalCount || 0;
   const totalRevenue = summary?.totalAmount ?? 0;
+  // null for cashiers: the server leaves profit out for them
+  const showProfit = summary?.totalProfit !== null && summary?.totalProfit !== undefined;
   const totalProfit = summary?.totalProfit ?? 0;
   const totalAdditionalFees = summary?.additionalFee ?? 0;
   const paidSales = summary?.paidCount ?? 0;
@@ -325,6 +332,7 @@ const Sales: React.FC = () => {
             </div>
           </Card>
 
+          {showProfit && (
           <Card padding="sm">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-green-600 rounded-lg flex items-center justify-center text-white shadow-md">
@@ -338,6 +346,7 @@ const Sales: React.FC = () => {
               </div>
             </div>
           </Card>
+          )}
 
           {/* Row 2 - Payment Status */}
           <Card padding="sm">

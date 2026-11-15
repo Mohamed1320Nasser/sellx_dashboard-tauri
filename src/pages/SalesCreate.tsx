@@ -1,11 +1,12 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { ArrowLeft, Save, X, ShoppingCart, Plus, Minus, Trash2, Search, Package, Printer, AlertTriangle } from "lucide-react";
+import { ArrowRight, X, ShoppingCart, Plus, Minus, Trash2, Search, Package, AlertTriangle } from "lucide-react";
 import { Layout } from "../components/layout";
-import { Button, Input, Select, Card, Modal } from "../components/ui";
+import { Button, Input, Select, Modal } from "../components/ui";
 import { useSessionAuthStore } from "../stores/sessionAuthStore";
 import { useCreateSale } from "../hooks/api/useSales";
-import { useClients, useCreateClient, useClientBalance } from "../hooks/api/useClients";
+import { useCreateClient, useClientBalance } from "../hooks/api/useClients";
+import ClientPicker, { PickedClient } from "../components/sales/ClientPicker";
 import { usePriceLists, usePriceListPrices } from "../hooks/api/usePriceLists";
 import { useCurrentShift } from "../hooks/api/useShifts";
 import { useProductsInfinite } from "../hooks/api/useProducts";
@@ -74,15 +75,6 @@ const saleSchema = saleBaseSchema
     path: ["newClientPhone"],
   });
 
-const clientSchema = z.object({
-  name: z.string().min(1, "اسم العميل مطلوب"),
-  phone: z.string().min(1, "رقم الهاتف مطلوب"),
-  email: z.string().email("البريد الإلكتروني غير صحيح").optional().or(z.literal("")),
-  address: z.string().optional(),
-});
-
-type ClientFormData = z.infer<typeof clientSchema>;
-
 interface SaleItem {
   productId: number;
   productName: string;
@@ -101,8 +93,15 @@ const SalesCreate: React.FC = () => {
   const companyId = company?.companyId || company?.company?.id;
 
   // Form state
-  const [items, setItems] = useState<SaleItem[]>([]);
-  const [showClientModal, setShowClientModal] = useState(false);
+  // Every cart change starts from the latest cart, not the one this render saw: fast scans and
+  // bulk adds run one after another before React re-renders (they used to drop items)
+  const [items, setItemsState] = useState<SaleItem[]>([]);
+  const itemsRef = useRef<SaleItem[]>([]);
+  const setItems = useCallback((next: SaleItem[] | ((prev: SaleItem[]) => SaleItem[])) => {
+    const value = typeof next === "function" ? next(itemsRef.current) : next;
+    itemsRef.current = value;
+    setItemsState(value);
+  }, []);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   // The cashier can turn the confirmation step off (kept on this device only)
   const [skipConfirm, setSkipConfirm] = useState<boolean>(() => {
@@ -126,7 +125,9 @@ const SalesCreate: React.FC = () => {
   const [productSearch, setProductSearch] = useState("");
   const [debouncedProductSearch, setDebouncedProductSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
-  const [clientSearch] = useState("");
+  const [selectedClient, setSelectedClient] = useState<PickedClient | null>(null);
+  const [showFees, setShowFees] = useState(false);
+  const productSearchRef = useRef<HTMLInputElement>(null);
   const [barcodeInput, setBarcodeInput] = useState("");
   const [lastScannedBarcode, setLastScannedBarcode] = useState("");
   const barcodeInputRef = useRef<HTMLInputElement>(null);
@@ -134,13 +135,6 @@ const SalesCreate: React.FC = () => {
   // The cashier's open shift: cash sales without one never reach a drawer (warning only)
   const { data: currentShiftData, isLoading: shiftLoading } = useCurrentShift(companyId || 0);
   const hasOpenShift = !!currentShiftData?.hasOpenShift;
-
-  // Fetch data
-  const { data: clientsData } = useClients({
-    companyId: companyId!,
-    page: 1,
-    limit: 100,
-  });
 
   const {
     data: productsData,
@@ -172,6 +166,7 @@ const SalesCreate: React.FC = () => {
     handleSubmit,
     setValue,
     watch,
+    reset,
     formState: { errors },
   } = useForm<SaleFormData>({
     resolver: zodResolver(saleSchema) as any,
@@ -210,11 +205,7 @@ const SalesCreate: React.FC = () => {
 
   // A customer brings their own list; cash and new customers buy at the default list
   const customerPriceListId =
-    clientType === "existing"
-      ? ((clientsData as any)?.data?.list || []).find((c: any) => c.id === selectedClientId)?.priceListId ??
-        (clientBalance as any)?.priceListId ??
-        null
-      : null;
+    clientType === "existing" ? selectedClient?.priceListId ?? (clientBalance as any)?.priceListId ?? null : null;
   useEffect(() => {
     if (!defaultPriceList) return;
     const fromCustomer = priceLists.find((l) => l.id === customerPriceListId);
@@ -232,16 +223,6 @@ const SalesCreate: React.FC = () => {
       })
     );
   }, [priceFor, listIsDefault, listPrices]);
-
-  // Client form
-  const {
-    register: registerClient,
-    handleSubmit: handleSubmitClient,
-    reset: resetClient,
-    formState: { errors: clientErrors },
-  } = useForm<ClientFormData>({
-    resolver: zodResolver(clientSchema),
-  });
 
   // Get watched form values
   const watchedTaxSettingId = watch("taxSettingId");
@@ -283,6 +264,8 @@ const SalesCreate: React.FC = () => {
   // Cash tendered by the customer and the change to hand back
   const [received, setReceived] = useState("");
   const changeDue = received.trim() === "" ? null : Math.round((Number(received) - roundedTotal) * 100) / 100;
+  const cashShortRef = useRef(false);
+  cashShortRef.current = watch("paymentMethod") === "CASH" && changeDue !== null && changeDue < 0;
 
   // Barcode scanning handler - now uses the new barcode API
   const handleBarcodeScan = async (barcode: string) => {
@@ -301,14 +284,15 @@ const SalesCreate: React.FC = () => {
       if (product) {
         addItem(product);
         setBarcodeInput(""); // Clear input
-        toast.success(`تمت الإضافة: ${product.name}`);
+        // one short message that the next scan replaces (they used to pile up)
+        toast.success(`تمت الإضافة: ${product.name}`, { id: "pos-scan", duration: 1500 });
 
         // Auto-focus barcode input for next scan
         setTimeout(() => {
           barcodeInputRef.current?.focus();
         }, 100);
       } else {
-        toast.error(`المنتج غير موجود: ${barcode}`);
+        toast.error(`المنتج غير موجود: ${barcode}`, { id: "pos-scan" });
         setBarcodeInput(""); // Clear input
       }
     } catch (error: any) {
@@ -374,7 +358,8 @@ const SalesCreate: React.FC = () => {
   // Add item to sale
   const addItem = (product: any) => {
     const stock = product.currentStock || product.stockQuantity || 0;
-    const existingItem = items.find(item => item.productId === product.id);
+    const current = itemsRef.current;
+    const existingItem = current.find(item => item.productId === product.id);
     const currentQuantity = existingItem?.quantity || 0;
 
     // Check stock validation
@@ -386,7 +371,7 @@ const SalesCreate: React.FC = () => {
     if (existingItem) {
       // Update quantity
       const newQuantity = existingItem.quantity + 1;
-      const newItems = items.map(item =>
+      const newItems = current.map(item =>
         item.productId === product.id
           ? {
               ...item,
@@ -409,7 +394,7 @@ const SalesCreate: React.FC = () => {
         total: unitPrice,
         stock,
       };
-      setItems([...items, newItem]);
+      setItems([...current, newItem]);
     }
   };
 
@@ -457,7 +442,7 @@ const SalesCreate: React.FC = () => {
     }
 
     // Get current quantity to check if increasing
-    const currentItem = items.find(item => item.productId === productId);
+    const currentItem = itemsRef.current.find(item => item.productId === productId);
     const currentQuantity = currentItem?.quantity || 0;
 
     // Only validate stock when INCREASING quantity
@@ -472,7 +457,7 @@ const SalesCreate: React.FC = () => {
       }
     }
 
-    const newItems = items.map(item =>
+    const newItems = itemsRef.current.map(item =>
       item.productId === productId
         ? {
             ...item,
@@ -486,7 +471,7 @@ const SalesCreate: React.FC = () => {
 
   // Remove item
   const removeItem = (productId: number) => {
-    setItems(items.filter(item => item.productId !== productId));
+    setItems(prev => prev.filter(item => item.productId !== productId));
   };
 
   // Check if product is already selected
@@ -503,8 +488,12 @@ const SalesCreate: React.FC = () => {
 
   // Show confirmation modal before sale
   const handleShowConfirm = useCallback(() => {
-    if (items.length === 0) {
+    if (itemsRef.current.length === 0) {
       toast.error("يجب إضافة منتجات للبيع");
+      return;
+    }
+    if (cashShortRef.current) {
+      toast.error("المبلغ المستلم أقل من الإجمالي");
       return;
     }
     if (skipConfirm) {
@@ -512,12 +501,37 @@ const SalesCreate: React.FC = () => {
       return;
     }
     setShowConfirmModal(true);
-  }, [items.length, skipConfirm]);
+  }, [skipConfirm]);
 
   // Ctrl/Cmd + Enter completes the sale from anywhere on the screen
   const handleSubmitRef = useRef<(() => void) | null>(null);
+  const selectPaymentRef = useRef<(method: SaleFormData["paymentMethod"]) => void>(() => {});
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // F2 barcode, F3 product search, F6-F9 payment method (no dialog open)
+      if (!showConfirmModal && !showPrintModal) {
+        const payKeys: Record<string, SaleFormData["paymentMethod"]> = {
+          F6: "CASH",
+          F7: "CARD",
+          F8: "MOBILE_WALLET",
+          F9: "CREDIT",
+        };
+        if (e.key === "F2") {
+          e.preventDefault();
+          barcodeInputRef.current?.focus();
+          return;
+        }
+        if (e.key === "F3") {
+          e.preventDefault();
+          productSearchRef.current?.focus();
+          return;
+        }
+        if (payKeys[e.key]) {
+          e.preventDefault();
+          selectPaymentRef.current(payKeys[e.key]);
+          return;
+        }
+      }
       if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         // never a second sale while one is saving or its receipt is on screen
@@ -538,6 +552,10 @@ const SalesCreate: React.FC = () => {
       toast.error("يجب إضافة منتجات للبيع");
       return;
     }
+    if (data.paymentMethod === "CASH" && changeDue !== null && changeDue < 0) {
+      toast.error("المبلغ المستلم أقل من الإجمالي");
+      return;
+    }
     if (!listIsDefault && (listPricesLoading || !listPrices)) {
       toast.error("جاري تحميل أسعار القائمة، حاول بعد لحظة");
       return;
@@ -554,15 +572,23 @@ const SalesCreate: React.FC = () => {
 
       // If new client is selected, create the client first
       if (data.clientType === "new" && data.newClientName) {
-        const newClient = await createClientMutation.mutateAsync({
+        const res: any = await createClientMutation.mutateAsync({
           name: data.newClientName,
           email: data.newClientEmail || undefined,
           phone: data.newClientPhone || undefined,
           address: data.newClientAddress || undefined,
           companyId: companyId!,
         });
-        clientId = newClient.id;
-        toast.success("تم إنشاء العميل الجديد");
+        // The API answers { msg, status, data: client }
+        const newClient = [res?.data?.data, res?.data, res].find((x: any) => x && x.id);
+        if (!newClient) throw new Error("no client returned");
+        clientId = Number(newClient.id);
+        // From now on this customer exists: if the sale fails, trying again must not create them twice
+        const picked = { id: clientId, name: newClient.name, phone: newClient.phone, priceListId: newClient.priceListId ?? null };
+        setSelectedClient(picked);
+        setClientType("existing");
+        setValue("clientType", "existing");
+        setValue("clientId", clientId);
       }
 
       const saleData: any = {
@@ -625,7 +651,7 @@ const SalesCreate: React.FC = () => {
         received: data.paymentMethod === "CASH" && changeDue !== null && changeDue >= 0 ? Number(received) : undefined,
         clientName:
           saleData_fromAPI.client?.name ||
-          ((clientsData as any)?.data?.list || []).find((c: any) => c.id === clientId)?.name ||
+          (clientId && selectedClient?.id === clientId ? selectedClient.name : undefined) ||
           (data.clientType === "new" ? data.newClientName : undefined),
         items: items.map(item => ({
           ...item,
@@ -656,7 +682,7 @@ const SalesCreate: React.FC = () => {
           console.error('Auto-print error:', printError);
           toast.error('فشلت الطباعة التلقائية');
         }
-        navigate('/sales');
+        resetForNextSale();
       } else {
         // Show print preview modal
         setPrintableSale(saleWithItems);
@@ -666,7 +692,7 @@ const SalesCreate: React.FC = () => {
       // The sale/client mutations already showed the server's message
       console.error("[SalesCreate] Error creating sale:", error);
     }
-  }, [items, createSaleMutation, createClientMutation, companyId, navigate, roundedTotal, changeDue, discountAmount, watch, selectedPriceList, listIsDefault, listPricesLoading, listPrices]);
+  }, [items, createSaleMutation, createClientMutation, companyId, roundedTotal, changeDue, discountAmount, received, selectedClient, selectedPriceList, listIsDefault, listPricesLoading, listPrices]);
   // A form that does not pass validation must say why (it used to do nothing at all)
   const handleInvalid = (formErrors: Record<string, any>) => {
     const first = Object.values(formErrors)[0];
@@ -674,20 +700,57 @@ const SalesCreate: React.FC = () => {
   };
   handleSubmitRef.current = () => handleSubmit(handleSaleSubmit, handleInvalid)();
 
-  // Handle client creation
-  const handleClientSubmit = async (data: ClientFormData) => {
-    try {
-      await createClientMutation.mutateAsync({
-        ...data,
-        companyId: companyId!,
-      });
-      toast.success("تم إنشاء العميل بنجاح");
-      setShowClientModal(false);
-      resetClient();
-    } catch {
-      toast.error("حدث خطأ أثناء إنشاء العميل");
+  // After a sale the screen is ready for the next customer (no trip through the sales list)
+  const resetForNextSale = () => {
+    setItems([]);
+    setReceived("");
+    setSelectedClient(null);
+    setClientType("cash");
+    setShowFees(false);
+    reset({
+      clientType: "cash",
+      paymentMethod: "CASH",
+      additionalFee: 0,
+      additionalFeeLabel: undefined,
+      discountType: "none",
+      discountAmount: 0,
+      discountPercent: 0,
+      taxSettingId: watch("taxSettingId"),
+    });
+    setTimeout(() => barcodeInputRef.current?.focus(), 50);
+  };
+
+  const selectPayment = (method: SaleFormData["paymentMethod"]) => {
+    setValue("paymentMethod", method);
+    // A credit sale is a debt, so it needs a customer: go straight to the customer box
+    if (method === "CREDIT" && clientType === "cash") {
+      setClientType("existing");
+      setValue("clientType", "existing");
     }
   };
+  selectPaymentRef.current = selectPayment;
+
+  // The sale area fills the window down to its bottom edge, so the total and the pay button
+  // are always on screen (whatever sits above it: shift warning, shortcuts line...)
+  const posGridRef = useRef<HTMLDivElement>(null);
+  const [posHeight, setPosHeight] = useState<number | null>(null);
+  useEffect(() => {
+    const fit = () => {
+      const el = posGridRef.current;
+      if (!el || window.innerWidth < 1024) {
+        setPosHeight(null);
+        return;
+      }
+      const top = el.getBoundingClientRect().top + window.scrollY;
+      setPosHeight(Math.max(420, Math.floor(window.innerHeight - top - 12)));
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, [hasOpenShift, shiftLoading]);
+
+  // Back to the barcode box after a click in the cart, so the next scan is not lost
+  const focusScan = () => setTimeout(() => barcodeInputRef.current?.focus(), 0);
 
   // Handle cancel
   const handleCancel = useCallback(() => {
@@ -695,28 +758,6 @@ const SalesCreate: React.FC = () => {
   }, [navigate]);
 
 
-
-  // Filter clients based on search
-  const filteredClients = useMemo(() => {
-    const clients = (clientsData as any)?.data?.list || [];
-    
-    if (!clientSearch) return clients;
-    
-    return clients.filter((client: any) => {
-      const searchTerm = clientSearch.toLowerCase();
-      return (
-        client.name.toLowerCase().includes(searchTerm) ||
-        client.phone?.toLowerCase().includes(searchTerm) ||
-        client.email?.toLowerCase().includes(searchTerm)
-      );
-    });
-  }, [clientsData, clientSearch]);
-
-  // Client options
-  const clientOptions = filteredClients.map((client: any) => ({
-    value: client.id.toString(),
-    label: `${client.name}${client.phone ? ` - ${client.phone}` : ''}`,
-  }));
 
   // Product options for display — search and category filtering happen
   // server-side (see useProductsInfinite above), so this is just every
@@ -747,12 +788,11 @@ const SalesCreate: React.FC = () => {
               onClick={() => navigate('/sales')}
               className="flex items-center space-x-2 space-x-reverse text-gray-600 hover:text-gray-900"
             >
-              <ArrowLeft className="w-4 h-4" />
+              <ArrowRight className="w-4 h-4" />
               <span>العودة</span>
             </Button>
             <div>
               <h1 className="text-2xl font-bold text-gray-900">عملية بيع جديدة</h1>
-              <p className="text-gray-500 text-sm">إنشاء عملية بيع جديدة في النظام</p>
             </div>
           </div>
           <div className="flex items-center space-x-2 space-x-reverse">
@@ -774,19 +814,6 @@ const SalesCreate: React.FC = () => {
             >
               <X className="w-4 h-4 ml-1" />
               إلغاء
-            </Button>
-            <Button
-              onClick={handleShowConfirm}
-              disabled={createSaleMutation.isPending || items.length === 0}
-              className={`${
-                items.length === 0
-                  ? 'bg-gray-400 cursor-not-allowed opacity-60'
-                  : 'bg-blue-600 hover:bg-blue-700'
-              } text-white`}
-              title={items.length === 0 ? 'أضف منتجات أولاً' : 'إنشاء عملية البيع'}
-            >
-              <Save className="w-4 h-4 ml-1" />
-              {createSaleMutation.isPending ? 'جاري الإنشاء...' : 'إنشاء البيع'}
             </Button>
           </div>
         </div>
@@ -820,7 +847,7 @@ const SalesCreate: React.FC = () => {
               type="text"
               value={barcodeInput}
               onChange={(e) => setBarcodeInput(e.target.value)}
-              placeholder="أدخل الباركود يدوياً..."
+              placeholder="امسح الباركود أو اكتبه ثم Enter (F2)"
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-right"
               autoFocus
             />
@@ -833,10 +860,22 @@ const SalesCreate: React.FC = () => {
             إضافة
           </Button>
         </form>
+        <p className="-mt-2 text-[11px] text-gray-400">
+          اختصارات: F2 الباركود · F3 البحث · F6 نقدي · F7 بطاقة · F8 محفظة · F9 آجل · Ctrl+Enter إتمام البيع
+        </p>
 
         {/* POS Layout - Products Left, Cart Right */}
-        <form onSubmit={handleSubmit(handleSaleSubmit, handleInvalid)}>
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-[calc(100vh-180px)]">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleShowConfirm();
+          }}
+        >
+          <div
+            ref={posGridRef}
+            className="grid grid-cols-1 lg:grid-cols-12 gap-4"
+            style={posHeight ? { height: posHeight } : undefined}
+          >
 
             {/* LEFT SIDE - Products (8 columns) */}
             <div className="lg:col-span-8 flex flex-col bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -877,7 +916,8 @@ const SalesCreate: React.FC = () => {
                   <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <input
                     type="text"
-                    placeholder="البحث عن منتج..."
+                    ref={productSearchRef}
+                    placeholder="البحث عن منتج... (F3)"
                     value={productSearch}
                     onChange={(e) => setProductSearch(e.target.value)}
                     className="w-full pr-10 pl-4 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
@@ -900,7 +940,10 @@ const SalesCreate: React.FC = () => {
                         <button
                           key={option.value}
                           type="button"
-                          onClick={() => addItem(option.product)}
+                          onClick={() => {
+                            addItem(option.product);
+                            focusScan();
+                          }}
                           disabled={isOutOfStock}
                           className={`relative p-3 rounded-lg border text-right transition-all duration-200 ${
                             isSelected
@@ -981,9 +1024,11 @@ const SalesCreate: React.FC = () => {
             </div>
 
             {/* RIGHT SIDE - Cart & Info (4 columns) */}
-            <div className="lg:col-span-4 flex flex-col gap-3 overflow-y-auto">
-              {/* Cart Items - Flexible height with scroll */}
-              <div className="bg-white rounded-lg border border-gray-200 flex-1 flex flex-col min-h-[200px]">
+            <div className="lg:col-span-4 flex min-h-0 flex-col gap-3">
+              {/* Cart and sale options scroll; the totals and the pay button below always stay on screen */}
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto">
+              {/* Cart Items */}
+              <div className="bg-white rounded-lg border border-gray-200 flex flex-col">
                 <div className="px-2 py-2 border-b border-gray-200 bg-gray-50 flex-shrink-0">
                   <div className="flex items-center justify-between">
                     <h3 className="font-semibold text-gray-900 text-sm flex items-center gap-1.5">
@@ -1004,12 +1049,19 @@ const SalesCreate: React.FC = () => {
                         return (
                           <div key={item.productId} className={`px-2 py-2 transition-colors ${isMaxReached ? "bg-amber-50" : "hover:bg-gray-50"}`}>
                             <div className="flex justify-between items-center">
-                              <span className="font-medium text-gray-900 text-xs truncate flex-1 ml-1">
-                                {item.productName}
+                              <span className="flex-1 ml-1 min-w-0">
+                                <span className="block font-medium text-gray-900 text-xs truncate">{item.productName}</span>
+                                <span className="block text-[11px] text-gray-500">
+                                  {item.quantity} × {formatCurrency(item.unitPrice)}
+                                </span>
                               </span>
                               <button
                                 type="button"
-                                onClick={() => removeItem(item.productId)}
+                                aria-label="حذف من السلة"
+                                onClick={() => {
+                                  removeItem(item.productId);
+                                  focusScan();
+                                }}
                                 className="text-red-400 hover:text-red-600 hover:bg-red-50 p-1 rounded transition-colors"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
@@ -1019,17 +1071,44 @@ const SalesCreate: React.FC = () => {
                               <div className="flex items-center gap-0.5">
                                 <button
                                   type="button"
-                                  onClick={() => updateQuantity(item.productId, item.quantity - 1)}
+                                  aria-label="إنقاص الكمية"
+                                  onClick={() => {
+                                    updateQuantity(item.productId, item.quantity - 1);
+                                    focusScan();
+                                  }}
                                   className="w-7 h-7 rounded bg-gray-100 border border-gray-200 flex items-center justify-center hover:bg-gray-200 active:scale-95 transition-all"
                                 >
                                   <Minus className="w-3 h-3" />
                                 </button>
-                                <span className={`w-8 text-center text-sm font-bold ${isMaxReached ? "text-amber-600" : "text-gray-900"}`}>
-                                  {item.quantity}
-                                </span>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  step={1}
+                                  value={item.quantity}
+                                  aria-label="الكمية"
+                                  onFocus={(e) => e.target.select()}
+                                  onChange={(e) => {
+                                    const q = parseInt(e.target.value, 10);
+                                    if (Number.isFinite(q) && q > 0) updateQuantity(item.productId, q);
+                                  }}
+                                  onKeyDown={(e) => {
+                                    // Enter = done with this line: back to scanning, not "save the sale"
+                                    if (e.key === "Enter") {
+                                      e.preventDefault();
+                                      focusScan();
+                                    }
+                                  }}
+                                  className={`w-12 rounded border border-gray-200 px-1 py-0.5 text-center text-sm font-bold [appearance:textfield] focus:border-primary-500 focus:ring-1 focus:ring-primary-500 [&::-webkit-inner-spin-button]:appearance-none ${
+                                    isMaxReached ? "text-amber-600" : "text-gray-900"
+                                  }`}
+                                />
                                 <button
                                   type="button"
-                                  onClick={() => updateQuantity(item.productId, item.quantity + 1)}
+                                  aria-label="زيادة الكمية"
+                                  onClick={() => {
+                                    updateQuantity(item.productId, item.quantity + 1);
+                                    focusScan();
+                                  }}
                                   disabled={isMaxReached}
                                   className={`w-7 h-7 rounded border flex items-center justify-center active:scale-95 transition-all ${
                                     isMaxReached
@@ -1074,7 +1153,10 @@ const SalesCreate: React.FC = () => {
                         onClick={() => {
                           setClientType(type.value as any);
                           setValue("clientType", type.value as any);
-                          if (type.value !== "existing") setValue("clientId", undefined);
+                          if (type.value !== "existing") {
+                            setValue("clientId", undefined);
+                            setSelectedClient(null);
+                          }
                         }}
                         className={`py-1.5 px-2 rounded text-xs font-medium transition-all ${
                           clientType === type.value
@@ -1090,11 +1172,13 @@ const SalesCreate: React.FC = () => {
 
                 {/* Client Selection */}
                 {clientType === "existing" && (
-                  <Select
-                    options={clientOptions}
-                    value={watch("clientId")?.toString() || ""}
-                    onChange={(value) => setValue("clientId", value ? parseInt(value) : undefined)}
-                    placeholder="اختر العميل..."
+                  <ClientPicker
+                    companyId={companyId!}
+                    value={selectedClient}
+                    onChange={(client) => {
+                      setSelectedClient(client);
+                      setValue("clientId", client ? client.id : undefined);
+                    }}
                   />
                 )}
                 {clientType === "existing" && clientBalance && (() => {
@@ -1160,22 +1244,16 @@ const SalesCreate: React.FC = () => {
                   <label className="block text-xs font-medium text-gray-600 mb-1">الدفع</label>
                   <div className="grid grid-cols-4 gap-1">
                     {[
-                      { value: "CASH", label: "نقدي" },
-                      { value: "CARD", label: "بطاقة" },
-                      { value: "MOBILE_WALLET", label: "محفظة" },
-                      { value: "CREDIT", label: "آجل" },
+                      { value: "CASH", label: "نقدي", key: "F6" },
+                      { value: "CARD", label: "بطاقة", key: "F7" },
+                      { value: "MOBILE_WALLET", label: "محفظة", key: "F8" },
+                      { value: "CREDIT", label: "آجل", key: "F9" },
                     ].map((method) => (
                       <button
                         key={method.value}
                         type="button"
-                        onClick={() => {
-                          setValue("paymentMethod", method.value as any);
-                          // A credit sale is a debt, so it needs a customer: go straight to the list
-                          if (method.value === "CREDIT" && clientType === "cash") {
-                            setClientType("existing");
-                            setValue("clientType", "existing");
-                          }
-                        }}
+                        title={method.key}
+                        onClick={() => selectPayment(method.value as SaleFormData["paymentMethod"])}
                         className={`py-1.5 px-2 rounded text-xs font-medium transition-all ${
                           watch("paymentMethod") === method.value
                             ? "bg-primary-600 text-white"
@@ -1257,6 +1335,13 @@ const SalesCreate: React.FC = () => {
                       placeholder="المبلغ المستلم من العميل"
                       value={received}
                       onChange={(e) => setReceived(e.target.value)}
+                      onKeyDown={(e) => {
+                        // type the cash handed over, Enter = finish the sale
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleShowConfirm();
+                        }
+                      }}
                       className="text-sm"
                     />
                     {changeDue !== null && (
@@ -1267,72 +1352,49 @@ const SalesCreate: React.FC = () => {
                   </div>
                 )}
 
-                {/* Additional Fees Section */}
-                <div className="space-y-2">
-                  <label className="block text-xs font-medium text-gray-600">رسوم إضافية (اختياري)</label>
-
-                  {/* Quick Select Common Fees */}
-                  <div className="grid grid-cols-3 gap-1">
-                    {[
-                      { label: "توصيل", value: 20 },
-                      { label: "تغليف", value: 10 },
-                      { label: "خدمة", value: 15 },
-                    ].map((fee) => (
-                      <button
-                        key={fee.label}
-                        type="button"
-                        onClick={() => {
-                          setValue("additionalFee", fee.value);
-                          setValue("additionalFeeLabel", fee.label);
-                        }}
-                        className={`py-1.5 px-1 rounded text-xs font-medium transition-all border ${
-                          watch("additionalFeeLabel") === fee.label && watch("additionalFee") === fee.value
-                            ? "bg-blue-600 text-white border-blue-600"
-                            : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
-                        }`}
-                      >
-                        {fee.label} ({fee.value})
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Custom Fee Input */}
-                  <div className="grid grid-cols-2 gap-2">
-                    <Input
-                      type="number"
-                      placeholder="المبلغ"
-                      {...register("additionalFee", { valueAsNumber: true })}
-                      className="text-sm"
-                      min="0"
-                      step="0.01"
-                    />
-                    <Input
-                      type="text"
-                      placeholder="الوصف"
-                      {...register("additionalFeeLabel")}
-                      className="text-sm"
-                    />
-                  </div>
-
-                  {/* Clear Button */}
-                  {(watch("additionalFee") > 0 || watch("additionalFeeLabel")) && (
+                {/* Additional fees: rarely used, so one link until needed */}
+                {!showFees && !(watch("additionalFee") > 0) ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowFees(true)}
+                    className="text-xs font-medium text-primary-700 hover:underline"
+                  >
+                    + رسوم إضافية (توصيل، تغليف...)
+                  </button>
+                ) : (
+                  <div className="space-y-1">
+                    <label className="block text-xs font-medium text-gray-600">رسوم إضافية</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Input
+                        type="number"
+                        placeholder="المبلغ"
+                        {...register("additionalFee", { valueAsNumber: true })}
+                        className="text-sm"
+                        min="0"
+                        step="0.01"
+                      />
+                      <Input type="text" placeholder="الوصف (مثلاً توصيل)" {...register("additionalFeeLabel")} className="text-sm" />
+                    </div>
                     <button
                       type="button"
                       onClick={() => {
                         setValue("additionalFee", 0);
                         setValue("additionalFeeLabel", undefined);
+                        setShowFees(false);
                       }}
                       className="text-xs text-red-600 hover:text-red-700 flex items-center gap-1"
                     >
                       <X className="w-3 h-3" />
                       إزالة الرسوم
                     </button>
-                  )}
-                </div>
+                  </div>
+                )}
+              </div>
+
               </div>
 
               {/* Totals & Submit */}
-              <div className="bg-white rounded-lg border border-gray-200 p-3">
+              <div className="flex-shrink-0 bg-white rounded-lg border border-gray-200 p-3 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
                 <div className="space-y-1 text-sm mb-3">
                   <div className="flex justify-between text-gray-600">
                     <span>المجموع الفرعي</span>
@@ -1379,64 +1441,6 @@ const SalesCreate: React.FC = () => {
           </div>
         </form>
 
-        {/* Client Creation Modal */}
-        <Modal
-          isOpen={showClientModal}
-          onClose={() => setShowClientModal(false)}
-          title="إضافة عميل جديد"
-          size="md"
-        >
-          <form onSubmit={handleSubmitClient(handleClientSubmit)} className="space-y-4">
-            <Input
-              label="اسم العميل *"
-              {...registerClient("name")}
-              error={clientErrors.name?.message}
-              placeholder="أدخل اسم العميل"
-              required
-            />
-
-            <Input
-              label="رقم الهاتف *"
-              {...registerClient("phone")}
-              error={clientErrors.phone?.message}
-              placeholder="أدخل رقم الهاتف"
-              required
-            />
-
-            <Input
-              label="البريد الإلكتروني (اختياري)"
-              type="email"
-              {...registerClient("email")}
-              error={clientErrors.email?.message}
-              placeholder="أدخل البريد الإلكتروني"
-            />
-
-            <Input
-              label="العنوان (اختياري)"
-              {...registerClient("address")}
-              error={clientErrors.address?.message}
-              placeholder="أدخل العنوان"
-            />
-
-            <div className="flex justify-end space-x-3 space-x-reverse pt-4">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setShowClientModal(false)}
-              >
-                إلغاء
-              </Button>
-              <Button
-                type="submit"
-                disabled={createClientMutation.isPending}
-                className="bg-blue-600 hover:bg-blue-700 text-white"
-              >
-                {createClientMutation.isPending ? 'جاري الإنشاء...' : 'إنشاء العميل'}
-              </Button>
-            </div>
-          </form>
-        </Modal>
-
         {/* Confirmation Modal */}
         <Modal
           isOpen={showConfirmModal}
@@ -1445,8 +1449,30 @@ const SalesCreate: React.FC = () => {
           size="md"
         >
           <div className="space-y-4">
-            {/* Summary */}
+            {/* Summary: what the cashier gets wrong most is who pays and how */}
             <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">العميل:</span>
+                <span className="font-medium">
+                  {clientType === "cash"
+                    ? "عميل نقدي"
+                    : clientType === "new"
+                      ? `${watch("newClientName") || "-"} (جديد)`
+                      : selectedClient?.name || "لم يُختر عميل"}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">طريقة الدفع:</span>
+                <span className="font-medium">
+                  {{ CASH: "نقدي", CARD: "بطاقة", MOBILE_WALLET: "محفظة", CREDIT: "آجل" }[watch("paymentMethod")]}
+                </span>
+              </div>
+              {priceLists.length > 1 && selectedPriceList && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">قائمة الأسعار:</span>
+                  <span className="font-medium">{selectedPriceList.name}</span>
+                </div>
+              )}
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">عدد المنتجات:</span>
                 <span className="font-medium">{items.length} منتج</span>
@@ -1471,6 +1497,18 @@ const SalesCreate: React.FC = () => {
                 <span>المجموع الكلي:</span>
                 <span className="text-primary-600">{formatCurrency(total)}</span>
               </div>
+              {watch("paymentMethod") === "CASH" && changeDue !== null && changeDue >= 0 && (
+                <div className="flex justify-between text-sm font-semibold text-green-700">
+                  <span>المستلم {formatCurrency(Number(received))} — الباقي للعميل:</span>
+                  <span>{formatCurrency(changeDue)}</span>
+                </div>
+              )}
+              {watch("paymentMethod") === "CREDIT" && (
+                <div className="flex justify-between text-sm font-semibold text-amber-700">
+                  <span>مدفوع مقدماً {formatCurrency(Math.min(Number(watch("paidAmount")) || 0, roundedTotal))} — الباقي على العميل:</span>
+                  <span>{formatCurrency(Math.max(roundedTotal - (Number(watch("paidAmount")) || 0), 0))}</span>
+                </div>
+              )}
             </div>
 
             {/* Confirmation message */}
@@ -1515,7 +1553,7 @@ const SalesCreate: React.FC = () => {
             onClose={() => {
               setShowPrintModal(false);
               setPrintableSale(null);
-              navigate('/sales');
+              resetForNextSale();
             }}
           />
         )}
