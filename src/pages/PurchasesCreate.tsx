@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Plus, Minus, ShoppingCart, Package, Calendar, DollarSign, Search, ScanLine, Upload, FileText, Trash2, ChevronDown, ChevronUp, CheckCircle, ChevronRight, Truck, Receipt } from "lucide-react";
+import { ArrowLeft, Plus, Minus, ShoppingCart, Package, DollarSign, Search, ScanLine, Upload, FileText, Trash2, ChevronDown, ChevronUp, CheckCircle, ChevronRight, Truck, Receipt, PackagePlus } from "lucide-react";
 import { Layout } from "../components/layout";
-import { Button, Card, Input, Select, DatePicker } from "../components/ui";
+import { Button, Card, Input, Select, DatePicker, ConfirmDialog } from "../components/ui";
+import QuickProductModal, { type QuickCreatedProduct } from "../components/modals/QuickProductModal";
 import { useSessionAuthStore } from "../stores/sessionAuthStore";
 import { useSuppliers } from "../hooks/api/useSuppliers";
 import { useProducts } from "../hooks/api/useProducts";
@@ -53,6 +54,9 @@ const PurchasesCreate: React.FC = () => {
   const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isProductSelectionCollapsed, setIsProductSelectionCollapsed] = useState(true);
+  // New product from this screen (unknown barcode or a name not found)
+  const [quickProduct, setQuickProduct] = useState<{ barcode?: string; name?: string } | null>(null);
+  const [confirmLeave, setConfirmLeave] = useState(false);
 
   // Print modal state
   const [showPrintModal, setShowPrintModal] = useState(false);
@@ -67,6 +71,8 @@ const PurchasesCreate: React.FC = () => {
 
   // Items state
   const [items, setItems] = useState<PurchaseItem[]>([]);
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
   
   // Search and filter state
   const [productSearch, setProductSearch] = useState("");
@@ -141,21 +147,58 @@ const PurchasesCreate: React.FC = () => {
   }, [navigate]);
 
   const handleRemoveItem = useCallback((productId: string) => {
-    setItems(items.filter(item => item.productId !== productId));
-  }, [items]);
+    setItems(prev => prev.filter(item => item.productId !== productId));
+  }, []);
 
+  /** Set a line's quantity; 0 or less removes the line (used by the - button) */
   const handleUpdateItemQuantity = useCallback((productId: string, newQuantity: number) => {
-    if (newQuantity <= 0) {
-      handleRemoveItem(productId);
-      return;
-    }
+    setItems(prev =>
+      newQuantity <= 0
+        ? prev.filter(item => item.productId !== productId)
+        : prev.map(item =>
+            item.productId === productId
+              ? { ...item, quantity: newQuantity, totalPrice: newQuantity * item.unitPrice }
+              : item
+          )
+    );
+  }, []);
 
-    setItems(items.map(item => 
-      item.productId === productId 
-        ? { ...item, quantity: newQuantity, totalPrice: newQuantity * item.unitPrice }
-        : item
-    ));
-  }, [items, handleRemoveItem]);
+  /** Typed quantity: keeps the line while the box is being edited (empty = 0 until it loses focus) */
+  const handleTypeItemQuantity = (productId: string, raw: string) => {
+    const q = Math.max(0, Math.floor(Number(raw) || 0));
+    setItems(prev =>
+      prev.map(item => (item.productId === productId ? { ...item, quantity: q, totalPrice: q * item.unitPrice } : item))
+    );
+  };
+
+  /** Add a product to the invoice, or add to its quantity when it is already there */
+  const addProductToItems = useCallback((product: any, quantity = 1, unitCost?: number) => {
+    const added = !itemsRef.current.some(item => item.productId === product.id);
+    setItems(prev => {
+      const existing = prev.find(item => item.productId === product.id);
+      if (existing) {
+        const q = existing.quantity + quantity;
+        return prev.map(item =>
+          item.productId === product.id ? { ...item, quantity: q, totalPrice: q * item.unitPrice } : item
+        );
+      }
+      // The last cost, never the selling price: a product with no cost starts at 0 to be typed in
+      const cost = unitCost ?? (Number(product.purchasePrice) || 0);
+      return [
+        ...prev,
+        {
+          productId: product.id,
+          productName: product.name,
+          quantity,
+          unitPrice: cost,
+          totalPrice: quantity * cost,
+          currentProductPrice: Number(product.sellingPrice) || 0,
+          updateProductPrice: false,
+        },
+      ];
+    });
+    return added;
+  }, []);
 
   // Barcode scanning handler
   const handleBarcodeScan = useCallback(async (barcode: string) => {
@@ -177,38 +220,25 @@ const PurchasesCreate: React.FC = () => {
     }
 
     if (product) {
-      // Check if product is already in purchase
-      const existingItem = items.find(item => item.productId === product.id);
-      
-      if (existingItem) {
-        // Update quantity
-        handleUpdateItemQuantity(product.id, existingItem.quantity + 1);
-        toast.success(`تم زيادة كمية ${product.name} إلى ${existingItem.quantity + 1}`);
-      } else {
-        // Add new item
-        const newItem: PurchaseItem = {
-          productId: product.id,
-          productName: product.name,
-          quantity: 1,
-          unitPrice: product.purchasePrice || product.sellingPrice || 0,
-          totalPrice: product.purchasePrice || product.sellingPrice || 0,
-          currentProductPrice: product.sellingPrice || 0,
-          updateProductPrice: false,
-        };
-        setItems([...items, newItem]);
-        toast.success(`تم إضافة ${product.name} إلى فاتورة الشراء`);
-      }
-      
-      setBarcodeInput(""); // Clear input
-      // Auto-focus barcode input for next scan
+      const added = addProductToItems(product);
+      toast.success(added ? `تم إضافة ${product.name} إلى فاتورة الشراء` : `تم زيادة كمية ${product.name}`);
+      setBarcodeInput("");
       setTimeout(() => {
         barcodeInputRef.current?.focus();
       }, 100);
     } else {
-      toast.error(`المنتج غير موجود: ${barcode}`);
-      setBarcodeInput(""); // Clear input
+      // Not in the system yet: add it from here
+      setBarcodeInput("");
+      setCurrentStep(2);
+      setQuickProduct({ barcode });
     }
-  }, [items, productsData, handleUpdateItemQuantity, company]);
+  }, [productsData, addProductToItems, company]);
+
+  const handleQuickProductCreated = (product: QuickCreatedProduct, quantity: number, unitCost: number) => {
+    addProductToItems(product, quantity, unitCost);
+    setQuickProduct(null);
+    setTimeout(() => barcodeInputRef.current?.focus(), 100);
+  };
 
   // Handle manual barcode input
   const handleBarcodeSubmit = useCallback(async (e: React.FormEvent) => {
@@ -220,15 +250,15 @@ const PurchasesCreate: React.FC = () => {
 
 
   const handleUpdateItemPrice = (productId: string, newPrice: number) => {
-    setItems(items.map(item => 
-      item.productId === productId 
+    setItems(prev => prev.map(item =>
+      item.productId === productId
         ? { ...item, unitPrice: newPrice, totalPrice: item.quantity * newPrice }
         : item
     ));
   };
 
   const handleTogglePriceUpdate = (productId: string, updatePrice: boolean) => {
-    setItems(items.map(item =>
+    setItems(prev => prev.map(item =>
       item.productId === productId
         ? { ...item, updateProductPrice: updatePrice }
         : item
@@ -277,6 +307,16 @@ const PurchasesCreate: React.FC = () => {
       toast.error('يرجى إضافة منتج واحد على الأقل');
       return false;
     }
+    const noQty = items.find(item => !(item.quantity >= 1));
+    if (noQty) {
+      toast.error(`أدخل كمية ${noQty.productName}`);
+      return false;
+    }
+    const noCost = items.find(item => !(item.unitPrice > 0));
+    if (noCost) {
+      toast.error(`أدخل سعر شراء ${noCost.productName}`);
+      return false;
+    }
     return true;
   };
 
@@ -307,6 +347,7 @@ const PurchasesCreate: React.FC = () => {
       toast.error('يرجى ملء جميع البيانات المطلوبة');
       return;
     }
+    if (!canProceedToStep3()) return;
     if (paidTooMuch) {
       toast.error('المبلغ المدفوع أكبر من إجمالي الفاتورة');
       return;
@@ -499,21 +540,27 @@ const PurchasesCreate: React.FC = () => {
         e.preventDefault();
         barcodeInputRef.current?.focus();
       }
-      // F7: Complete purchase
-      else if (e.key === 'F7' && items.length > 0) {
+      // F7: Complete purchase (from the review step only)
+      else if (e.key === 'F7' && currentStep === 3 && items.length > 0) {
         e.preventDefault();
         handleSubmit();
       }
-      // ESC: Cancel/Go back
-      else if (e.key === 'Escape') {
+      // ESC: leave, after asking when something was entered (not while a dialog is open)
+      else if (e.key === 'Escape' && !quickProduct && !confirmLeave && labelItems === null && !showPrintModal) {
         e.preventDefault();
-        handleBack();
+        requestLeave();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [items.length, handleBack, handleSubmit]);
+  }, [items.length, currentStep, quickProduct, confirmLeave, labelItems, showPrintModal, handleSubmit]);
+
+  /** Leaving throws the invoice away: ask first when products were added */
+  const requestLeave = () => {
+    if (items.length > 0) setConfirmLeave(true);
+    else handleBack();
+  };
 
   // Auto-focus barcode input on mount
   useEffect(() => {
@@ -557,7 +604,7 @@ const PurchasesCreate: React.FC = () => {
             <Button
               variant="ghost"
               size="sm"
-              onClick={handleBack}
+              onClick={requestLeave}
               className="flex items-center"
             >
               <ArrowLeft className="w-4 h-4 ml-2" />
@@ -858,7 +905,7 @@ const PurchasesCreate: React.FC = () => {
                 <div className="flex items-center justify-between mt-8 pt-6 border-t">
                   <Button
                     variant="outline"
-                    onClick={handleBack}
+                    onClick={requestLeave}
                     className="px-6"
                   >
                     <ArrowLeft className="w-4 h-4 ml-2" />
@@ -916,6 +963,15 @@ const PurchasesCreate: React.FC = () => {
                     >
                       إضافة
                     </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setQuickProduct({})}
+                      className="whitespace-nowrap bg-white"
+                    >
+                      <PackagePlus className="w-4 h-4 ml-1" />
+                      منتج جديد
+                    </Button>
                   </form>
                 </div>
 
@@ -939,7 +995,7 @@ const PurchasesCreate: React.FC = () => {
 
                   {!isProductSelectionCollapsed && (
                     <div className="mt-6">
-                      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden" style={{ height: 'calc(100vh - 400px)' }}>
+                      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden" style={{ height: 'max(360px, calc(100vh - 400px))' }}>
                         <div className="flex flex-col h-full">
                           {/* Category Tabs */}
                           <div className="flex-shrink-0 border-b border-gray-200 bg-gray-50 p-2">
@@ -999,20 +1055,7 @@ const PurchasesCreate: React.FC = () => {
                                     <button
                                       key={product.id}
                                       type="button"
-                                      onClick={() => {
-                                        if (!isSelected) {
-                                          const newItem: PurchaseItem = {
-                                            productId: product.id,
-                                            productName: product.name,
-                                            quantity: 1,
-                                            unitPrice: product.purchasePrice || 0,
-                                            totalPrice: product.purchasePrice || 0,
-                                            currentProductPrice: product.purchasePrice || 0,
-                                            updateProductPrice: true,
-                                          };
-                                          setItems([...items, newItem]);
-                                        }
-                                      }}
+                                      onClick={() => addProductToItems(product)}
                                       className={`relative p-3 rounded-lg border text-right transition-all duration-200 ${
                                         isSelected
                                           ? "border-primary-400 bg-gradient-to-br from-primary-50 to-green-50 shadow-md shadow-primary-100"
@@ -1054,6 +1097,16 @@ const PurchasesCreate: React.FC = () => {
                               <div className="flex flex-col items-center justify-center h-full text-gray-500">
                                 <Package className="w-12 h-12 mb-2 text-gray-300" />
                                 <p className="text-sm">لا توجد منتجات</p>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="mt-3"
+                                  onClick={() => setQuickProduct({ name: productSearch.trim() })}
+                                >
+                                  <PackagePlus className="w-4 h-4 ml-1" />
+                                  {productSearch.trim() ? `إضافة "${productSearch.trim()}" كمنتج جديد` : 'إضافة منتج جديد'}
+                                </Button>
                               </div>
                             )}
                           </div>
@@ -1113,9 +1166,18 @@ const PurchasesCreate: React.FC = () => {
                               >
                                 <Minus className="w-4 h-4" />
                               </button>
-                              <span className="w-12 text-center text-lg font-bold text-gray-900">
-                                {item.quantity}
-                              </span>
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                min="1"
+                                step="1"
+                                value={item.quantity === 0 ? '' : item.quantity}
+                                onChange={(e) => handleTypeItemQuantity(item.productId, e.target.value)}
+                                onFocus={(e) => e.target.select()}
+                                onBlur={() => { if (!(item.quantity >= 1)) handleUpdateItemQuantity(item.productId, 1); }}
+                                aria-label={`كمية ${item.productName}`}
+                                className="w-20 text-center text-lg font-bold text-gray-900 border border-gray-300 rounded-lg py-1 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                              />
                               <button
                                 type="button"
                                 onClick={() => handleUpdateItemQuantity(item.productId, item.quantity + 1)}
@@ -1134,8 +1196,10 @@ const PurchasesCreate: React.FC = () => {
                                 type="number"
                                 min="0"
                                 step="0.01"
-                                value={item.unitPrice}
+                                value={item.unitPrice === 0 ? '' : item.unitPrice}
+                                placeholder="0.00"
                                 onChange={(e) => handleUpdateItemPrice(item.productId, parseFloat(e.target.value) || 0)}
+                                onFocus={(e) => e.target.select()}
                                 className="w-full text-center font-semibold text-primary-600 bg-primary-50 border border-primary-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
                               />
                               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-500">ج.م</span>
@@ -1241,7 +1305,7 @@ const PurchasesCreate: React.FC = () => {
                         <div>
                           <span className="text-gray-600">طريقة الدفع:</span>
                           <span className="font-semibold text-gray-900 mr-2">
-                            {paymentMethod === 'CASH' ? 'نقدي' : paymentMethod === 'MOBILE_WALLET' ? 'محفظة إلكترونية' : 'تحويل بنكي'}
+                            {paidValue <= 0 ? 'آجل' : paymentMethod === 'CASH' ? 'نقدي' : paymentMethod === 'CARD' ? 'بطاقة' : paymentMethod === 'MOBILE_WALLET' ? 'محفظة إلكترونية' : 'تحويل بنكي'}
                           </span>
                         </div>
                       </div>
@@ -1289,6 +1353,32 @@ const PurchasesCreate: React.FC = () => {
                       معلومات الدفع
                     </h3>
                     <div className="grid grid-cols-1 gap-4">
+                      <div>
+                        <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={includeTax}
+                            onChange={(e) => setIncludeTax(e.target.checked)}
+                            className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                          />
+                          الفاتورة عليها ضريبة
+                        </label>
+                        {includeTax && (
+                          <div className="mt-2 flex items-center gap-2">
+                            <Input
+                              type="number"
+                              placeholder="14"
+                              min="0"
+                              max="100"
+                              step="0.01"
+                              value={taxRate}
+                              onChange={(e) => setTaxRate(e.target.value)}
+                            />
+                            <span className="text-sm text-gray-600">%</span>
+                          </div>
+                        )}
+                      </div>
+
                       <div>
                         <label className="block text-sm font-semibold text-gray-700 mb-2">
                           المبلغ المدفوع
@@ -1402,6 +1492,27 @@ const PurchasesCreate: React.FC = () => {
           )}
         </div>
       </div>
+
+      <QuickProductModal
+        isOpen={quickProduct !== null}
+        onClose={() => setQuickProduct(null)}
+        companyId={company?.companyId || 0}
+        categories={((categoriesData as any)?.data?.list || []).map((c: any) => ({ id: String(c.id), name: c.name }))}
+        initialBarcode={quickProduct?.barcode}
+        initialName={quickProduct?.name}
+        onCreated={handleQuickProductCreated}
+      />
+
+      <ConfirmDialog
+        isOpen={confirmLeave}
+        onClose={() => setConfirmLeave(false)}
+        onConfirm={handleBack}
+        title="الخروج من الفاتورة"
+        message="لم تُحفظ فاتورة الشراء بعد. هل تريد الخروج وحذف المنتجات المضافة؟"
+        confirmText="خروج بدون حفظ"
+        cancelText="البقاء"
+        type="warning"
+      />
 
       {/* Barcode labels for the received products */}
       <PurchaseBarcodeModal
