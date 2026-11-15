@@ -118,6 +118,17 @@ fn list_printers() -> Vec<String> {
     }
 }
 
+/// Receipt paper from the page itself (printService writes <meta name="sellx-paper">).
+/// 58mm rolls print 48mm = 384 dots; 80mm rolls print 72mm = 576 dots.
+/// Returns (CSS width the receipt was laid out at, printer dots).
+fn receipt_paper_size(html: &str) -> (u32, u32) {
+    if html.contains("name=\"sellx-paper\" content=\"58mm\"") {
+        (203, 384)
+    } else {
+        (272, 576)
+    }
+}
+
 ///
 /// TODO: Future Feature - Direct IP Printing
 /// Currently uses system printer names (including network printers installed in OS).
@@ -164,8 +175,9 @@ fn print_receipt(printer_name: String, html: String) -> Result<String, String> {
             // Barcode label: 38mm logical = 144px, printer = 304 dots (≈2x)
             (144, 304)
         } else {
-            // Receipt: 80mm logical = 272px, printer = 576 dots (≈2.1x)
-            (272, 576)
+            // Receipt: 80mm = 272px -> 576 dots, 58mm = 203px -> 384 dots.
+            // (Always using 576 printed a 58mm receipt too wide: the right side was cut.)
+            receipt_paper_size(&html)
         };
 
         // Render the WebBrowser at printer width — layout is scaled via body zoom.
@@ -340,13 +352,14 @@ try {{
             // Barcode label: Use smaller viewport matching label width
             // 38mm ≈ 143px at 96 DPI, but we use 38mm * 3.78 = ~144px
             // Printer dots for 38mm at 203 DPI = 38 * 8 ≈ 304 dots
-            ("144", "304")
+            ("144".to_string(), "304".to_string())
         } else {
-            // Receipt: Standard 80mm = 272px viewport, 576 dots (72mm printable)
-            ("272", "576")
+            // Receipt: 80mm = 272px / 576 dots, 58mm = 203px / 384 dots
+            let (w, d) = receipt_paper_size(&html);
+            (w.to_string(), d.to_string())
         };
 
-        let print_result = if render_html_to_escpos_with_size(&path_str, &escpos_str, viewport_width, printer_dots) {
+        let print_result = if render_html_to_escpos_with_size(&path_str, &escpos_str, &viewport_width, &printer_dots) {
             // Validate ESC/POS output before sending
             match std::fs::read(&escpos_path) {
                 Ok(data) if data.len() >= 10 && data[0] == 0x1B && data[1] == 0x40 => {
@@ -412,10 +425,12 @@ try {{
     };
 
     #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    let media = if receipt_paper_size(&html).1 == 384 { "media=Custom.58x500mm" } else { "media=Custom.80x500mm" };
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
     let result = Command::new("lp")
         .args([
             "-d", &printer_name,
-            "-o", "media=Custom.80x500mm",
+            "-o", media,
             "-o", "page-left=0",
             "-o", "page-right=0",
             "-o", "page-top=0",

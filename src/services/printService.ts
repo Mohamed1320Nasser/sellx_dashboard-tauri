@@ -183,6 +183,7 @@ async function wrapHtml(body: string, paperWidth: '58mm' | '80mm'): Promise<stri
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="sellx-paper" content="${paperWidth}">
 <style>
 @page {
   size: ${paperWidth} auto;
@@ -673,4 +674,35 @@ export async function printShiftReport(data: ShiftReportData): Promise<void> {
   frame.contentWindow!.focus();
   frame.contentWindow!.print();
   setTimeout(() => frame.remove(), 1000);
+}
+
+/**
+ * Print a full page (the A4 invoice) with the system print dialog, through a hidden frame.
+ * The page gets the app's fonts embedded so Arabic prints the same as on screen.
+ */
+export async function printA4Document(buildHtml: (fontCss: string) => string): Promise<void> {
+  const fontCss = await getPageCssWithFonts();
+  const html = buildHtml(fontCss);
+  const frame = document.createElement('iframe');
+  frame.style.position = 'fixed';
+  frame.style.right = '0';
+  frame.style.bottom = '0';
+  frame.style.width = '0';
+  frame.style.height = '0';
+  frame.style.border = '0';
+  document.body.appendChild(frame);
+  const doc = frame.contentWindow!.document;
+  doc.open();
+  doc.write(html);
+  doc.close();
+  // wait for fonts and the logo before printing
+  try {
+    await (doc as any).fonts?.ready;
+  } catch {
+    /* older engines: fall through */
+  }
+  await new Promise(resolve => setTimeout(resolve, 400));
+  frame.contentWindow!.focus();
+  frame.contentWindow!.print();
+  setTimeout(() => frame.remove(), 2000);
 }

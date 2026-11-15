@@ -101,14 +101,25 @@ const styles = StyleSheet.create({
   docMeta: {
     alignItems: "flex-start",
   },
+  docTitle: {
+    backgroundColor: COLOR.ink,
+    color: "#ffffff",
+    fontSize: 12,
+    fontWeight: "bold",
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 5,
+    marginBottom: 6,
+  },
   docNum: {
-    fontSize: 12.5,
+    fontSize: 11,
     fontWeight: "bold",
     marginBottom: 3,
   },
   docDate: {
     fontSize: 9,
     color: COLOR.inkSoft,
+    marginBottom: 2,
   },
 
   infoStrip: {
@@ -147,8 +158,6 @@ const styles = StyleSheet.create({
   },
   payPill: {
     alignSelf: "flex-end",
-    backgroundColor: COLOR.badgePaidBg,
-    color: COLOR.badgePaidInk,
     fontSize: 8,
     fontWeight: "bold",
     borderRadius: 8,
@@ -188,9 +197,10 @@ const styles = StyleSheet.create({
   },
   colIdx: { width: 26, textAlign: "center" },
   colName: { flex: 1 },
-  colQty: { width: 44, textAlign: "left" },
-  colPrice: { width: 64, textAlign: "left" },
-  colTotal: { width: 70, textAlign: "left" },
+  // Numbers and their headings are centered in the same column (they used to sit apart)
+  colQty: { width: 56, textAlign: "center" },
+  colPrice: { width: 76, textAlign: "center" },
+  colTotal: { width: 86, textAlign: "center" },
   itemName: {
     fontWeight: "bold",
     fontSize: 9.5,
@@ -203,7 +213,7 @@ const styles = StyleSheet.create({
     textAlign: "right",
   },
   idxText: { fontSize: 8.5, color: COLOR.inkFaint, textAlign: "center" },
-  numText: { fontSize: 9, fontWeight: "bold", textAlign: "left" },
+  numText: { fontSize: 9, fontWeight: "bold", textAlign: "center" },
 
   totalsWrap: {
     flexDirection: "row-reverse",
@@ -219,12 +229,6 @@ const styles = StyleSheet.create({
   qrImage: {
     width: 80,
     height: 80,
-  },
-  qrCaption: {
-    fontSize: 7,
-    color: COLOR.inkFaint,
-    marginTop: 4,
-    textAlign: "center",
   },
   totals: {
     width: 230,
@@ -254,6 +258,28 @@ const styles = StyleSheet.create({
   },
   grandLabel: { color: "#ffffff", fontSize: 10.5, fontWeight: "bold" },
   grandValue: { color: "#ffffff", fontSize: 12, fontWeight: "bold" },
+  dueRow: {
+    flexDirection: "row-reverse",
+    justifyContent: "space-between",
+    backgroundColor: "#fee2e2",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  dueText: { color: COLOR.red, fontSize: 9.5, fontWeight: "bold" },
+  leftCol: { flex: 1, marginLeft: 16 },
+  words: {
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: COLOR.inkFaint,
+    borderRadius: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    fontSize: 9.5,
+    fontWeight: "bold",
+    textAlign: "right",
+    backgroundColor: COLOR.rowAlt,
+  },
+  notes: { fontSize: 8.5, color: COLOR.inkSoft, marginTop: 8, textAlign: "right", lineHeight: 1.5 },
 
   signatures: {
     flexDirection: "row-reverse",
@@ -311,6 +337,12 @@ export const SaleInvoicePdf: React.FC<{ data: SaleInvoiceData }> = ({ data }) =>
   const hasTax = data.taxAmount > 0;
   const hasFee = data.additionalFee > 0;
   const isPartial = data.remainingAmount > 0;
+  const pill =
+    data.paymentStatus === "UNPAID"
+      ? { backgroundColor: "#fee2e2", color: "#b91c1c" }
+      : data.paymentStatus === "PARTIAL"
+        ? { backgroundColor: "#fef3c7", color: "#b45309" }
+        : { backgroundColor: COLOR.badgePaidBg, color: COLOR.badgePaidInk };
 
   return (
     <Document>
@@ -348,33 +380,33 @@ export const SaleInvoicePdf: React.FC<{ data: SaleInvoiceData }> = ({ data }) =>
             </View>
           </View>
           <View style={styles.docMeta}>
-            <Text style={styles.docNum}>#{data.receiptNumber}</Text>
-            <Text style={styles.docDate}>
-              {data.dateLabel} — {data.timeLabel}
-            </Text>
+            <Text style={styles.docTitle}>{data.title}</Text>
+            <Text style={styles.docNum}>{data.receiptNumber}</Text>
+            <Text style={styles.docDate}>{data.dateLabel}</Text>
+            <Text style={styles.docDate}>{data.timeLabel}</Text>
           </View>
         </View>
 
         {/* Info strip */}
         <View style={styles.infoStrip}>
           <View style={styles.infoCell}>
-            <Text style={styles.infoLabel}>بيانات العميل</Text>
+            <Text style={styles.infoLabel}>{data.partyLabel}</Text>
             <Text style={styles.infoValue}>{data.clientName}</Text>
             {data.clientPhone || data.clientEmail ? (
               <Text style={styles.infoSub}>
                 {[data.clientPhone, data.clientEmail].filter(Boolean).join(" · ")}
               </Text>
             ) : (
-              <Text style={styles.infoSub}>بدون بيانات تواصل مسجلة</Text>
+              <Text style={styles.infoSub}> </Text>
             )}
           </View>
           <View style={styles.infoCell}>
             <Text style={styles.infoLabel}>طريقة الدفع</Text>
             <Text style={styles.infoValue}>{data.paymentMethodLabel}</Text>
-            <Text style={styles.payPill}>● {data.paymentStatusLabel}</Text>
+            <Text style={[styles.payPill, pill]}>{data.paymentStatusLabel}</Text>
           </View>
           <View style={[styles.infoCell, styles.infoCellLast]}>
-            <Text style={styles.infoLabel}>الكاشير</Text>
+            <Text style={styles.infoLabel}>{data.kind === "purchase" ? "المستخدم" : "الكاشير"}</Text>
             <Text style={styles.infoValue}>{data.cashierName || "—"}</Text>
           </View>
         </View>
@@ -421,9 +453,14 @@ export const SaleInvoicePdf: React.FC<{ data: SaleInvoiceData }> = ({ data }) =>
 
         {/* Totals + QR */}
         <View style={styles.totalsWrap} wrap={false}>
-          <View style={styles.qrSlot}>
-            <Image src={data.qrImageDataUrl} style={styles.qrImage} />
-            <Text style={styles.qrCaption}>امسح للتحقق من الفاتورة</Text>
+          <View style={styles.leftCol}>
+            <Text style={styles.words}>{data.totalInWords}</Text>
+            {data.notes ? <Text style={styles.notes}>ملاحظات: {data.notes}</Text> : null}
+            {data.qrImageDataUrl ? (
+              <View style={[styles.qrSlot, { marginTop: 8 }]}>
+                <Image src={data.qrImageDataUrl} style={styles.qrImage} />
+              </View>
+            ) : null}
           </View>
           <View style={styles.totals}>
             <View style={styles.tRow}>
@@ -452,39 +489,35 @@ export const SaleInvoicePdf: React.FC<{ data: SaleInvoiceData }> = ({ data }) =>
                 <Text style={styles.tRowValue}>{money(data.additionalFee)}</Text>
               </View>
             ) : null}
+            <View style={styles.grandRow}>
+              <Text style={styles.grandLabel}>الإجمالي</Text>
+              <Text style={styles.grandValue}>{money(data.totalAmount)}</Text>
+            </View>
             {isPartial ? (
               <>
                 <View style={styles.tRow}>
                   <Text style={styles.tRowLabel}>المدفوع</Text>
                   <Text style={styles.tRowValue}>{money(data.paidAmount)}</Text>
                 </View>
-                <View style={styles.tRow}>
-                  <Text style={[styles.tRowLabel, styles.discountValue]}>المتبقي</Text>
-                  <Text style={[styles.tRowValue, styles.discountValue]}>
-                    {money(data.remainingAmount)}
-                  </Text>
+                <View style={styles.dueRow}>
+                  <Text style={styles.dueText}>المتبقي</Text>
+                  <Text style={styles.dueText}>{money(data.remainingAmount)}</Text>
                 </View>
               </>
             ) : null}
-            <View style={styles.grandRow}>
-              <Text style={styles.grandLabel}>الإجمالي المستحق</Text>
-              <Text style={styles.grandValue}>{money(data.totalAmount)}</Text>
-            </View>
           </View>
         </View>
 
         {/* Signatures */}
         <View style={styles.signatures} wrap={false}>
-          <Text style={styles.sigLine}>توقيع المستلم</Text>
+          <Text style={styles.sigLine}>{data.kind === "purchase" ? "توقيع المورد" : "توقيع المستلم"}</Text>
           <Text style={styles.sigLine}>ختم الشركة / التوقيع</Text>
         </View>
 
         {/* Footer */}
         <View style={styles.foot} fixed>
           <Text style={styles.footNote}>
-            <Text style={styles.footNoteBold}>شكرًا لتعاملكم مع {data.companyName}.</Text>
-            {"\n"}
-            لأي استفسار بخصوص هذه الفاتورة، برجاء التواصل عبر الهاتف أو البريد الإلكتروني الموضح أعلاه.
+            <Text style={styles.footNoteBold}>{data.footerText || `شكرًا لتعاملكم مع ${data.companyName}.`}</Text>
           </Text>
           <View style={styles.footRight}>
             <Text

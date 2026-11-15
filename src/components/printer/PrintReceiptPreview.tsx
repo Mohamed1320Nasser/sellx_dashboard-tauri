@@ -1,7 +1,8 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { X, Printer, Download, FileText } from 'lucide-react';
 import { Modal, Button } from '../ui';
-import { saleToReceiptData as saleMapper, purchaseToReceiptData, generateReceiptHTML } from '../../services/receiptHtmlTemplate';
+import { saleToReceiptData as saleMapper, purchaseToReceiptData } from '../../services/receiptHtmlTemplate';
+import { printSaleInvoiceA4 } from '../invoice/generateSaleInvoicePdf';
 import { usePrinterConfigStore } from '../../stores/printerConfigStore';
 import { exportReceiptAsImage } from '../../services/exportReceiptAsImage';
 import { printReceipt } from '../../services/printService';
@@ -121,40 +122,18 @@ export const PrintReceiptPreview: React.FC<PrintReceiptPreviewProps> = ({
     }
   };
 
-  // Handle browser print (for A4 printers / PDF)
+  // A4 print (office printers): the same full-page invoice as the PDF download
+  const [isPrintingA4, setIsPrintingA4] = useState(false);
   const handleBrowserPrint = async () => {
-    const printWindow = window.open('', '_blank', 'width=800,height=600');
-
-    if (!printWindow) {
-      toast.error('يرجى السماح بالنوافذ المنبثقة للطباعة');
-      return;
+    setIsPrintingA4(true);
+    try {
+      await printSaleInvoiceA4({ sale, company, cashier, kind });
+    } catch (error) {
+      console.error('A4 print error:', error);
+      toast.error('تعذر فتح طباعة A4');
+    } finally {
+      setIsPrintingA4(false);
     }
-
-    const printerConfig = usePrinterConfigStore.getState();
-    const receiptData = saleToReceiptData({
-      sale,
-      company,
-      cashier,
-      paperWidth: printerConfig.paperWidth as '58mm' | '80mm',
-      showLogo: printerConfig.showCompanyLogo,
-      showOrderId: printerConfig.showOrderId,
-      showTaxBreakdown: printerConfig.showTaxBreakdown,
-      showQRCode: printerConfig.showQrCode,
-      headerText: printerConfig.headerText,
-      footerText: printerConfig.footerText,
-    });
-
-    const html = await generateReceiptHTML(receiptData);
-    printWindow.document.write(html);
-    printWindow.document.close();
-
-    printWindow.onload = () => {
-      printWindow.focus();
-      printWindow.print();
-      setTimeout(() => printWindow.close(), 100);
-    };
-
-    toast.success('تم فتح نافذة الطباعة');
   };
 
   // Generate preview HTML using React component (same as printer)
@@ -239,10 +218,11 @@ export const PrintReceiptPreview: React.FC<PrintReceiptPreviewProps> = ({
           {/* Browser Print */}
           <Button
             onClick={handleBrowserPrint}
+            disabled={isPrintingA4 || isLoadingCompany}
             className="bg-blue-600 hover:bg-blue-700 text-white flex flex-col items-center py-4"
           >
             <FileText className="w-6 h-6 mb-1" />
-            <span className="text-sm">طباعة متصفح</span>
+            <span className="text-sm">طباعة A4</span>
           </Button>
         </div>
 
