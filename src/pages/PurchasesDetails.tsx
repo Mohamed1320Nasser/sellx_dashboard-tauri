@@ -94,7 +94,7 @@ const PurchasesDetails: React.FC = () => {
         })),
 
         subtotal: purchase.subtotal ?? purchase.totalAmount - (purchase.taxAmount || 0),
-        discount: purchase.discount || 0,
+        discount: Number(purchase.discountAmount || purchase.discount || 0),
         tax: purchase.taxAmount || 0,
         taxRate: purchase.taxRate || 0,
         total: purchase.totalAmount || 0,
@@ -107,8 +107,8 @@ const PurchasesDetails: React.FC = () => {
         isPurchase: true,  // ⚠️ IMPORTANT: Shows "فاتورة مشتريات"
         supplierName: purchase.supplier?.name,
         remaining: Number(purchase.remainingAmount || 0),
-        additionalFee: purchase.shippingCost || purchase.additionalFee,
-        additionalFeeLabel: purchase.shippingCost || purchase.additionalFee ? "رسوم الشحن" : undefined,
+        additionalFee: Number(purchase.shippingCost || purchase.additionalFee || 0) || undefined,
+        additionalFeeLabel: Number(purchase.shippingCost || purchase.additionalFee || 0) > 0 ? "شحن وتحميل" : undefined,
       });
 
       toast.success("تم طباعة فاتورة الشراء بنجاح");
@@ -155,6 +155,24 @@ const PurchasesDetails: React.FC = () => {
       toast.error(errorMessage);
     },
   });
+
+  // Put back selling prices this purchase changed
+  const revertPricesMutation = useMutation({
+    mutationFn: (productIds?: string[]) => purchaseService.revertPrices(Number(id), companyId, productIds),
+    onSuccess: (res: any) => {
+      const result = res?.data ?? res;
+      const done = result?.reverted?.length || 0;
+      const skipped = result?.skipped || [];
+      if (done) toast.success(`تم إرجاع سعر البيع لـ ${done} منتج`);
+      if (skipped.length) toast.error(`لم يتغير: ${skipped.map((x: any) => x.name).join('، ')} (تغير السعر بعد الفاتورة)`);
+      queryClient.invalidateQueries({ queryKey: ['purchase', id, companyId] });
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.msg || error?.message || 'تعذر إرجاع الأسعار');
+    },
+  });
+  const [confirmRevert, setConfirmRevert] = useState<string[] | 'all' | null>(null);
 
   const handleCreatePayment = async (data: CreatePaymentRequest) => {
     await createPaymentMutation.mutateAsync(data);
@@ -261,6 +279,8 @@ const PurchasesDetails: React.FC = () => {
   const remaining: number = purchase.remainingAmount ?? (purchase.totalAmount || 0) - (purchase.paidAmount || 0);
   const subtotal: number = purchase.subtotal ?? (purchase.totalAmount || 0) - (purchase.taxAmount || 0);
   const supplierReturns: any[] = purchase.supplierReturns || [];
+  const priceChanges: any[] = purchase.priceChanges || [];
+  const revertable = priceChanges.filter((c: any) => c.canRevert);
   const labelItems = (purchase.items || []).map((item: any) => ({
     productId: item.productId,
     name: item.product?.name || '',
@@ -608,10 +628,22 @@ const PurchasesDetails: React.FC = () => {
                     <span>قيمة المنتجات</span>
                     <span>{formatCurrency(subtotal)}</span>
                   </div>
+                  {Number(purchase.discountAmount || 0) > 0 && (
+                    <div className="flex items-center justify-between px-3 text-sm text-gray-600">
+                      <span>خصم المورد</span>
+                      <span className="text-green-700">- {formatCurrency(purchase.discountAmount)}</span>
+                    </div>
+                  )}
                   {(purchase.taxAmount || 0) > 0 && (
                     <div className="flex items-center justify-between px-3 text-sm text-gray-600">
                       <span>الضريبة {purchase.taxRate ? `(${purchase.taxRate}%)` : ''}</span>
                       <span>{formatCurrency(purchase.taxAmount)}</span>
+                    </div>
+                  )}
+                  {Number(purchase.shippingCost || 0) > 0 && (
+                    <div className="flex items-center justify-between px-3 text-sm text-gray-600">
+                      <span>شحن وتحميل</span>
+                      <span>{formatCurrency(purchase.shippingCost)}</span>
                     </div>
                   )}
                   <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
@@ -648,6 +680,62 @@ const PurchasesDetails: React.FC = () => {
                 </div>
               </div>
             </Card>
+
+            {/* Selling prices this purchase changed */}
+            {priceChanges.length > 0 && (
+              <Card padding="lg">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+                      <Tag className="w-5 h-5 ml-2 text-amber-600" />
+                      أسعار بيع غيرتها الفاتورة
+                    </h3>
+                    {revertable.length > 1 && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={revertPricesMutation.isPending}
+                        onClick={() => setConfirmRevert('all')}
+                      >
+                        إرجاع الكل
+                      </Button>
+                    )}
+                  </div>
+                  <div className="divide-y divide-gray-100">
+                    {priceChanges.map((c: any) => (
+                      <div key={c.productId} className="flex items-center justify-between gap-2 py-2 text-sm">
+                        <div>
+                          <div className="font-medium text-gray-900">{c.productName}</div>
+                          <div className="text-xs text-gray-500">
+                            {formatCurrency(c.oldSellingPrice)} ← {formatCurrency(c.newSellingPrice)}
+                            {!c.canRevert &&
+                              Math.abs(c.currentSellingPrice - c.newSellingPrice) > 0.001 &&
+                              Math.abs(c.currentSellingPrice - c.oldSellingPrice) >= 0.001 && (
+                              <span className="mr-1">(الآن {formatCurrency(c.currentSellingPrice)})</span>
+                            )}
+                          </div>
+                        </div>
+                        {c.canRevert ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={revertPricesMutation.isPending}
+                            onClick={() => setConfirmRevert([c.productId])}
+                          >
+                            <RotateCcw className="w-3.5 h-3.5 ml-1" />
+                            تراجع
+                          </Button>
+                        ) : Math.abs(c.currentSellingPrice - c.oldSellingPrice) < 0.001 ? (
+                          <span className="text-xs text-green-700">تم الإرجاع</span>
+                        ) : (
+                          <span className="text-xs text-gray-400">تغير بعدها</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </Card>
+            )}
 
             {/* Returns to supplier */}
             {supplierReturns.length > 0 && (
@@ -802,6 +890,21 @@ const PurchasesDetails: React.FC = () => {
         purchase={purchase}
       />
 
+      <ConfirmDialog
+        isOpen={confirmRevert !== null}
+        onClose={() => setConfirmRevert(null)}
+        onConfirm={() => {
+          const ids = confirmRevert === 'all' ? undefined : confirmRevert || undefined;
+          setConfirmRevert(null);
+          revertPricesMutation.mutate(ids);
+        }}
+        title="إرجاع سعر البيع"
+        message="يرجع سعر البيع لما كان قبل هذه الفاتورة. تكلفة المنتج لا تتغير."
+        confirmText="إرجاع السعر"
+        cancelText="إلغاء"
+        type="warning"
+        isLoading={revertPricesMutation.isPending}
+      />
       <ConfirmDialog
         isOpen={confirmDelete}
         onClose={() => setConfirmDelete(false)}

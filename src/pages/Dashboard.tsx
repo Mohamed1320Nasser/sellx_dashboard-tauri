@@ -27,6 +27,7 @@ import { useNavigate } from 'react-router-dom';
 import { formatCurrency, formatNumber } from '../utils/currencyUtils';
 import { useExpenseCategories, useSeedDefaultExpenseCategories } from '../hooks/api/useExpenseCategories';
 import { useSessionAuthStore } from '../stores/sessionAuthStore';
+import PurchaseDueCard from '../components/purchases/PurchaseDueCard';
 
 const Dashboard: React.FC = () => {
     const navigate = useNavigate();
@@ -143,6 +144,11 @@ const Dashboard: React.FC = () => {
                 )}
 
                 <div className="w-full">
+                    {/* Supplier invoices due this week */}
+                    <div className="mb-6">
+                        <PurchaseDueCard companyId={companyId} />
+                    </div>
+
                     {/* Key Metrics Grid */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
                         <StatisticsCard

@@ -50,4 +50,51 @@ export const purchaseService = {
 
   delete: (id: number, companyId: number): Promise<void> =>
     apiClient.delete(`/purchase/single/${id}`, { params: { companyId } }),
+
+  /** Last price paid to this supplier per product */
+  getLastCosts: (
+    companyId: number,
+    supplierId: number,
+    productIds: string[]
+  ): Promise<{ data: Record<string, LastSupplierCost> }> =>
+    apiClient.get("/purchase/last-costs", {
+      params: { companyId, supplierId, productIds: productIds.join(",") },
+    }),
+
+  /** Unpaid purchases due soon or overdue */
+  getDue: (companyId: number, days = 7): Promise<{ data: DuePurchases }> =>
+    apiClient.get("/purchase/due", { params: { companyId, days } }),
+
+  /** Put back the selling prices a purchase changed */
+  revertPrices: (
+    id: number,
+    companyId: number,
+    productIds?: string[]
+  ): Promise<{ data: { reverted: string[]; skipped: { productId: string; name: string; reason: string }[] } }> =>
+    apiClient.post(`/purchase/single/${id}/revert-prices`, { companyId, productIds }),
 };
+
+export interface LastSupplierCost {
+  unitPrice: number;
+  purchaseDate: string;
+  invoiceNumber: string;
+}
+
+export interface DuePurchase {
+  id: number;
+  invoiceNumber: string;
+  totalAmount: number;
+  paidAmount: number;
+  remaining: number;
+  dueDate: string | null;
+  reminderDate: string | null;
+  daysLeft: number | null;
+  overdue: boolean;
+  supplier: { id: number; name: string };
+}
+
+export interface DuePurchases {
+  list: DuePurchase[];
+  totalRemaining: number;
+  overdueCount: number;
+}

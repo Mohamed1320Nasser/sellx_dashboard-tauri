@@ -1,20 +1,23 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Plus, Minus, ShoppingCart, Package, DollarSign, Search, ScanLine, Upload, FileText, Trash2, ChevronDown, ChevronUp, CheckCircle, ChevronRight, Truck, Receipt, PackagePlus } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import {
+  ArrowLeft, Plus, Minus, ShoppingCart, Package, DollarSign, Search, ScanLine, Upload, FileText, Trash2,
+  ChevronDown, ChevronUp, CheckCircle, PackagePlus, AlertTriangle, History, Bell, RotateCcw,
+} from "lucide-react";
 import { Layout } from "../components/layout";
 import { Button, Card, Input, Select, DatePicker, ConfirmDialog } from "../components/ui";
 import QuickProductModal, { type QuickCreatedProduct } from "../components/modals/QuickProductModal";
+import QuickSupplierModal from "../components/modals/QuickSupplierModal";
+import SupplierPicker from "../components/purchases/SupplierPicker";
 import { useSessionAuthStore } from "../stores/sessionAuthStore";
 import { useSuppliers } from "../hooks/api/useSuppliers";
 import { useProducts } from "../hooks/api/useProducts";
 import { useCategories } from "../hooks/api/useCategories";
 import { useCreatePurchase } from "../hooks/api/usePurchases";
-import { formatCurrency, formatNumber } from "../utils/currencyUtils";
+import { formatCurrency } from "../utils/currencyUtils";
+import { round2, suggestedSellingPrice } from "../utils/purchasePricing";
 import toast from "react-hot-toast";
-import type { Supplier } from "../types/business";
-import { BarcodeInput } from "../components/pos/BarcodeInput";
-import { ScanIndicator } from "../components/pos/ScanIndicator";
-import { PrintStatus } from "../components/pos/PrintStatus";
 import { useScanner } from "../hooks/useScanner";
 import { usePrinterConfigStore } from "../stores/printerConfigStore";
 import { companyService } from "../services/companyService";
@@ -22,156 +25,246 @@ import { printReceipt } from "../services/printService";
 import { PrintReceiptPreview } from "../components/printer/PrintReceiptPreview";
 import { PurchaseBarcodeModal, type PurchaseLabelItem } from "../components/modals/PurchaseBarcodeModal";
 import { productService } from "../services/productService";
-import { purchaseService } from "../services/purchaseService";
+import { purchaseService, type LastSupplierCost } from "../services/purchaseService";
 
 interface PurchaseItem {
   productId: string;
   productName: string;
+  sku?: string | null;
   quantity: number;
+  /** Price on the supplier's invoice */
   unitPrice: number;
   totalPrice: number;
+  /** Product cost and selling price before this purchase */
+  productCost: number;
   currentProductPrice: number;
   updateProductPrice: boolean;
+  /** Selling price typed on the screen; null = the suggested one */
+  newSellingPrice: number | null;
 }
+
+interface PurchaseDraft {
+  savedAt: number;
+  supplierId: string;
+  invoiceNumber: string;
+  purchaseDate: string;
+  dueDate: string | null;
+  notes: string;
+  items: PurchaseItem[];
+  includeTax: boolean;
+  taxRate: string;
+  discount: string;
+  shipping: string;
+  paidAmount: string;
+  paymentMethod: string;
+  reminderEnabled: boolean;
+  reminderDate: string;
+}
+
+const PAYMENT_LABELS: Record<string, string> = {
+  CASH: "نقداً",
+  CARD: "بطاقة",
+  MOBILE_WALLET: "محفظة إلكترونية",
+  BANK_TRANSFER: "تحويل بنكي",
+};
+
+/** The local calendar day; toISOString() would give yesterday after midnight in Cairo */
+const dayString = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+const generateInvoiceNumber = () => {
+  const now = new Date();
+  return `INV-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${String(now.getTime()).slice(-4)}`;
+};
+
+/** A price this much above the last one gets a warning */
+const PRICE_JUMP = 0.1;
 
 const PurchasesCreate: React.FC = () => {
   const navigate = useNavigate();
   const { company, user } = useSessionAuthStore();
-  
-  // Form state
+  const companyId = company?.companyId || 0;
+  const draftKey = `sellx.purchaseDraft.${companyId}`;
+
+  // Invoice
   const [supplierId, setSupplierId] = useState("");
-  const [invoiceNumber, setInvoiceNumber] = useState("");
+  const [invoiceNumber, setInvoiceNumber] = useState(generateInvoiceNumber);
   const [purchaseDate, setPurchaseDate] = useState<Date>(new Date());
   const [dueDate, setDueDate] = useState<Date | null>(null);
   const [notes, setNotes] = useState("");
-  const [includeTax, setIncludeTax] = useState(false);
-  const [taxRate, setTaxRate] = useState("");
-  const [paymentStatus, setPaymentStatus] = useState("UNPAID");
-  const [paidAmount, setPaidAmount] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("CASH");
   const [reminderEnabled, setReminderEnabled] = useState(false);
   const [reminderDate, setReminderDate] = useState("");
   const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [isProductSelectionCollapsed, setIsProductSelectionCollapsed] = useState(true);
-  // New product from this screen (unknown barcode or a name not found)
-  const [quickProduct, setQuickProduct] = useState<{ barcode?: string; name?: string } | null>(null);
-  const [confirmLeave, setConfirmLeave] = useState(false);
+  const [showMore, setShowMore] = useState(false);
+  const [triedSave, setTriedSave] = useState(false);
 
-  // Print modal state
-  const [showPrintModal, setShowPrintModal] = useState(false);
-  const [printablePurchase, setPrintablePurchase] = useState<any>(null);
-  // Barcode labels offered right after saving, before the receipt
-  const [labelItems, setLabelItems] = useState<PurchaseLabelItem[] | null>(null);
-  const [afterLabels, setAfterLabels] = useState<"receipt" | "list">("list");
+  // Money
+  const [includeTax, setIncludeTax] = useState(false);
+  const [taxRate, setTaxRate] = useState("");
+  const [discount, setDiscount] = useState("");
+  const [shipping, setShipping] = useState("");
+  const [paidAmount, setPaidAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("CASH");
 
-  // Multi-step wizard state
-  const [currentStep, setCurrentStep] = useState(1);
-  const totalSteps = 3;
-
-  // Items state
+  // Items
   const [items, setItems] = useState<PurchaseItem[]>([]);
   const itemsRef = useRef(items);
   itemsRef.current = items;
-  
-  // Search and filter state
   const [productSearch, setProductSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
-
-  // Barcode scanning state
+  const [showProductBrowser, setShowProductBrowser] = useState(false);
   const [barcodeInput, setBarcodeInput] = useState("");
-  const [lastScannedBarcode, setLastScannedBarcode] = useState("");
   const barcodeInputRef = useRef<HTMLInputElement>(null);
 
-  // API hooks
-  const { data: suppliersData } = useSuppliers({ 
-    companyId: company?.companyId || 0,
-    limit: 100 
-  });
-  
+  // Dialogs
+  const [quickProduct, setQuickProduct] = useState<{ barcode?: string; name?: string } | null>(null);
+  const [quickSupplier, setQuickSupplier] = useState<{ name?: string } | null>(null);
+  const [confirmLeave, setConfirmLeave] = useState(false);
+  const [draftOffer, setDraftOffer] = useState<PurchaseDraft | null>(null);
+  const [showPrintModal, setShowPrintModal] = useState(false);
+  const [printablePurchase, setPrintablePurchase] = useState<any>(null);
+  const [labelItems, setLabelItems] = useState<PurchaseLabelItem[] | null>(null);
+  const [afterLabels, setAfterLabels] = useState<"receipt" | "list">("list");
+  const doneRef = useRef(false);
+
+  const [roundingRule, setRoundingRule] = useState("0.50");
+
+  // Data
+  const { data: suppliersData } = useSuppliers({ companyId, limit: 1000 });
   const { data: productsData } = useProducts({
-    companyId: company?.companyId || 0,
+    companyId,
     limit: 1000,
     search: productSearch,
     categoryId: selectedCategory || undefined,
   });
-  
-  const { data: categoriesData } = useCategories({
-    companyId: company?.companyId || 0,
-    limit: 100,
-  });
-
+  const { data: categoriesData } = useCategories({ companyId, limit: 100 });
   const createMutation = useCreatePurchase();
 
-  // Hardware hooks
-  const { isScanning } = useScanner({
-    onScan: async (scannedBarcode) => {
-      await handleBarcodeScan(scannedBarcode);
+  const suppliers = useMemo(
+    () => ((suppliersData as any)?.data?.list || []).map((s: any) => ({ id: Number(s.id), name: s.name, phone: s.phone })),
+    [suppliersData]
+  );
+  const categories = useMemo(
+    () => ((categoriesData as any)?.data?.list || []).map((c: any) => ({ id: String(c.id), name: c.name })),
+    [categoriesData]
+  );
+  const supplierName = suppliers.find((s: any) => String(s.id) === supplierId)?.name;
+
+  useEffect(() => {
+    if (!companyId) return;
+    companyService
+      .getProfile(companyId)
+      .then((p: any) => p?.priceRoundingRule && setRoundingRule(p.priceRoundingRule))
+      .catch(() => {});
+  }, [companyId]);
+
+  // Last price paid to this supplier for the products on the invoice
+  const productIdsKey = useMemo(() => [...new Set(items.map(i => i.productId))].sort().join(","), [items]);
+  const { data: lastCosts = {} } = useQuery<Record<string, LastSupplierCost>>({
+    queryKey: ["purchase-last-costs", companyId, supplierId, productIdsKey],
+    queryFn: async () => {
+      const res: any = await purchaseService.getLastCosts(companyId, Number(supplierId), productIdsKey.split(","));
+      return (res?.data ?? res) || {};
     },
-    autoStart: true,
+    enabled: !!companyId && !!supplierId && !!productIdsKey,
+    staleTime: 60_000,
   });
 
-  // Auto-generate invoice number on component mount
-  useEffect(() => {
-    setInvoiceNumber(generateInvoiceNumber());
-  }, []);
-
-  // Filtered products for selection
-  const filteredProducts = useMemo(() => {
-    const products = (productsData as any)?.data?.list || [];
-    
-    return products.filter((product: any) => {
-      const matchesSearch = product.name.toLowerCase().includes(productSearch.toLowerCase()) ||
-                           product.sku?.toLowerCase().includes(productSearch.toLowerCase());
-      
-      // Convert both to strings for comparison to handle any type mismatches
-      const productCategoryId = String(product.categoryId || '');
-      const selectedCategoryId = String(selectedCategory || '');
-      const matchesCategory = !selectedCategory || productCategoryId === selectedCategoryId;
-      
-      return matchesSearch && matchesCategory;
-    });
-  }, [productsData, productSearch, selectedCategory]);
-
-  // Calculate totals
-  const subtotal = items.reduce((sum, item) => sum + (Number(item.totalPrice) || 0), 0);
-  const taxAmount = includeTax ? subtotal * ((Number(taxRate) || 0) / 100) : 0;
-  // What the supplier is owed: the tax is part of it
-  const totalAmount = Math.round((subtotal + taxAmount) * 100) / 100;
-  const paidValue = Number(paidAmount) || 0;
+  // ------------------------------------------------------------------ totals
+  const subtotal = round2(items.reduce((sum, item) => sum + (Number(item.totalPrice) || 0), 0));
+  const discountValue = round2(Number(discount) || 0);
+  const shippingValue = round2(Number(shipping) || 0);
+  const discountTooBig = discountValue > subtotal + 0.001;
+  const taxAmount = includeTax ? round2((subtotal - discountValue) * ((Number(taxRate) || 0) / 100)) : 0;
+  const totalAmount = round2(subtotal - discountValue + taxAmount + shippingValue);
+  const paidValue = round2(Number(paidAmount) || 0);
   const paidTooMuch = paidValue > totalAmount + 0.01;
+  const remaining = round2(Math.max(0, totalAmount - paidValue));
+  /** Each piece's real cost: its share of the discount and shipping (same rule as the server) */
+  const costFactor = subtotal > 0 ? (subtotal - discountValue + shippingValue) / subtotal : 1;
+  const landedCost = (item: PurchaseItem) => round2(item.unitPrice * costFactor);
+  const sellingFor = (item: PurchaseItem) =>
+    item.newSellingPrice ?? suggestedSellingPrice(landedCost(item), item.productCost, item.currentProductPrice, roundingRule);
 
-  // Handlers (moved before barcode scanning handler)
-  const handleBack = useCallback(() => {
-    navigate('/purchases');
-  }, [navigate]);
+  // ------------------------------------------------------------------ drafts
+  useEffect(() => {
+    if (!companyId) return;
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (!raw) return;
+      const draft = JSON.parse(raw) as PurchaseDraft;
+      if (draft && (draft.items?.length || draft.supplierId)) setDraftOffer(draft);
+    } catch {
+      // no readable draft
+    }
+  }, [companyId, draftKey]);
 
-  const handleRemoveItem = useCallback((productId: string) => {
-    setItems(prev => prev.filter(item => item.productId !== productId));
-  }, []);
+  useEffect(() => {
+    if (!companyId || draftOffer || doneRef.current) return;
+    if (items.length === 0 && !supplierId) return;
+    const t = setTimeout(() => {
+      const draft: PurchaseDraft = {
+        savedAt: Date.now(),
+        supplierId,
+        invoiceNumber,
+        purchaseDate: dayString(purchaseDate),
+        dueDate: dueDate ? dayString(dueDate) : null,
+        notes,
+        items,
+        includeTax,
+        taxRate,
+        discount,
+        shipping,
+        paidAmount,
+        paymentMethod,
+        reminderEnabled,
+        reminderDate,
+      };
+      try {
+        localStorage.setItem(draftKey, JSON.stringify(draft));
+      } catch {
+        // storage full or blocked: no draft
+      }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [companyId, draftKey, draftOffer, supplierId, invoiceNumber, purchaseDate, dueDate, notes, items, includeTax, taxRate, discount, shipping, paidAmount, paymentMethod, reminderEnabled, reminderDate]);
 
-  /** Set a line's quantity; 0 or less removes the line (used by the - button) */
-  const handleUpdateItemQuantity = useCallback((productId: string, newQuantity: number) => {
-    setItems(prev =>
-      newQuantity <= 0
-        ? prev.filter(item => item.productId !== productId)
-        : prev.map(item =>
-            item.productId === productId
-              ? { ...item, quantity: newQuantity, totalPrice: newQuantity * item.unitPrice }
-              : item
-          )
-    );
-  }, []);
+  const clearDraft = useCallback(() => {
+    try {
+      localStorage.removeItem(draftKey);
+    } catch {
+      // nothing to clear
+    }
+  }, [draftKey]);
 
-  /** Typed quantity: keeps the line while the box is being edited (empty = 0 until it loses focus) */
-  const handleTypeItemQuantity = (productId: string, raw: string) => {
-    const q = Math.max(0, Math.floor(Number(raw) || 0));
-    setItems(prev =>
-      prev.map(item => (item.productId === productId ? { ...item, quantity: q, totalPrice: q * item.unitPrice } : item))
-    );
+  const restoreDraft = () => {
+    const d = draftOffer;
+    if (!d) return;
+    setSupplierId(d.supplierId || "");
+    setInvoiceNumber(d.invoiceNumber || generateInvoiceNumber());
+    if (d.purchaseDate) setPurchaseDate(new Date(`${d.purchaseDate}T00:00:00`));
+    setDueDate(d.dueDate ? new Date(`${d.dueDate}T00:00:00`) : null);
+    setNotes(d.notes || "");
+    setItems((d.items || []).map(i => ({ ...i, newSellingPrice: i.newSellingPrice ?? null, productCost: i.productCost ?? 0 })));
+    setIncludeTax(!!d.includeTax);
+    setTaxRate(d.taxRate || "");
+    setDiscount(d.discount || "");
+    setShipping(d.shipping || "");
+    setPaidAmount(d.paidAmount || "");
+    setPaymentMethod(d.paymentMethod || "CASH");
+    setReminderEnabled(!!d.reminderEnabled);
+    setReminderDate(d.reminderDate || "");
+    if (d.reminderEnabled || d.notes) setShowMore(true);
+    setDraftOffer(null);
+    toast.success("تم استرجاع المسودة");
   };
 
-  /** Add a product to the invoice, or add to its quantity when it is already there */
+  const discardDraft = () => {
+    clearDraft();
+    setDraftOffer(null);
+  };
+
+  // ------------------------------------------------------------------ items
   const addProductToItems = useCallback((product: any, quantity = 1, unitCost?: number) => {
     const added = !itemsRef.current.some(item => item.productId === product.id);
     setItems(prev => {
@@ -179,60 +272,80 @@ const PurchasesCreate: React.FC = () => {
       if (existing) {
         const q = existing.quantity + quantity;
         return prev.map(item =>
-          item.productId === product.id ? { ...item, quantity: q, totalPrice: q * item.unitPrice } : item
+          item.productId === product.id ? { ...item, quantity: q, totalPrice: round2(q * item.unitPrice) } : item
         );
       }
-      // The last cost, never the selling price: a product with no cost starts at 0 to be typed in
+      // The last cost, never the selling price: a product with no cost starts empty
       const cost = unitCost ?? (Number(product.purchasePrice) || 0);
       return [
         ...prev,
         {
           productId: product.id,
           productName: product.name,
+          sku: product.sku,
           quantity,
           unitPrice: cost,
-          totalPrice: quantity * cost,
+          totalPrice: round2(quantity * cost),
+          productCost: unitCost !== undefined ? 0 : Number(product.purchasePrice) || 0,
           currentProductPrice: Number(product.sellingPrice) || 0,
           updateProductPrice: false,
+          newSellingPrice: unitCost !== undefined ? Number(product.sellingPrice) || null : null,
         },
       ];
     });
     return added;
   }, []);
 
-  // Barcode scanning handler
-  const handleBarcodeScan = useCallback(async (barcode: string) => {
-    setLastScannedBarcode(barcode);
-    
-    // Find product by barcode: the loaded list first, then the server
-    // (the list only holds products matching the current search/category)
-    const products = (productsData as any)?.data?.list || [];
-    let product = products.find((p: any) =>
-      p.barcode === barcode || p.sku === barcode
+  const updateItem = (productId: string, change: (item: PurchaseItem) => Partial<PurchaseItem>) =>
+    setItems(prev =>
+      prev.map(item => {
+        if (item.productId !== productId) return item;
+        const next = { ...item, ...change(item) };
+        return { ...next, totalPrice: round2(next.quantity * next.unitPrice) };
+      })
     );
-    if (!product && company?.companyId) {
-      try {
-        const res = await productService.findByBarcode(barcode, company.companyId);
-        if (res?.data?.success) product = res.data.data;
-      } catch {
-        // not found
-      }
-    }
 
-    if (product) {
-      const added = addProductToItems(product);
-      toast.success(added ? `تم إضافة ${product.name} إلى فاتورة الشراء` : `تم زيادة كمية ${product.name}`);
+  const removeItem = (productId: string) => setItems(prev => prev.filter(item => item.productId !== productId));
+
+  const stepQuantity = (productId: string, delta: number) => {
+    const item = itemsRef.current.find(i => i.productId === productId);
+    if (!item) return;
+    if (item.quantity + delta <= 0) removeItem(productId);
+    else updateItem(productId, i => ({ quantity: i.quantity + delta }));
+  };
+
+  // ------------------------------------------------------------------ scanning
+  const dialogOpen = !!quickProduct || !!quickSupplier || confirmLeave || labelItems !== null || showPrintModal || !!draftOffer;
+  const dialogOpenRef = useRef(dialogOpen);
+  dialogOpenRef.current = dialogOpen;
+
+  const handleBarcodeScan = useCallback(
+    async (barcode: string) => {
+      if (dialogOpenRef.current) return;
+      const products = (productsData as any)?.data?.list || [];
+      let product = products.find((p: any) => p.barcode === barcode || p.sku === barcode);
+      if (!product && companyId) {
+        try {
+          const res = await productService.findByBarcode(barcode, companyId);
+          if (res?.data?.success) product = res.data.data;
+        } catch {
+          // not found
+        }
+      }
       setBarcodeInput("");
-      setTimeout(() => {
-        barcodeInputRef.current?.focus();
-      }, 100);
-    } else {
-      // Not in the system yet: add it from here
-      setBarcodeInput("");
-      setCurrentStep(2);
-      setQuickProduct({ barcode });
-    }
-  }, [productsData, addProductToItems, company]);
+      if (product) {
+        const added = addProductToItems(product);
+        toast.success(added ? `تم إضافة ${product.name}` : `تم زيادة كمية ${product.name}`);
+        setTimeout(() => barcodeInputRef.current?.focus(), 50);
+      } else {
+        // Not in the system yet: add it from here
+        setQuickProduct({ barcode });
+      }
+    },
+    [productsData, addProductToItems, companyId]
+  );
+
+  const { isScanning } = useScanner({ onScan: handleBarcodeScan, autoStart: true });
 
   const handleQuickProductCreated = (product: QuickCreatedProduct, quantity: number, unitCost: number) => {
     addProductToItems(product, quantity, unitCost);
@@ -240,1267 +353,870 @@ const PurchasesCreate: React.FC = () => {
     setTimeout(() => barcodeInputRef.current?.focus(), 100);
   };
 
-  // Handle manual barcode input
-  const handleBarcodeSubmit = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (barcodeInput.trim()) {
-      await handleBarcodeScan(barcodeInput.trim());
-    }
-  }, [barcodeInput, handleBarcodeScan]);
-
-
-  const handleUpdateItemPrice = (productId: string, newPrice: number) => {
-    setItems(prev => prev.map(item =>
-      item.productId === productId
-        ? { ...item, unitPrice: newPrice, totalPrice: item.quantity * newPrice }
-        : item
-    ));
-  };
-
-  const handleTogglePriceUpdate = (productId: string, updatePrice: boolean) => {
-    setItems(prev => prev.map(item =>
-      item.productId === productId
-        ? { ...item, updateProductPrice: updatePrice }
-        : item
-    ));
-  };
-
+  // ------------------------------------------------------------------ file
   const handleFileSelect = (file: File | undefined) => {
     if (!file) return;
-
-    // Check file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
-      toast.error('حجم الملف يجب أن يكون أقل من 5 ميجابايت');
+      toast.error("حجم الملف يجب أن يكون أقل من 5 ميجابايت");
       return;
     }
-
-    // Check file type
-    const validTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
-    if (!validTypes.includes(file.type)) {
-      toast.error('نوع الملف غير مدعوم. يرجى اختيار صورة أو PDF');
+    if (!["image/jpeg", "image/png", "image/jpg", "application/pdf"].includes(file.type)) {
+      toast.error("نوع الملف غير مدعوم. يرجى اختيار صورة أو PDF");
       return;
     }
-
     setInvoiceFile(file);
-    toast.success(`تم اختيار الملف: ${file.name}`);
   };
 
-  // Step validation
-  const canProceedToStep2 = () => {
-    if (!supplierId) {
-      toast.error('يرجى اختيار المورد');
-      return false;
-    }
-    if (!invoiceNumber) {
-      toast.error('يرجى إدخال رقم الفاتورة');
-      return false;
-    }
-    if (!purchaseDate) {
-      toast.error('يرجى تحديد تاريخ الشراء');
-      return false;
-    }
-    return true;
-  };
+  // ------------------------------------------------------------------ save
+  const problems = useMemo(() => {
+    const list: string[] = [];
+    if (!supplierId) list.push("اختر المورد");
+    if (!invoiceNumber.trim()) list.push("أدخل رقم فاتورة المورد");
+    if (items.length === 0) list.push("أضف منتجاً واحداً على الأقل");
+    const noQty = items.find(i => !(i.quantity >= 1));
+    if (noQty) list.push(`أدخل كمية ${noQty.productName}`);
+    const noCost = items.find(i => !(i.unitPrice > 0));
+    if (noCost) list.push(`أدخل سعر شراء ${noCost.productName}`);
+    const badSelling = items.find(i => i.updateProductPrice && !(sellingFor(i) > 0));
+    if (badSelling) list.push(`أدخل سعر البيع الجديد لـ ${badSelling.productName}`);
+    if (discountTooBig) list.push("الخصم أكبر من إجمالي الأصناف");
+    if (paidTooMuch) list.push("المبلغ المدفوع أكبر من إجمالي الفاتورة");
+    return list;
+    // sellingFor depends on these
+  }, [supplierId, invoiceNumber, items, discountTooBig, paidTooMuch, costFactor, roundingRule]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const canProceedToStep3 = () => {
-    if (items.length === 0) {
-      toast.error('يرجى إضافة منتج واحد على الأقل');
-      return false;
-    }
-    const noQty = items.find(item => !(item.quantity >= 1));
-    if (noQty) {
-      toast.error(`أدخل كمية ${noQty.productName}`);
-      return false;
-    }
-    const noCost = items.find(item => !(item.unitPrice > 0));
-    if (noCost) {
-      toast.error(`أدخل سعر شراء ${noCost.productName}`);
-      return false;
-    }
-    return true;
-  };
-
-  const handleNextStep = () => {
-    if (currentStep === 1 && !canProceedToStep2()) return;
-    if (currentStep === 2 && !canProceedToStep3()) return;
-
-    setCurrentStep(prev => Math.min(prev + 1, totalSteps));
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const handlePrevStep = () => {
-    setCurrentStep(prev => Math.max(prev - 1, 1));
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const generateInvoiceNumber = () => {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const time = String(now.getTime()).slice(-4);
-    return `INV-${year}${month}${day}-${time}`;
-  };
+  const handleBack = useCallback(() => navigate("/purchases"), [navigate]);
 
   const handleSubmit = useCallback(async () => {
-    if (!supplierId || !invoiceNumber || items.length === 0) {
-      toast.error('يرجى ملء جميع البيانات المطلوبة');
+    setTriedSave(true);
+    if (problems.length) {
+      toast.error(problems[0]);
       return;
     }
-    if (!canProceedToStep3()) return;
-    if (paidTooMuch) {
-      toast.error('المبلغ المدفوع أكبر من إجمالي الفاتورة');
-      return;
-    }
+    if (createMutation.isPending) return;
 
-    // Create FormData for file upload
     const formData = new FormData();
-    formData.append('companyId', String(company?.companyId || 0));
-    formData.append('supplierId', supplierId);
-    formData.append('invoiceNumber', invoiceNumber);
-    // The local calendar day; toISOString() would give yesterday after midnight in Cairo
-    const day = (d: Date) =>
-      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    formData.append('purchaseDate', day(purchaseDate));
-    if (dueDate) {
-      formData.append('dueDate', day(dueDate));
-    }
-    formData.append('totalAmount', String(totalAmount));
-    formData.append('paidAmount', String(paidValue));
-    formData.append('paymentMethod', paymentMethod);
+    formData.append("companyId", String(companyId));
+    formData.append("supplierId", supplierId);
+    formData.append("invoiceNumber", invoiceNumber.trim());
+    formData.append("purchaseDate", dayString(purchaseDate));
+    if (dueDate) formData.append("dueDate", dayString(dueDate));
+    formData.append("totalAmount", String(totalAmount));
+    formData.append("paidAmount", String(paidValue));
+    formData.append("paymentMethod", paymentMethod);
+    if (discountValue > 0) formData.append("discountAmount", String(discountValue));
+    if (shippingValue > 0) formData.append("shippingCost", String(shippingValue));
     if (includeTax) {
-      formData.append('taxRate', String(Number(taxRate) || 0));
-      formData.append('taxAmount', String(taxAmount));
+      formData.append("taxRate", String(Number(taxRate) || 0));
+      formData.append("taxAmount", String(taxAmount));
     }
-    formData.append('reminderEnabled', String(reminderEnabled));
-    if (reminderEnabled && reminderDate) {
-      formData.append('reminderDate', reminderDate);
-    }
-    if (notes) {
-      formData.append('notes', notes);
-    }
-
-    // Add invoice file if selected
-    if (invoiceFile) {
-      formData.append('invoice', invoiceFile);
-    }
-
-    // Add items as JSON string
-    formData.append('items', JSON.stringify(items.map(item => ({
-      productId: item.productId,
-      quantity: Number(item.quantity),
-      unitPrice: Number(item.unitPrice),
-      updateProductPrice: item.updateProductPrice,
-      newProductPrice: item.updateProductPrice ? Number(item.unitPrice) : undefined,
-    }))));
+    formData.append("reminderEnabled", String(reminderEnabled && !!reminderDate));
+    if (reminderEnabled && reminderDate) formData.append("reminderDate", reminderDate);
+    if (notes) formData.append("notes", notes);
+    if (invoiceFile) formData.append("invoice", invoiceFile);
+    formData.append(
+      "items",
+      JSON.stringify(
+        items.map(item => ({
+          productId: item.productId,
+          quantity: Number(item.quantity),
+          unitPrice: Number(item.unitPrice),
+          updateProductPrice: item.updateProductPrice,
+          newSellingPrice: item.updateProductPrice ? sellingFor(item) : undefined,
+        }))
+      )
+    );
 
     try {
       const createdPurchase = await createMutation.mutateAsync(formData);
-      // Success toast is handled by the mutation hook
-
-      // Get printer config to check auto-print setting
-      const printerConfig = usePrinterConfigStore.getState();
-
-      // Extract the actual purchase data from the response
+      doneRef.current = true;
+      clearDraft();
       const purchaseData = (createdPurchase as any)?.data || createdPurchase;
-
-      // Prepare purchase with items for printing
+      const supplier = (suppliersData as any)?.data?.list?.find((s: any) => s.id === parseInt(supplierId));
       const purchaseWithItems = {
         ...purchaseData,
         subtotal,
+        discountAmount: discountValue,
+        shippingCost: shippingValue,
         tax: taxAmount,
         total: totalAmount,
         paid: paidValue,
-        items: items.map(item => ({
-          ...item,
-          productName: item.productName,
-          product: { name: item.productName }
-        })),
-        supplier: (suppliersData as any)?.data?.list?.find((s: any) => s.id === parseInt(supplierId))
+        paymentMethod,
+        items: items.map(item => ({ ...item, product: { name: item.productName } })),
+        supplier,
       };
 
-      // Auto-print if enabled
+      const printerConfig = usePrinterConfigStore.getState();
       if (printerConfig.autoPrintOnPayment) {
         try {
-          // Fetch full company profile with logo
-          const companyId = company?.companyId || company?.id;
-          let fullCompany = company?.company || { name: 'POS System' };
-          if (companyId) {
-            try {
-              fullCompany = await companyService.getProfile(companyId);
-            } catch (err) {
-              console.warn('Could not fetch company profile, using default data');
-            }
+          let fullCompany: any = company?.company || { name: "POS System" };
+          try {
+            fullCompany = await companyService.getProfile(companyId);
+          } catch {
+            // default company data
           }
-
-          // Map to new print format
+          const when = new Date(purchaseWithItems.purchaseDate || purchaseWithItems.createdAt || Date.now());
           await printReceipt({
-            receiptNumber: purchaseWithItems.receiptNumber || purchaseWithItems.invoiceNumber || purchaseWithItems.id || `PURCHASE-${Date.now()}`,
-            date: new Date(purchaseWithItems.purchaseDate || purchaseWithItems.createdAt || Date.now()).toLocaleDateString('ar-SA-u-nu-latn'),
-            time: new Date(purchaseWithItems.purchaseDate || purchaseWithItems.createdAt || Date.now()).toLocaleTimeString('ar-SA-u-nu-latn', {
-              hour: '2-digit',
-              minute: '2-digit',
-            }),
-            cashier: user?.name || user?.username || 'نظام نقاط البيع',
-
-            // Company info
-            companyName: fullCompany?.name || 'نظام نقاط البيع',
+            receiptNumber: purchaseWithItems.invoiceNumber || `PURCHASE-${Date.now()}`,
+            date: when.toLocaleDateString("ar-SA-u-nu-latn"),
+            time: new Date().toLocaleTimeString("ar-SA-u-nu-latn", { hour: "2-digit", minute: "2-digit" }),
+            cashier: user?.name || user?.username || "نظام نقاط البيع",
+            companyName: fullCompany?.name || "نظام نقاط البيع",
             companyAddress: fullCompany?.address,
             companyPhone: fullCompany?.phone,
             companyTaxId: fullCompany?.taxId || fullCompany?.taxNumber,
             companyLogo: fullCompany?.logoUrl,
-
-            // Items
-            items: purchaseWithItems.items.map((item: any) => ({
-              productName: item.productName || item.product?.name || '',
-              variantName: item.variantName,
+            items: items.map(item => ({
+              productName: item.productName,
               quantity: item.quantity,
-              unitPrice: item.price || item.unitPrice || item.costPrice,
-              total: (item.quantity * (item.price || item.unitPrice || item.costPrice)),
+              unitPrice: item.unitPrice,
+              total: item.totalPrice,
             })),
-
-            // Totals
-            subtotal: purchaseWithItems.subtotal || (purchaseWithItems.total - (purchaseWithItems.tax || 0)),
-            discount: purchaseWithItems.discount,
-            tax: purchaseWithItems.tax,
-            taxRate: fullCompany?.taxRate || 15,
-            total: purchaseWithItems.total,
-
-            // Payment
-            paid: purchaseWithItems.paid,
+            subtotal,
+            discount: discountValue,
+            tax: taxAmount,
+            taxRate: Number(taxRate) || 0,
+            total: totalAmount,
+            paid: paidValue,
             change: 0,
-            paymentMethod: paidValue <= 0 ? 'آجل' :
-                          paymentMethod === 'CASH' ? 'نقداً' :
-                          paymentMethod === 'CARD' ? 'بطاقة' :
-                          paymentMethod === 'MOBILE_WALLET' ? 'محفظة إلكترونية' :
-                          paymentMethod === 'BANK_TRANSFER' ? 'تحويل بنكي' : paymentMethod,
-
-            // SELLX-SPECIFIC - PURCHASE
-            isPurchase: true,  // ⚠️ IMPORTANT: Shows "فاتورة مشتريات"
-            supplierName: purchaseWithItems.supplier?.name,
-            remaining: Math.max(0, totalAmount - paidValue),
-            additionalFee: purchaseWithItems.shippingCost || purchaseWithItems.additionalFee,
-            additionalFeeLabel: purchaseWithItems.shippingCost || purchaseWithItems.additionalFee ? "رسوم الشحن" : undefined,
-          });
-          toast.success('تم الطباعة تلقائياً');
+            paymentMethod: paidValue <= 0 ? "آجل" : PAYMENT_LABELS[paymentMethod] || paymentMethod,
+            isPurchase: true,
+            supplierName: supplier?.name,
+            remaining,
+            additionalFee: shippingValue || undefined,
+            additionalFeeLabel: shippingValue ? "شحن وتحميل" : undefined,
+          } as any);
+          toast.success("تم الطباعة تلقائياً");
         } catch (printError) {
-          console.error('Auto-print error:', printError);
-          toast.error('فشلت الطباعة التلقائية');
+          console.error("Auto-print error:", printError);
+          toast.error("فشلت الطباعة التلقائية");
         }
         setAfterLabels("list");
       } else {
-        // Receipt preview comes after the barcode labels
         setPrintablePurchase(purchaseWithItems);
         setAfterLabels("receipt");
       }
 
-      // Offer barcode labels for everything received, with the stock after the purchase
+      // Barcode labels for everything received, with the stock after the purchase
       let labels: PurchaseLabelItem[] = items.map(item => ({
         productId: item.productId,
         name: item.productName,
-        sku: null,
+        sku: item.sku ?? null,
         purchasedQty: Number(item.quantity),
         stock: Number(item.quantity),
       }));
       try {
-        const saved: any = await purchaseService.getById(purchaseData.id, company?.companyId || 0);
+        const saved: any = await purchaseService.getById(purchaseData.id, companyId);
         const full = saved?.data || saved;
         if (full?.items?.length) {
           labels = full.items.map((it: any) => ({
             productId: it.productId,
-            name: it.product?.name || '',
+            name: it.product?.name || "",
             sku: it.product?.sku,
             purchasedQty: it.quantity,
             stock: it.product?.stockQuantity ?? it.quantity,
           }));
         }
       } catch {
-        // keep the local list; products without a barcode are skipped
+        // keep the local list
       }
       setLabelItems(labels);
     } catch {
       // The mutation hook already shows the server's message
     }
-  }, [supplierId, invoiceNumber, items, purchaseDate, dueDate, subtotal, totalAmount, paidValue, paidTooMuch, paymentMethod, includeTax, taxRate, taxAmount, reminderEnabled, reminderDate, notes, invoiceFile, company, createMutation, navigate, suppliersData, user]);
+  }, [problems, createMutation, companyId, supplierId, invoiceNumber, purchaseDate, dueDate, totalAmount, paidValue, paymentMethod, discountValue, shippingValue, includeTax, taxRate, taxAmount, reminderEnabled, reminderDate, notes, invoiceFile, items, clearDraft, suppliersData, subtotal, company, user, remaining]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleLabelsClosed = () => {
     setLabelItems(null);
-    if (afterLabels === "receipt") {
-      setShowPrintModal(true);
-    } else {
-      navigate('/purchases');
-    }
+    if (afterLabels === "receipt") setShowPrintModal(true);
+    else navigate("/purchases");
   };
 
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // F6: Focus barcode input
-      if (e.key === 'F6') {
-        e.preventDefault();
-        barcodeInputRef.current?.focus();
-      }
-      // F7: Complete purchase (from the review step only)
-      else if (e.key === 'F7' && currentStep === 3 && items.length > 0) {
-        e.preventDefault();
-        handleSubmit();
-      }
-      // ESC: leave, after asking when something was entered (not while a dialog is open)
-      else if (e.key === 'Escape' && !quickProduct && !confirmLeave && labelItems === null && !showPrintModal) {
-        e.preventDefault();
-        requestLeave();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [items.length, currentStep, quickProduct, confirmLeave, labelItems, showPrintModal, handleSubmit]);
-
-  /** Leaving throws the invoice away: ask first when products were added */
+  /** Leaving keeps the draft; it can be restored next time */
   const requestLeave = () => {
     if (items.length > 0) setConfirmLeave(true);
     else handleBack();
   };
 
-  // Auto-focus barcode input on mount
+  // ------------------------------------------------------------------ keys
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "F6") {
+        e.preventDefault();
+        barcodeInputRef.current?.focus();
+      } else if (e.key === "F7" && !dialogOpenRef.current) {
+        e.preventDefault();
+        handleSubmit();
+      } else if (e.key === "Escape" && !dialogOpenRef.current) {
+        const tag = (e.target as HTMLElement)?.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA") return; // Esc in a box only leaves the box
+        e.preventDefault();
+        requestLeave();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleSubmit, items.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     barcodeInputRef.current?.focus();
   }, []);
 
-  const supplierOptions = [
-    { value: "", label: "اختر المورد" },
-    ...((suppliersData as any)?.data?.list?.map((supplier: Supplier) => ({
-      value: supplier.id.toString(),
-      label: supplier.name,
-    })) || []),
-  ];
+  // ------------------------------------------------------------------ product browser
+  const filteredProducts = useMemo(() => {
+    const products = (productsData as any)?.data?.list || [];
+    const q = productSearch.toLowerCase();
+    return products.filter((product: any) => {
+      const matchesSearch = product.name.toLowerCase().includes(q) || product.sku?.toLowerCase().includes(q);
+      const matchesCategory = !selectedCategory || String(product.categoryId || "") === String(selectedCategory);
+      return matchesSearch && matchesCategory;
+    });
+  }, [productsData, productSearch, selectedCategory]);
 
-  const categoryOptions = [
-    { value: "", label: "جميع الفئات" },
-    ...((categoriesData as any)?.data?.list?.map((category: any) => ({
-      value: category.id.toString(),
-      label: category.name,
-    })) || []),
-  ];
+  const setDueInDays = (days: number) => {
+    const d = new Date(purchaseDate);
+    d.setDate(d.getDate() + days);
+    setDueDate(d);
+  };
 
+  const totalQty = items.reduce((s, i) => s + (i.quantity || 0), 0);
+
+  // ------------------------------------------------------------------ render
   return (
     <Layout>
       <style>
         {`
-          input[type="number"]::-webkit-outer-spin-button,
-          input[type="number"]::-webkit-inner-spin-button {
-            -webkit-appearance: none;
-            margin: 0;
-          }
-          input[type="number"] {
-            -moz-appearance: textfield;
-          }
+          .no-spin::-webkit-outer-spin-button, .no-spin::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+          .no-spin { -moz-appearance: textfield; }
         `}
       </style>
-      <div className="w-full space-y-6">
+      <div className="w-full space-y-4">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4 space-x-reverse">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={requestLeave}
-              className="flex items-center"
-            >
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="sm" onClick={requestLeave} className="flex items-center">
               <ArrowLeft className="w-4 h-4 ml-2" />
               العودة
             </Button>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">إنشاء عملية شراء جديدة</h1>
-              <p className="text-gray-600 mt-1">
-                إضافة عملية شراء جديدة من الموردين
-              </p>
+              <h1 className="text-2xl font-bold text-gray-900">فاتورة شراء جديدة</h1>
+              <p className="text-sm text-gray-500">F6 الباركود · F7 حفظ · تُحفظ مسودة تلقائياً</p>
             </div>
           </div>
         </div>
 
-        {/* Multi-Step Progress Indicator */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-          <div className="flex items-center justify-between max-w-3xl mx-auto">
-            {/* Step 1 */}
-            <div className="flex items-center flex-1">
-              <div className={`flex items-center justify-center w-12 h-12 rounded-full transition-all ${
-                currentStep >= 1
-                  ? 'bg-gradient-to-r from-primary-600 to-success-600 text-white shadow-lg'
-                  : 'bg-gray-200 text-gray-400'
-              }`}>
-                {currentStep > 1 ? (
-                  <CheckCircle className="w-6 h-6" />
-                ) : (
-                  <Truck className="w-6 h-6" />
-                )}
-              </div>
-              <div className="mr-3">
-                <div className={`text-sm font-semibold ${currentStep >= 1 ? 'text-gray-900' : 'text-gray-400'}`}>
-                  الخطوة 1
-                </div>
-                <div className={`text-xs ${currentStep >= 1 ? 'text-gray-600' : 'text-gray-400'}`}>
-                  معلومات الشراء
-                </div>
-              </div>
+        {/* Draft restore */}
+        {draftOffer && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+            <div className="flex items-center gap-2 text-sm text-amber-900">
+              <History className="h-5 w-5" />
+              <span>
+                توجد مسودة فاتورة شراء لم تُحفظ ({draftOffer.items?.length || 0} صنف) من{" "}
+                {new Date(draftOffer.savedAt).toLocaleString("ar-EG-u-nu-latn", { dateStyle: "short", timeStyle: "short" })}
+              </span>
             </div>
-
-            {/* Connector Line */}
-            <div className={`flex-1 h-1 mx-4 rounded transition-all ${
-              currentStep >= 2 ? 'bg-gradient-to-r from-primary-600 to-success-600' : 'bg-gray-200'
-            }`}></div>
-
-            {/* Step 2 */}
-            <div className="flex items-center flex-1">
-              <div className={`flex items-center justify-center w-12 h-12 rounded-full transition-all ${
-                currentStep >= 2
-                  ? 'bg-gradient-to-r from-primary-600 to-success-600 text-white shadow-lg'
-                  : 'bg-gray-200 text-gray-400'
-              }`}>
-                {currentStep > 2 ? (
-                  <CheckCircle className="w-6 h-6" />
-                ) : (
-                  <Package className="w-6 h-6" />
-                )}
-              </div>
-              <div className="mr-3">
-                <div className={`text-sm font-semibold ${currentStep >= 2 ? 'text-gray-900' : 'text-gray-400'}`}>
-                  الخطوة 2
-                </div>
-                <div className={`text-xs ${currentStep >= 2 ? 'text-gray-600' : 'text-gray-400'}`}>
-                  إضافة المنتجات
-                </div>
-              </div>
-            </div>
-
-            {/* Connector Line */}
-            <div className={`flex-1 h-1 mx-4 rounded transition-all ${
-              currentStep >= 3 ? 'bg-gradient-to-r from-primary-600 to-success-600' : 'bg-gray-200'
-            }`}></div>
-
-            {/* Step 3 */}
-            <div className="flex items-center flex-1">
-              <div className={`flex items-center justify-center w-12 h-12 rounded-full transition-all ${
-                currentStep >= 3
-                  ? 'bg-gradient-to-r from-primary-600 to-success-600 text-white shadow-lg'
-                  : 'bg-gray-200 text-gray-400'
-              }`}>
-                <Receipt className="w-6 h-6" />
-              </div>
-              <div className="mr-3">
-                <div className={`text-sm font-semibold ${currentStep >= 3 ? 'text-gray-900' : 'text-gray-400'}`}>
-                  الخطوة 3
-                </div>
-                <div className={`text-xs ${currentStep >= 3 ? 'text-gray-600' : 'text-gray-400'}`}>
-                  المراجعة والتأكيد
-                </div>
-              </div>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={restoreDraft}>
+                <RotateCcw className="w-4 h-4 ml-1" />
+                استرجاع المسودة
+              </Button>
+              <Button size="sm" variant="outline" onClick={discardDraft}>
+                حذف المسودة
+              </Button>
             </div>
           </div>
-        </div>
+        )}
 
-        {/* Step Content */}
-        <div className="max-w-6xl mx-auto">
-          {/* STEP 1: Purchase Information */}
-          {currentStep === 1 && (
-            <div className="animate-fadeIn">
-              <Card padding="lg" className="shadow-lg">
-                <div className="mb-8">
-                  <h2 className="text-2xl font-bold text-gray-900 mb-2">معلومات عملية الشراء</h2>
-                  <p className="text-gray-600">قم بإدخال التفاصيل الأساسية لعملية الشراء</p>
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+          {/* ---------------- left: invoice + items */}
+          <div className="space-y-4 xl:col-span-2">
+            <Card padding="lg">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm font-semibold text-gray-700">المورد *</label>
+                  <SupplierPicker
+                    suppliers={suppliers}
+                    value={supplierId}
+                    onChange={setSupplierId}
+                    onCreate={name => setQuickSupplier({ name })}
+                    error={triedSave && !supplierId}
+                  />
                 </div>
+                <div>
+                  <label className="mb-1 block text-sm font-semibold text-gray-700">رقم فاتورة المورد *</label>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="رقم الفاتورة"
+                      value={invoiceNumber}
+                      onChange={e => setInvoiceNumber(e.target.value)}
+                      className="flex-1"
+                    />
+                    <Button type="button" variant="outline" onClick={() => setInvoiceNumber(generateInvoiceNumber())} className="whitespace-nowrap">
+                      توليد
+                    </Button>
+                  </div>
+                </div>
+                <DatePicker
+                  label="تاريخ الشراء"
+                  value={purchaseDate}
+                  onChange={date => setPurchaseDate(date || new Date())}
+                  placeholder="اختر تاريخ الشراء"
+                  required
+                />
+                <div>
+                  <DatePicker
+                    label="تاريخ الاستحقاق (للآجل)"
+                    value={dueDate}
+                    onChange={date => setDueDate(date)}
+                    placeholder="بدون"
+                  />
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {[7, 15, 30].map(d => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setDueInDays(d)}
+                        className="rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50"
+                      >
+                        بعد {d} يوم
+                      </button>
+                    ))}
+                    {dueDate && (
+                      <button type="button" onClick={() => setDueDate(null)} className="rounded-md px-2 py-0.5 text-xs text-danger-600 hover:bg-danger-50">
+                        إلغاء
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
 
-                <div className="space-y-6">
-                  {/* Supplier and Invoice Row */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-700 mb-2">
-                        <Truck className="w-4 h-4 inline ml-2 text-blue-600" />
-                        المورد *
-                      </label>
-                      <Select
-                        placeholder="اختر المورد"
-                        options={supplierOptions}
-                        value={supplierId}
-                        onChange={setSupplierId}
-                      />
-                    </div>
+              <button
+                type="button"
+                onClick={() => setShowMore(v => !v)}
+                className="mt-4 flex items-center gap-1 text-sm font-medium text-primary-700"
+              >
+                {showMore ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                صورة الفاتورة، ملاحظات، تذكير
+                {(invoiceFile || notes || reminderEnabled) && <span className="h-2 w-2 rounded-full bg-primary-500" />}
+              </button>
 
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-700 mb-2">
-                        <FileText className="w-4 h-4 inline ml-2 text-blue-600" />
-                        رقم الفاتورة *
-                      </label>
-                      <div className="flex space-x-2 space-x-reverse">
-                        <Input
-                          placeholder="رقم الفاتورة"
-                          value={invoiceNumber}
-                          onChange={(e) => setInvoiceNumber(e.target.value)}
-                          className="flex-1"
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => setInvoiceNumber(generateInvoiceNumber())}
-                          className="whitespace-nowrap bg-blue-50 hover:bg-blue-100 border-blue-200 text-blue-700"
-                        >
-                          توليد رقم
-                        </Button>
+              {showMore && (
+                <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-sm font-semibold text-gray-700">صورة فاتورة المورد</label>
+                    {invoiceFile ? (
+                      <div className="flex items-center justify-between rounded-lg border border-success-300 bg-success-50 p-3 text-sm">
+                        <span className="truncate">{invoiceFile.name}</span>
+                        <button type="button" onClick={() => setInvoiceFile(null)} className="text-danger-600">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       </div>
-                    </div>
+                    ) : (
+                      <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed border-gray-300 p-3 text-sm text-gray-600 hover:border-primary-400 hover:bg-primary-50">
+                        <Upload className="h-4 w-4" />
+                        اختر صورة أو PDF (5 ميجا)
+                        <input type="file" accept="image/*,application/pdf" className="hidden" onChange={e => handleFileSelect(e.target.files?.[0])} />
+                      </label>
+                    )}
                   </div>
-
-                  {/* Dates Row */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <DatePicker
-                        label="تاريخ الشراء"
-                        value={purchaseDate}
-                        onChange={(date) => setPurchaseDate(date || new Date())}
-                        placeholder="اختر تاريخ الشراء"
-                        required
-                      />
-                    </div>
-
-                    <div>
-                      <DatePicker
-                        label="تاريخ الاستحقاق"
-                        value={dueDate}
-                        onChange={(date) => setDueDate(date)}
-                        placeholder="اختر تاريخ الاستحقاق"
-                        minDate={new Date()}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Invoice Upload */}
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-3">
-                      <Upload className="w-4 h-4 inline ml-2 text-primary-600" />
-                      فاتورة الشراء (اختياري)
+                    <label className="mb-1 flex items-center gap-2 text-sm font-semibold text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={reminderEnabled}
+                        onChange={e => setReminderEnabled(e.target.checked)}
+                        className="rounded border-gray-300 text-primary-600"
+                      />
+                      <Bell className="h-4 w-4 text-amber-500" />
+                      ذكّرني بالدفع يوم
                     </label>
-
-                    <div
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                        setIsDragging(true);
-                      }}
-                      onDragLeave={() => setIsDragging(false)}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        setIsDragging(false);
-                        const file = e.dataTransfer.files[0];
-                        handleFileSelect(file);
-                      }}
-                      className={`border-2 border-dashed rounded-xl p-8 text-center transition-all cursor-pointer ${
-                        isDragging
-                          ? 'border-primary-500 bg-primary-50 scale-105'
-                          : invoiceFile
-                          ? 'border-success-500 bg-success-50'
-                          : 'border-gray-300 bg-gray-50 hover:border-primary-400 hover:bg-primary-50'
-                      }`}
-                    >
-                      {invoiceFile ? (
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-center space-x-3 space-x-reverse">
-                            {invoiceFile.type.startsWith('image/') ? (
-                              <img
-                                src={URL.createObjectURL(invoiceFile)}
-                                alt="معاينة"
-                                className="w-24 h-24 object-cover rounded-lg border-2 border-white shadow-md"
-                              />
-                            ) : (
-                              <div className="w-24 h-24 flex items-center justify-center bg-danger-100 rounded-lg border-2 border-white shadow-md">
-                                <FileText className="w-12 h-12 text-danger-500" />
-                              </div>
-                            )}
-                            <div className="text-right flex-1">
-                              <p className="text-sm font-medium text-gray-900 truncate max-w-xs">
-                                {invoiceFile.name}
-                              </p>
-                              <p className="text-xs text-gray-500">
-                                {(invoiceFile.size / 1024 / 1024).toFixed(2)} MB
-                              </p>
-                              <p className="text-xs text-success-600 font-medium mt-1">
-                                ✓ جاهز للرفع
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex items-center justify-center space-x-2 space-x-reverse">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setInvoiceFile(null);
-                              }}
-                              className="text-danger-600 border-danger-200 hover:bg-danger-50"
-                            >
-                              <Trash2 className="w-4 h-4 ml-1" />
-                              إزالة
-                            </Button>
-                            <label className="cursor-pointer" onClick={(e) => e.stopPropagation()}>
-                              <input
-                                type="file"
-                                accept="image/*,application/pdf"
-                                onChange={(e) => handleFileSelect(e.target.files?.[0])}
-                                className="hidden"
-                              />
-                              <span className="inline-flex items-center px-3 py-2 border border-primary-300 text-sm font-medium rounded-md text-primary-700 bg-white hover:bg-primary-50 transition-colors">
-                                <Upload className="w-4 h-4 ml-1" />
-                                استبدال
-                              </span>
-                            </label>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="space-y-3">
-                          <Upload className={`w-16 h-16 mx-auto transition-all ${
-                            isDragging ? 'text-primary-500 scale-110' : 'text-gray-400'
-                          }`} />
-                          <div>
-                            <p className="text-lg font-medium text-gray-900">
-                              {isDragging ? 'أفلت الملف هنا' : 'اسحب وأفلت الفاتورة هنا'}
-                            </p>
-                            <p className="text-sm text-gray-500 mt-1">أو</p>
-                          </div>
-                          <label className="cursor-pointer inline-block" onClick={(e) => e.stopPropagation()}>
-                            <input
-                              type="file"
-                              accept="image/*,application/pdf"
-                              onChange={(e) => handleFileSelect(e.target.files?.[0])}
-                              className="hidden"
-                            />
-                            <span className="inline-flex items-center px-6 py-3 border-2 border-primary-300 text-sm font-semibold rounded-lg text-primary-700 bg-white hover:bg-primary-50 transition-colors shadow-sm hover:shadow-md">
-                              <FileText className="w-5 h-5 ml-2" />
-                              اختر ملف
-                            </span>
-                          </label>
-                          <p className="text-xs text-gray-500 mt-2">
-                            JPG, PNG, أو PDF (حد أقصى 5 ميجابايت)
-                          </p>
-                        </div>
-                      )}
-                    </div>
+                    <input
+                      type="date"
+                      value={reminderDate}
+                      disabled={!reminderEnabled}
+                      onChange={e => setReminderDate(e.target.value)}
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100"
+                    />
                   </div>
-
-                  {/* Notes */}
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      <FileText className="w-4 h-4 inline ml-2 text-primary-600" />
+                  <div className="md:col-span-2">
+                    <label className="mb-1 block text-sm font-semibold text-gray-700">
+                      <FileText className="ml-1 inline h-4 w-4" />
                       ملاحظات
                     </label>
                     <textarea
-                      className="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                      rows={3}
-                      placeholder="أضف ملاحظات إضافية..."
+                      className="w-full rounded-lg border border-gray-300 p-3 text-sm focus:border-transparent focus:ring-2 focus:ring-primary-500"
+                      rows={2}
                       value={notes}
-                      onChange={(e) => setNotes(e.target.value)}
+                      onChange={e => setNotes(e.target.value)}
                     />
                   </div>
                 </div>
+              )}
+            </Card>
 
-                {/* Step 1 Navigation */}
-                <div className="flex items-center justify-between mt-8 pt-6 border-t">
-                  <Button
-                    variant="outline"
-                    onClick={requestLeave}
-                    className="px-6"
-                  >
-                    <ArrowLeft className="w-4 h-4 ml-2" />
-                    إلغاء
-                  </Button>
-
-                  <Button
-                    onClick={handleNextStep}
-                    className="px-8 bg-gradient-to-r from-primary-600 to-success-600 hover:from-primary-700 hover:to-success-700 text-white shadow-lg"
-                  >
-                    التالي: إضافة المنتجات
-                    <ChevronRight className="w-4 h-4 mr-2" />
-                  </Button>
-                </div>
-              </Card>
-            </div>
-          )}
-
-          {/* STEP 2: Add Products */}
-          {currentStep === 2 && (
-            <div className="animate-fadeIn">
-              <Card padding="lg" className="shadow-lg">
-                <div className="mb-6">
-                  <h2 className="text-2xl font-bold text-gray-900 mb-2">إضافة المنتجات</h2>
-                  <p className="text-gray-600">قم بإضافة المنتجات التي تم شراؤها</p>
-                </div>
-
-                {/* Barcode Scanner */}
-                <div className="mb-6 bg-gradient-to-r from-primary-50 to-success-50 rounded-xl p-4 border border-primary-100">
-                  <form onSubmit={handleBarcodeSubmit} className="flex gap-2">
-                    <div className="relative flex-1">
-                      <ScanLine className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                      <input
-                        ref={barcodeInputRef}
-                        type="text"
-                        value={barcodeInput}
-                        onChange={(e) => setBarcodeInput(e.target.value)}
-                        placeholder="امسح الباركود أو أدخل الرمز يدوياً..."
-                        className="w-full pr-10 pl-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-right"
-                        autoFocus
-                      />
-                      {isScanning && (
-                        <div className="absolute left-3 top-1/2 -translate-y-1/2">
-                          <span className="flex h-3 w-3">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                    <Button
-                      type="submit"
-                      disabled={!barcodeInput.trim()}
-                      className="bg-gradient-to-r from-primary-600 to-success-600 hover:from-primary-700 hover:to-success-700 px-6"
-                    >
-                      إضافة
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setQuickProduct({})}
-                      className="whitespace-nowrap bg-white"
-                    >
-                      <PackagePlus className="w-4 h-4 ml-1" />
-                      منتج جديد
-                    </Button>
-                  </form>
-                </div>
-
-                {/* Collapsible Product Selection - Full Width */}
-                <Card padding="lg" className="shadow-lg">
-                  <div
-                    className="flex items-center justify-between cursor-pointer pb-4 border-b"
-                    onClick={() => setIsProductSelectionCollapsed(!isProductSelectionCollapsed)}
-                  >
-                    <div className="flex items-center gap-3">
-                      <Package className="w-6 h-6 text-primary-600" />
-                      <div>
-                        <h3 className="text-lg font-semibold text-gray-900">اختيار المنتجات من القائمة</h3>
-                        <p className="text-sm text-gray-600">انقر لتصفح جميع المنتجات المتاحة</p>
-                      </div>
-                    </div>
-                    <Button variant="ghost" size="sm">
-                      {isProductSelectionCollapsed ? <ChevronDown className="w-5 h-5" /> : <ChevronUp className="w-5 h-5" />}
-                    </Button>
-                  </div>
-
-                  {!isProductSelectionCollapsed && (
-                    <div className="mt-6">
-                      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden" style={{ height: 'max(360px, calc(100vh - 400px))' }}>
-                        <div className="flex flex-col h-full">
-                          {/* Category Tabs */}
-                          <div className="flex-shrink-0 border-b border-gray-200 bg-gray-50 p-2">
-                            <div className="flex gap-2 overflow-x-auto scrollbar-thin">
-                              <button
-                                type="button"
-                                onClick={() => setSelectedCategory("")}
-                                className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${
-                                  selectedCategory === ""
-                                    ? "bg-primary-600 text-white"
-                                    : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-200"
-                                }`}
-                              >
-                                الكل
-                              </button>
-                              {(categoriesData?.data?.list || []).map((category: any) => (
-                                <button
-                                  key={category.id}
-                                  type="button"
-                                  onClick={() => setSelectedCategory(category.id)}
-                                  className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${
-                                    selectedCategory === category.id
-                                      ? "bg-primary-600 text-white"
-                                      : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-200"
-                                  }`}
-                                >
-                                  {category.name}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-
-                          {/* Search */}
-                          <div className="flex-shrink-0 p-3 border-b border-gray-100">
-                            <div className="relative">
-                              <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                              <input
-                                type="text"
-                                placeholder="البحث عن منتج..."
-                                value={productSearch}
-                                onChange={(e) => setProductSearch(e.target.value)}
-                                className="w-full pr-10 pl-4 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                              />
-                            </div>
-                          </div>
-
-                          {/* Products Grid */}
-                          <div className="flex-1 overflow-y-auto p-3">
-                            {filteredProducts.length > 0 ? (
-                              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-2">
-                                {filteredProducts.map((product: any) => {
-                                  const isSelected = items.some(item => item.productId === product.id);
-                                  const selectedQuantity = items.find(item => item.productId === product.id)?.quantity || 0;
-                                  const stock = product.stockQuantity || 0;
-
-                                  return (
-                                    <button
-                                      key={product.id}
-                                      type="button"
-                                      onClick={() => addProductToItems(product)}
-                                      className={`relative p-3 rounded-lg border text-right transition-all duration-200 ${
-                                        isSelected
-                                          ? "border-primary-400 bg-gradient-to-br from-primary-50 to-green-50 shadow-md shadow-primary-100"
-                                          : "border-gray-200 hover:border-gray-300 hover:shadow-sm bg-white"
-                                      }`}
-                                    >
-                                      {/* Selected Badge */}
-                                      {isSelected && (
-                                        <div className="absolute -top-2 -right-2 px-2 py-0.5 text-white text-xs rounded-md font-bold shadow-sm flex items-center gap-1 bg-gradient-to-r from-primary-500 to-green-500">
-                                          <span>×{selectedQuantity}</span>
-                                        </div>
-                                      )}
-
-                                      {/* Checkmark indicator */}
-                                      {isSelected && (
-                                        <div className="absolute top-2 left-2 w-4 h-4 bg-primary-500 rounded-full flex items-center justify-center">
-                                          <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                          </svg>
-                                        </div>
-                                      )}
-
-                                      <div className={`font-medium text-sm truncate mb-1 ${isSelected ? "text-gray-900" : "text-gray-700"}`}>
-                                        {product.name}
-                                      </div>
-                                      <div className="flex justify-between items-center">
-                                        <span className={`text-xs ${isSelected ? "text-primary-600" : "text-gray-500"}`}>
-                                          {stock} متاح
-                                        </span>
-                                        <span className={`font-bold text-sm ${isSelected ? "text-primary-700" : "text-primary-600"}`}>
-                                          {formatCurrency(product.purchasePrice || 0)}
-                                        </span>
-                                      </div>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            ) : (
-                              <div className="flex flex-col items-center justify-center h-full text-gray-500">
-                                <Package className="w-12 h-12 mb-2 text-gray-300" />
-                                <p className="text-sm">لا توجد منتجات</p>
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  className="mt-3"
-                                  onClick={() => setQuickProduct({ name: productSearch.trim() })}
-                                >
-                                  <PackagePlus className="w-4 h-4 ml-1" />
-                                  {productSearch.trim() ? `إضافة "${productSearch.trim()}" كمنتج جديد` : 'إضافة منتج جديد'}
-                                </Button>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+            <Card padding="lg">
+              {/* Barcode */}
+              <form
+                onSubmit={e => {
+                  e.preventDefault();
+                  if (barcodeInput.trim()) handleBarcodeScan(barcodeInput.trim());
+                }}
+                className="flex flex-wrap gap-2"
+              >
+                <div className="relative min-w-[200px] flex-1">
+                  <ScanLine className="absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+                  <input
+                    ref={barcodeInputRef}
+                    type="text"
+                    value={barcodeInput}
+                    onChange={e => setBarcodeInput(e.target.value)}
+                    placeholder="امسح الباركود أو اكتب الكود ثم Enter..."
+                    className="w-full rounded-lg border border-gray-300 py-3 pl-4 pr-10 text-right focus:border-primary-500 focus:ring-2 focus:ring-primary-500"
+                  />
+                  {isScanning && (
+                    <span className="absolute left-3 top-1/2 flex h-3 w-3 -translate-y-1/2">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+                      <span className="relative inline-flex h-3 w-3 rounded-full bg-green-500" />
+                    </span>
                   )}
-                </Card>
+                </div>
+                <Button type="submit" disabled={!barcodeInput.trim()}>
+                  إضافة
+                </Button>
+                <Button type="button" variant="outline" onClick={() => setShowProductBrowser(v => !v)}>
+                  <Package className="ml-1 h-4 w-4" />
+                  {showProductBrowser ? "إخفاء المنتجات" : "تصفح المنتجات"}
+                </Button>
+                <Button type="button" variant="outline" onClick={() => setQuickProduct({})}>
+                  <PackagePlus className="ml-1 h-4 w-4" />
+                  منتج جديد
+                </Button>
+              </form>
 
-                {/* Selected Items - Full Width Below */}
-                {items.length > 0 && (
-                  <Card padding="lg" className="shadow-md mt-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="font-semibold text-gray-900 text-lg flex items-center gap-2">
-                        <ShoppingCart className="w-5 h-5 text-primary-600" />
-                        المنتجات المختارة ({items.length})
-                      </h3>
-                      <div className="flex items-center gap-4 text-sm">
-                        <div className="flex items-center gap-2">
-                          <span className="text-gray-600">إجمالي الكمية:</span>
-                          <span className="font-bold text-accent-600">
-                            {items.reduce((sum, item) => sum + item.quantity, 0)}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-gray-900 font-semibold">الإجمالي:</span>
-                          <span className="font-bold text-success-600 text-xl">{formatCurrency(subtotal)}</span>
-                        </div>
-                      </div>
+              {/* Product browser */}
+              {showProductBrowser && (
+                <div className="mt-4 overflow-hidden rounded-lg border border-gray-200">
+                  <div className="flex gap-2 overflow-x-auto border-b border-gray-200 bg-gray-50 p-2">
+                    {[{ id: "", name: "الكل" }, ...categories].map(category => (
+                      <button
+                        key={category.id || "all"}
+                        type="button"
+                        onClick={() => setSelectedCategory(category.id)}
+                        className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium ${
+                          selectedCategory === category.id ? "bg-primary-600 text-white" : "border border-gray-200 bg-white text-gray-600 hover:bg-gray-100"
+                        }`}
+                      >
+                        {category.name}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="border-b border-gray-100 p-2">
+                    <div className="relative">
+                      <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="البحث عن منتج..."
+                        value={productSearch}
+                        onChange={e => setProductSearch(e.target.value)}
+                        className="w-full rounded-lg border border-gray-200 py-2 pl-4 pr-10 text-sm focus:border-primary-500 focus:ring-2 focus:ring-primary-500"
+                      />
                     </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                      {items.map((item) => (
-                        <div key={item.productId} className="p-4 bg-white border-2 border-primary-100 rounded-xl shadow-sm hover:shadow-md transition-shadow">
-                          {/* Product Name and Remove */}
-                          <div className="flex items-center justify-between mb-3">
-                            <h4 className="font-semibold text-gray-900 text-sm truncate flex-1">
-                              {item.productName}
-                            </h4>
+                  </div>
+                  <div className="max-h-80 overflow-y-auto p-2">
+                    {filteredProducts.length > 0 ? (
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+                        {filteredProducts.map((product: any) => {
+                          const line = items.find(i => i.productId === product.id);
+                          return (
                             <button
+                              key={product.id}
                               type="button"
-                              onClick={() => handleRemoveItem(item.productId)}
-                              className="text-danger-400 hover:text-danger-600 hover:bg-danger-50 p-1.5 rounded transition-colors ml-2"
+                              onClick={() => addProductToItems(product)}
+                              className={`relative rounded-lg border p-2 text-right text-sm transition ${
+                                line ? "border-primary-400 bg-primary-50" : "border-gray-200 bg-white hover:border-gray-300"
+                              }`}
                             >
-                              <Trash2 className="w-4 h-4" />
+                              {line && (
+                                <span className="absolute -top-2 -right-2 rounded-md bg-primary-600 px-1.5 text-xs font-bold text-white">
+                                  ×{line.quantity}
+                                </span>
+                              )}
+                              <div className="truncate font-medium text-gray-800">{product.name}</div>
+                              <div className="flex justify-between text-xs text-gray-500">
+                                <span>{product.stockQuantity || 0} متاح</span>
+                                <span className="font-semibold text-primary-700">{formatCurrency(product.purchasePrice || 0)}</span>
+                              </div>
                             </button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center py-8 text-gray-500">
+                        <Package className="mb-2 h-10 w-10 text-gray-300" />
+                        <p className="text-sm">لا توجد منتجات</p>
+                        <Button type="button" variant="outline" size="sm" className="mt-3" onClick={() => setQuickProduct({ name: productSearch.trim() })}>
+                          <PackagePlus className="ml-1 h-4 w-4" />
+                          {productSearch.trim() ? `إضافة "${productSearch.trim()}" كمنتج جديد` : "إضافة منتج جديد"}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Lines */}
+              <div className="mt-4">
+                <div className="mb-2 flex items-center justify-between">
+                  <h3 className="flex items-center gap-2 font-semibold text-gray-900">
+                    <ShoppingCart className="h-5 w-5 text-primary-600" />
+                    الأصناف ({items.length}) · {totalQty} قطعة
+                  </h3>
+                  {items.length > 0 && <span className="font-bold text-success-700">{formatCurrency(subtotal)}</span>}
+                </div>
+
+                {items.length === 0 ? (
+                  <div className="rounded-lg border-2 border-dashed border-gray-200 py-10 text-center text-sm text-gray-500">
+                    امسح باركود منتج، أو تصفح المنتجات، أو أضف منتجاً جديداً
+                  </div>
+                ) : (
+                  <div className="divide-y divide-gray-100 rounded-lg border border-gray-200">
+                    {items.map(item => {
+                      const last = lastCosts[item.productId];
+                      const reference = last?.unitPrice || item.productCost;
+                      const jump = reference > 0 && item.unitPrice > 0 ? (item.unitPrice - reference) / reference : 0;
+                      const selling = sellingFor(item);
+                      const landed = landedCost(item);
+                      return (
+                        <div key={item.productId} className="grid grid-cols-12 items-start gap-3 p-3">
+                          <div className="col-span-12 md:col-span-4">
+                            <div className="font-semibold text-gray-900">{item.productName}</div>
+                            {item.sku && <div className="text-xs text-gray-400">{item.sku}</div>}
+                            <div className="mt-1 text-xs text-gray-500">
+                              {last ? (
+                                <span>
+                                  آخر سعر من هذا المورد: <b>{formatCurrency(last.unitPrice)}</b> (
+                                  {new Date(last.purchaseDate).toLocaleDateString("ar-EG-u-nu-latn")})
+                                  {Math.abs(last.unitPrice - item.unitPrice) > 0.001 && (
+                                    <button
+                                      type="button"
+                                      className="mr-1 font-medium text-primary-700 hover:underline"
+                                      onClick={() => updateItem(item.productId, () => ({ unitPrice: last.unitPrice }))}
+                                    >
+                                      استخدمه
+                                    </button>
+                                  )}
+                                </span>
+                              ) : item.productCost > 0 ? (
+                                <span>متوسط التكلفة الحالي: {formatCurrency(item.productCost)}</span>
+                              ) : (
+                                <span>لا توجد تكلفة سابقة</span>
+                              )}
+                            </div>
                           </div>
 
-                          {/* Quantity Controls */}
-                          <div className="mb-3">
-                            <label className="text-xs text-gray-600 mb-1 block">الكمية</label>
-                            <div className="flex items-center justify-center gap-2">
+                          <div className="col-span-6 md:col-span-3">
+                            <label className="mb-1 block text-xs text-gray-500">الكمية</label>
+                            <div className="flex items-center gap-1">
                               <button
                                 type="button"
-                                onClick={() => handleUpdateItemQuantity(item.productId, item.quantity - 1)}
-                                className="w-8 h-8 rounded bg-gray-100 border border-gray-200 flex items-center justify-center hover:bg-gray-200 active:scale-95 transition-all"
+                                onClick={() => stepQuantity(item.productId, -1)}
+                                className="flex h-9 w-9 items-center justify-center rounded border border-gray-200 bg-gray-50 hover:bg-gray-100"
+                                aria-label="إنقاص"
                               >
-                                <Minus className="w-4 h-4" />
+                                <Minus className="h-4 w-4" />
                               </button>
                               <input
                                 type="number"
                                 inputMode="numeric"
                                 min="1"
                                 step="1"
-                                value={item.quantity === 0 ? '' : item.quantity}
-                                onChange={(e) => handleTypeItemQuantity(item.productId, e.target.value)}
-                                onFocus={(e) => e.target.select()}
-                                onBlur={() => { if (!(item.quantity >= 1)) handleUpdateItemQuantity(item.productId, 1); }}
+                                value={item.quantity === 0 ? "" : item.quantity}
+                                onChange={e => updateItem(item.productId, () => ({ quantity: Math.max(0, Math.floor(Number(e.target.value) || 0)) }))}
+                                onFocus={e => e.target.select()}
+                                onBlur={() => item.quantity < 1 && updateItem(item.productId, () => ({ quantity: 1 }))}
                                 aria-label={`كمية ${item.productName}`}
-                                className="w-20 text-center text-lg font-bold text-gray-900 border border-gray-300 rounded-lg py-1 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                                className="no-spin h-9 w-16 rounded border border-gray-300 text-center font-bold focus:border-primary-500 focus:ring-2 focus:ring-primary-500"
                               />
                               <button
                                 type="button"
-                                onClick={() => handleUpdateItemQuantity(item.productId, item.quantity + 1)}
-                                className="w-8 h-8 rounded bg-primary-50 border border-primary-200 text-primary-600 hover:bg-primary-100 flex items-center justify-center active:scale-95 transition-all"
+                                onClick={() => stepQuantity(item.productId, 1)}
+                                className="flex h-9 w-9 items-center justify-center rounded border border-primary-200 bg-primary-50 text-primary-700 hover:bg-primary-100"
+                                aria-label="زيادة"
                               >
-                                <Plus className="w-4 h-4" />
+                                <Plus className="h-4 w-4" />
                               </button>
                             </div>
                           </div>
 
-                          {/* Price Input */}
-                          <div className="mb-3">
-                            <label className="text-xs text-gray-600 mb-1 block">سعر الوحدة</label>
-                            <div className="relative">
-                              <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={item.unitPrice === 0 ? '' : item.unitPrice}
-                                placeholder="0.00"
-                                onChange={(e) => handleUpdateItemPrice(item.productId, parseFloat(e.target.value) || 0)}
-                                onFocus={(e) => e.target.select()}
-                                className="w-full text-center font-semibold text-primary-600 bg-primary-50 border border-primary-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
-                              />
-                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-500">ج.م</span>
-                            </div>
+                          <div className="col-span-6 md:col-span-3">
+                            <label className="mb-1 block text-xs text-gray-500">سعر الشراء للوحدة</label>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              placeholder="0.00"
+                              value={item.unitPrice === 0 ? "" : item.unitPrice}
+                              onChange={e => updateItem(item.productId, () => ({ unitPrice: parseFloat(e.target.value) || 0 }))}
+                              onFocus={e => e.target.select()}
+                              aria-label={`سعر شراء ${item.productName}`}
+                              className={`no-spin h-9 w-full rounded border px-2 text-center font-semibold focus:ring-2 focus:ring-primary-500 ${
+                                triedSave && !(item.unitPrice > 0) ? "border-danger-400" : "border-gray-300"
+                              }`}
+                            />
+                            {jump > PRICE_JUMP && (
+                              <div className="mt-1 flex items-center gap-1 text-xs text-amber-700">
+                                <AlertTriangle className="h-3 w-3" />
+                                أعلى بـ {Math.round(jump * 100)}% من {last ? "آخر مرة" : "التكلفة الحالية"}
+                              </div>
+                            )}
+                            {jump < -PRICE_JUMP && (
+                              <div className="mt-1 text-xs text-success-700">أقل بـ {Math.round(-jump * 100)}% من {last ? "آخر مرة" : "التكلفة الحالية"}</div>
+                            )}
+                            {Math.abs(costFactor - 1) > 0.0001 && item.unitPrice > 0 && (
+                              <div className="mt-1 text-xs text-gray-500">التكلفة بعد الخصم/الشحن: {formatCurrency(landed)}</div>
+                            )}
                           </div>
 
-                          {/* Total */}
-                          <div className="mb-3 pt-3 border-t border-gray-200">
-                            <div className="flex items-center justify-between">
-                              <span className="text-sm text-gray-600">المجموع:</span>
-                              <span className="text-lg font-bold text-success-600">
-                                {formatCurrency(item.totalPrice)}
-                              </span>
-                            </div>
+                          <div className="col-span-10 flex items-end justify-between md:col-span-2 md:block md:text-left">
+                            <label className="mb-1 block text-xs text-gray-500">الإجمالي</label>
+                            <div className="font-bold text-gray-900">{formatCurrency(item.totalPrice)}</div>
                           </div>
 
-                          {/* Update Product Price Checkbox */}
-                          <div className="bg-accent-50 p-3 rounded-lg space-y-2">
-                            <label className="flex items-center space-x-2 space-x-reverse text-xs cursor-pointer">
+                          <div className="col-span-2 flex justify-end md:hidden">
+                            <button type="button" onClick={() => removeItem(item.productId)} className="rounded p-1.5 text-danger-500 hover:bg-danger-50" aria-label="حذف">
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+
+                          <div className="col-span-12 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-amber-50/60 px-3 py-2">
+                            <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-gray-700">
                               <input
                                 type="checkbox"
                                 checked={item.updateProductPrice}
-                                onChange={(e) => handleTogglePriceUpdate(item.productId, e.target.checked)}
-                                className="rounded border-gray-300 text-accent-600 focus:ring-accent-500"
+                                onChange={e => updateItem(item.productId, () => ({ updateProductPrice: e.target.checked }))}
+                                className="rounded border-gray-300 text-amber-600"
                               />
-                              <span className="text-gray-700 font-medium">تحديث سعر البيع تلقائياً</span>
+                              تغيير سعر البيع (الحالي {formatCurrency(item.currentProductPrice)})
                             </label>
                             {item.updateProductPrice && (
-                              <div className="text-xs text-gray-600 bg-white p-2 rounded">
-                                <div className="flex items-center gap-1">
-                                  <span className="text-amber-600">⚡</span>
-                                  <span>سيتم تحديث سعر البيع على سعر الشراء الجديد مع الحفاظ على هامش الربح</span>
-                                </div>
-                                <div className="mt-1 text-gray-500">
-                                  • سيتم تقريب السعر حسب إعدادات الشركة (.50 افتراضياً)
-                                </div>
+                              <div className="flex items-center gap-2 text-xs">
+                                <span className="text-gray-600">سعر البيع الجديد</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={selling || ""}
+                                  onChange={e =>
+                                    updateItem(item.productId, () => ({
+                                      newSellingPrice: e.target.value === "" ? 0 : parseFloat(e.target.value) || 0,
+                                    }))
+                                  }
+                                  onFocus={e => e.target.select()}
+                                  aria-label={`سعر البيع الجديد لـ ${item.productName}`}
+                                  className="no-spin h-8 w-24 rounded border border-amber-300 bg-white text-center font-bold text-amber-800 focus:ring-2 focus:ring-amber-400"
+                                />
+                                {item.newSellingPrice !== null && (
+                                  <button
+                                    type="button"
+                                    className="text-primary-700 hover:underline"
+                                    onClick={() => updateItem(item.productId, () => ({ newSellingPrice: null }))}
+                                  >
+                                    المقترح
+                                  </button>
+                                )}
+                                {selling > 0 && landed > 0 && (
+                                  <span className={selling <= landed ? "font-semibold text-danger-600" : "text-gray-500"}>
+                                    ربح {Math.round(((selling - landed) / selling) * 100)}%
+                                  </span>
+                                )}
                               </div>
                             )}
+                            <button
+                              type="button"
+                              onClick={() => removeItem(item.productId)}
+                              className="hidden items-center gap-1 rounded px-2 py-1 text-xs text-danger-600 hover:bg-danger-50 md:flex"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              حذف
+                            </button>
                           </div>
                         </div>
-                      ))}
-                    </div>
-                  </Card>
+                      );
+                    })}
+                  </div>
                 )}
+              </div>
+            </Card>
+          </div>
 
-                {/* Step 2 Navigation */}
-                <div className="flex items-center justify-between mt-8 pt-6 border-t">
-                  <Button
-                    variant="outline"
-                    onClick={handlePrevStep}
-                    className="px-6"
-                  >
-                    <ArrowLeft className="w-4 h-4 ml-2" />
-                    السابق
-                  </Button>
-
-                  <Button
-                    onClick={handleNextStep}
-                    disabled={items.length === 0}
-                    className="px-8 bg-gradient-to-r from-primary-600 to-success-600 hover:from-primary-700 hover:to-success-700 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    التالي: المراجعة والتأكيد
-                    <ChevronRight className="w-4 h-4 mr-2" />
-                  </Button>
-                </div>
-              </Card>
-            </div>
-          )}
-
-          {/* STEP 3: Review & Confirm */}
-          {currentStep === 3 && (
-            <div className="animate-fadeIn">
-              <Card padding="lg" className="shadow-lg">
-                <div className="mb-8">
-                  <h2 className="text-2xl font-bold text-gray-900 mb-2">المراجعة والتأكيد</h2>
-                  <p className="text-gray-600">تأكد من صحة البيانات قبل إنشاء عملية الشراء</p>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  {/* Left: Summary */}
-                  <div className="lg:col-span-2 space-y-6">
-                    {/* Purchase Info Summary */}
-                    <div className="bg-gradient-to-br from-primary-50 to-accent-50 rounded-xl p-6 border border-primary-100">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                        <Truck className="w-5 h-5 ml-2 text-primary-600" />
-                        معلومات الشراء
-                      </h3>
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div>
-                          <span className="text-gray-600">المورد:</span>
-                          <span className="font-semibold text-gray-900 mr-2">
-                            {supplierOptions.find(s => s.value === supplierId)?.label || 'غير محدد'}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-gray-600">رقم الفاتورة:</span>
-                          <span className="font-semibold text-gray-900 mr-2">{invoiceNumber}</span>
-                        </div>
-                        <div>
-                          <span className="text-gray-600">تاريخ الشراء:</span>
-                          <span className="font-semibold text-gray-900 mr-2">{purchaseDate.toLocaleDateString('ar-EG-u-nu-latn')}</span>
-                        </div>
-                        <div>
-                          <span className="text-gray-600">طريقة الدفع:</span>
-                          <span className="font-semibold text-gray-900 mr-2">
-                            {paidValue <= 0 ? 'آجل' : paymentMethod === 'CASH' ? 'نقدي' : paymentMethod === 'CARD' ? 'بطاقة' : paymentMethod === 'MOBILE_WALLET' ? 'محفظة إلكترونية' : 'تحويل بنكي'}
-                          </span>
-                        </div>
-                      </div>
-                      {invoiceFile && (
-                        <div className="mt-4 pt-4 border-t border-primary-200">
-                          <span className="text-xs text-success-600 flex items-center">
-                            <CheckCircle className="w-4 h-4 ml-1" />
-                            تم إرفاق فاتورة: {invoiceFile.name}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Items Summary */}
-                    <div className="bg-white rounded-xl p-6 border-2 border-gray-200">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                        <Package className="w-5 h-5 ml-2 text-accent-600" />
-                        المنتجات ({items.length})
-                      </h3>
-                      <div className="space-y-3">
-                        {items.map((item) => (
-                          <div key={item.productId} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                            <div className="flex-1">
-                              <div className="font-medium text-gray-900">{item.productName}</div>
-                              <div className="text-sm text-gray-500">
-                                {item.quantity} × {formatCurrency(item.unitPrice)}
-                              </div>
-                            </div>
-                            <div className="text-lg font-bold text-gray-900">
-                              {formatCurrency(item.totalPrice)}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+          {/* ---------------- right: money */}
+          <div className="xl:col-span-1">
+            <div className="space-y-4 xl:sticky xl:top-4">
+              <Card padding="lg">
+                <h3 className="mb-3 flex items-center gap-2 text-lg font-semibold text-gray-900">
+                  <DollarSign className="h-5 w-5 text-success-600" />
+                  الحساب
+                </h3>
+                <div className="space-y-3 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">إجمالي الأصناف</span>
+                    <span className="font-semibold">{formatCurrency(subtotal)}</span>
                   </div>
-
-                  {/* Right: Financial Summary */}
-                  <div className="lg:col-span-1">
-                    <div className="lg:sticky lg:top-6 space-y-6">
-                  {/* Payment Information */}
-                  <div className="bg-gradient-to-br from-primary-50 to-success-50 rounded-xl p-6 border border-primary-100">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                      <DollarSign className="w-5 h-5 ml-2 text-success-600" />
-                      معلومات الدفع
-                    </h3>
-                    <div className="grid grid-cols-1 gap-4">
-                      <div>
-                        <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={includeTax}
-                            onChange={(e) => setIncludeTax(e.target.checked)}
-                            className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                          />
-                          الفاتورة عليها ضريبة
-                        </label>
-                        {includeTax && (
-                          <div className="mt-2 flex items-center gap-2">
-                            <Input
-                              type="number"
-                              placeholder="14"
-                              min="0"
-                              max="100"
-                              step="0.01"
-                              value={taxRate}
-                              onChange={(e) => setTaxRate(e.target.value)}
-                            />
-                            <span className="text-sm text-gray-600">%</span>
-                          </div>
-                        )}
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">
-                          المبلغ المدفوع
-                        </label>
-                        <div className="flex gap-2">
-                          <Input
-                            type="number"
-                            placeholder="0.00"
-                            min="0"
-                            step="0.01"
-                            value={paidAmount}
-                            onChange={(e) => setPaidAmount(e.target.value)}
-                          />
-                          <Button type="button" variant="outline" onClick={() => setPaidAmount(String(totalAmount))}>
-                            المبلغ كامل
-                          </Button>
-                        </div>
-                        {paidTooMuch && (
-                          <p className="mt-1 text-sm text-danger-600">المبلغ المدفوع أكبر من إجمالي الفاتورة ({formatCurrency(totalAmount)})</p>
-                        )}
-                        {paidValue <= 0 && (
-                          <p className="mt-1 text-xs text-gray-500">بدون دفع: تُسجل الفاتورة آجلة على المورد</p>
-                        )}
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">
-                          طريقة الدفع
-                        </label>
-                        <Select
-                          options={[
-                            { value: 'CASH', label: 'نقدي (من درج الوردية)' },
-                            { value: 'CARD', label: 'بطاقة' },
-                            { value: 'MOBILE_WALLET', label: 'محفظة إلكترونية' },
-                            { value: 'BANK_TRANSFER', label: 'تحويل بنكي' },
-                          ]}
-                          value={paymentMethod}
-                          onChange={setPaymentMethod}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-gray-600">خصم المورد</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={discount}
+                      onChange={e => setDiscount(e.target.value)}
+                      aria-label="خصم المورد"
+                      className={`no-spin w-28 rounded border px-2 py-1 text-center ${discountTooBig ? "border-danger-400" : "border-gray-300"}`}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="flex items-center gap-2 text-gray-600">
+                      <input type="checkbox" checked={includeTax} onChange={e => setIncludeTax(e.target.checked)} className="rounded border-gray-300 text-primary-600" />
+                      ضريبة %
+                    </label>
+                    {includeTax ? (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.01"
+                          placeholder="14"
+                          value={taxRate}
+                          onChange={e => setTaxRate(e.target.value)}
+                          aria-label="نسبة الضريبة"
+                          className="no-spin w-16 rounded border border-gray-300 px-2 py-1 text-center"
                         />
+                        <span className="w-20 text-left font-semibold">{formatCurrency(taxAmount)}</span>
                       </div>
-                    </div>
-                  </div>
-
-                      <Card padding="lg" className="bg-gradient-to-br from-success-50 to-primary-50 border-success-200">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                          <DollarSign className="w-5 h-5 ml-2 text-success-600" />
-                          الملخص المالي
-                        </h3>
-                        <div className="space-y-3">
-                          <div className="flex justify-between items-center p-3 bg-white rounded-lg">
-                            <span className="text-sm text-gray-600">المجموع الفرعي</span>
-                            <span className="text-lg font-semibold text-gray-900">{formatCurrency(subtotal)}</span>
-                          </div>
-                          {includeTax && (
-                            <div className="flex justify-between items-center p-3 bg-white rounded-lg">
-                              <span className="text-sm text-gray-600">الضريبة ({taxRate}%)</span>
-                              <span className="text-lg font-semibold text-gray-900">{formatCurrency(taxAmount)}</span>
-                            </div>
-                          )}
-                          <div className="flex justify-between items-center p-3 bg-white rounded-lg">
-                            <span className="text-sm text-gray-600">المبلغ المدفوع</span>
-                            <span className="text-lg font-semibold text-success-600">{formatCurrency(paidValue)}</span>
-                          </div>
-                          <div className="flex justify-between items-center p-3 bg-white rounded-lg">
-                            <span className="text-sm text-gray-600">المبلغ المتبقي</span>
-                            <span className="text-lg font-semibold text-danger-600">
-                              {formatCurrency(Math.max(0, totalAmount - paidValue))}
-                            </span>
-                          </div>
-                          <div className="flex justify-between items-center p-4 bg-gradient-to-r from-primary-600 to-success-600 rounded-lg text-white shadow-lg">
-                            <span className="text-sm font-medium">المجموع الكلي</span>
-                            <span className="text-2xl font-bold">{formatCurrency(totalAmount)}</span>
-                          </div>
-                        </div>
-                      </Card>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Step 3 Navigation */}
-                <div className="flex items-center justify-between mt-8 pt-6 border-t">
-                  <Button
-                    variant="outline"
-                    onClick={handlePrevStep}
-                    className="px-6"
-                  >
-                    <ArrowLeft className="w-4 h-4 ml-2" />
-                    السابق
-                  </Button>
-
-                  <Button
-                    onClick={handleSubmit}
-                    disabled={createMutation.isPending || paidTooMuch || labelItems !== null}
-                    className="px-8 bg-gradient-to-r from-success-600 to-primary-600 hover:from-success-700 hover:to-primary-700 text-white shadow-lg text-lg font-semibold"
-                  >
-                    {createMutation.isPending ? (
-                      <>
-                        <span className="animate-spin ml-2">⏳</span>
-                        جاري الحفظ...
-                      </>
                     ) : (
-                      <>
-                        <CheckCircle className="w-5 h-5 ml-2" />
-                        إنشاء عملية الشراء
-                      </>
+                      <span className="text-gray-400">—</span>
                     )}
-                  </Button>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-gray-600">شحن وتحميل</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={shipping}
+                      onChange={e => setShipping(e.target.value)}
+                      aria-label="شحن وتحميل"
+                      className="no-spin w-28 rounded border border-gray-300 px-2 py-1 text-center"
+                    />
+                  </div>
+                  {(discountValue > 0 || shippingValue > 0) && (
+                    <p className="text-xs text-gray-500">الخصم والشحن يوزعان على تكلفة الأصناف حسب قيمتها.</p>
+                  )}
+                  <div className="flex items-center justify-between rounded-lg bg-gradient-to-r from-primary-600 to-success-600 p-3 text-white">
+                    <span className="font-medium">إجمالي الفاتورة</span>
+                    <span className="text-2xl font-bold">{formatCurrency(totalAmount)}</span>
+                  </div>
                 </div>
               </Card>
+
+              <Card padding="lg">
+                <div className="space-y-3 text-sm">
+                  <div>
+                    <label className="mb-1 block font-semibold text-gray-700">المدفوع الآن</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="0.00"
+                        value={paidAmount}
+                        onChange={e => setPaidAmount(e.target.value)}
+                        aria-label="المبلغ المدفوع"
+                        className={`no-spin flex-1 rounded-lg border px-3 py-2 ${paidTooMuch ? "border-danger-400" : "border-gray-300"}`}
+                      />
+                      <Button type="button" variant="outline" size="sm" onClick={() => setPaidAmount(String(totalAmount))}>
+                        كامل
+                      </Button>
+                      <Button type="button" variant="outline" size="sm" onClick={() => setPaidAmount("")}>
+                        آجل
+                      </Button>
+                    </div>
+                  </div>
+                  {paidValue > 0 && (
+                    <Select
+                      label="طريقة الدفع"
+                      options={[
+                        { value: "CASH", label: "نقدي (من درج الوردية)" },
+                        { value: "CARD", label: "بطاقة" },
+                        { value: "MOBILE_WALLET", label: "محفظة إلكترونية" },
+                        { value: "BANK_TRANSFER", label: "تحويل بنكي" },
+                      ]}
+                      value={paymentMethod}
+                      onChange={setPaymentMethod}
+                    />
+                  )}
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">الباقي على المحل للمورد</span>
+                    <span className={`font-bold ${remaining > 0 ? "text-danger-600" : "text-success-600"}`}>{formatCurrency(remaining)}</span>
+                  </div>
+                  {remaining > 0 && !dueDate && <p className="text-xs text-amber-700">حدد تاريخ استحقاق ليظهر لك تذكير قبل موعد الدفع.</p>}
+                </div>
+              </Card>
+
+              {triedSave && problems.length > 0 && (
+                <div className="rounded-lg border border-danger-200 bg-danger-50 p-3 text-sm text-danger-700">
+                  {problems.map(p => (
+                    <div key={p}>• {p}</div>
+                  ))}
+                </div>
+              )}
+
+              <Button
+                onClick={handleSubmit}
+                disabled={createMutation.isPending || labelItems !== null}
+                className="w-full bg-gradient-to-r from-success-600 to-primary-600 py-3 text-lg font-semibold text-white shadow-lg hover:from-success-700 hover:to-primary-700"
+              >
+                {createMutation.isPending ? (
+                  "جاري الحفظ..."
+                ) : (
+                  <>
+                    <CheckCircle className="ml-2 h-5 w-5" />
+                    حفظ فاتورة الشراء (F7)
+                  </>
+                )}
+              </Button>
+              {supplierName && items.length > 0 && (
+                <p className="text-center text-xs text-gray-500">
+                  {supplierName} · {items.length} صنف · {formatCurrency(totalAmount)}
+                </p>
+              )}
             </div>
-          )}
+          </div>
         </div>
       </div>
 
       <QuickProductModal
         isOpen={quickProduct !== null}
         onClose={() => setQuickProduct(null)}
-        companyId={company?.companyId || 0}
-        categories={((categoriesData as any)?.data?.list || []).map((c: any) => ({ id: String(c.id), name: c.name }))}
+        companyId={companyId}
+        categories={categories}
         initialBarcode={quickProduct?.barcode}
         initialName={quickProduct?.name}
         onCreated={handleQuickProductCreated}
+      />
+
+      <QuickSupplierModal
+        isOpen={quickSupplier !== null}
+        onClose={() => setQuickSupplier(null)}
+        companyId={companyId}
+        initialName={quickSupplier?.name}
+        onCreated={s => {
+          setSupplierId(String(s.id));
+          setQuickSupplier(null);
+        }}
       />
 
       <ConfirmDialog
@@ -1508,30 +1224,24 @@ const PurchasesCreate: React.FC = () => {
         onClose={() => setConfirmLeave(false)}
         onConfirm={handleBack}
         title="الخروج من الفاتورة"
-        message="لم تُحفظ فاتورة الشراء بعد. هل تريد الخروج وحذف المنتجات المضافة؟"
-        confirmText="خروج بدون حفظ"
+        message="لم تُحفظ فاتورة الشراء بعد. ستبقى كمسودة يمكنك استرجاعها عند فتح فاتورة شراء جديدة."
+        confirmText="خروج"
         cancelText="البقاء"
         type="warning"
       />
 
-      {/* Barcode labels for the received products */}
-      <PurchaseBarcodeModal
-        isOpen={labelItems !== null}
-        onClose={handleLabelsClosed}
-        items={labelItems || []}
-      />
+      <PurchaseBarcodeModal isOpen={labelItems !== null} onClose={handleLabelsClosed} items={labelItems || []} />
 
-      {/* Print Receipt Preview Modal */}
       {printablePurchase && (
         <PrintReceiptPreview
           sale={printablePurchase}
           kind="purchase"
-          companyId={company?.companyId || company?.id || 0}
+          companyId={companyId || company?.id || 0}
           cashier={null}
           isOpen={showPrintModal}
           onClose={() => {
             setShowPrintModal(false);
-            navigate('/purchases');
+            navigate("/purchases");
           }}
         />
       )}

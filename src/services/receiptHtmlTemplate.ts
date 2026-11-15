@@ -638,8 +638,14 @@ export function purchaseToReceiptData(params: Parameters<typeof saleToReceiptDat
     date: when.toLocaleDateString('ar-EG-u-nu-latn', { year: 'numeric', month: '2-digit', day: '2-digit' }),
     // The purchase date is a calendar day only; the time comes from when it was entered
     time: new Date(purchase.createdAt || Date.now()).toLocaleTimeString('ar-EG-u-nu-latn', { hour: '2-digit', minute: '2-digit', hour12: true }),
-    subtotal: parseFloat(purchase.subtotal ?? total - parseFloat(purchase.taxAmount ?? purchase.tax ?? 0)),
-    discount: 0,
+    subtotal: parseFloat(
+      purchase.subtotal ??
+        total -
+          parseFloat(purchase.taxAmount ?? purchase.tax ?? 0) -
+          parseFloat(purchase.shippingCost ?? 0) +
+          parseFloat(purchase.discountAmount ?? 0)
+    ),
+    discount: parseFloat(purchase.discountAmount ?? 0),
     tax: parseFloat(purchase.taxAmount ?? purchase.tax ?? 0),
     taxRate: parseFloat(purchase.taxRate ?? 0),
     total,
@@ -649,8 +655,8 @@ export function purchaseToReceiptData(params: Parameters<typeof saleToReceiptDat
     paymentMethod: paid > 0 ? PURCHASE_PAYMENT_LABELS[purchase.paymentMethod] || 'نقداً' : 'آجل',
     supplierName: purchase.supplier?.name,
     isPurchase: true,
-    additionalFee: 0,
-    additionalFeeLabel: undefined,
+    additionalFee: parseFloat(purchase.shippingCost ?? 0),
+    additionalFeeLabel: parseFloat(purchase.shippingCost ?? 0) > 0 ? 'شحن وتحميل' : undefined,
     footerText: params.footerText || ' ',
   };
 }
