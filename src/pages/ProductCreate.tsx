@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Save, Package } from 'lucide-react';
+import { ArrowRight, Save, Package } from 'lucide-react';
 import { Layout } from '../components/layout';
 import { Button, Input, Textarea, Select, Card, Modal } from '../components/ui';
 import { useSessionAuthStore } from '../stores/sessionAuthStore';
@@ -28,8 +28,8 @@ const ProductCreate: React.FC = () => {
     description: '',
     purchasePrice: '',
     sellingPrice: '',
-    stockQuantity: '',
-    minStockLevel: '',
+    stockQuantity: '0',
+    minStockLevel: '0',
     categoryId: '',
   });
 
@@ -133,7 +133,14 @@ const ProductCreate: React.FC = () => {
     const newErrors: Record<string, string> = {};
 
     if (!formData.name.trim()) newErrors.name = 'اسم المنتج مطلوب';
-    if (!formData.barcode) newErrors.barcode = 'الباركود مطلوب';
+    // A code typed without pressing Enter is used as the factory barcode; it must be valid and free
+    const typed = barcodeInputValue.trim();
+    if (!formData.barcode && typed) {
+      const v = validateBarcodeFormat(typed);
+      const existing = checkBarcodeExists(typed);
+      if (!v.isValid) newErrors.barcode = v.error || 'باركود غير صالح';
+      else if (existing) newErrors.barcode = `الباركود موجود مسبقاً: ${existing.name}`;
+    }
     if (!formData.categoryId) newErrors.categoryId = 'الفئة مطلوبة';
     if (!formData.purchasePrice || parseFloat(formData.purchasePrice) <= 0) {
       newErrors.purchasePrice = 'سعر الشراء مطلوب';
@@ -141,8 +148,14 @@ const ProductCreate: React.FC = () => {
     if (!formData.sellingPrice || parseFloat(formData.sellingPrice) <= 0) {
       newErrors.sellingPrice = 'سعر البيع مطلوب';
     }
-    if (!formData.stockQuantity) newErrors.stockQuantity = 'الكمية مطلوبة';
-    if (!formData.minStockLevel) newErrors.minStockLevel = 'الحد الأدنى مطلوب';
+    const qty = Number(formData.stockQuantity);
+    if (formData.stockQuantity === '' || !Number.isInteger(qty) || qty < 0) {
+      newErrors.stockQuantity = 'الكمية رقم صحيح صفر أو أكثر';
+    }
+    const min = Number(formData.minStockLevel);
+    if (formData.minStockLevel === '' || !Number.isInteger(min) || min < 0) {
+      newErrors.minStockLevel = 'الحد الأدنى رقم صحيح صفر أو أكثر';
+    }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -159,10 +172,12 @@ const ProductCreate: React.FC = () => {
     }
 
     try {
-      const response = await createMutation.mutateAsync({
+      await createMutation.mutateAsync({
         name: formData.name.trim(),
-        sku: formData.sku.trim(),
-        originalBarcode: barcodeSource === 'scanned' ? formData.barcode : undefined,
+        // empty sku: the server generates a local barcode
+        sku: formData.sku.trim() || barcodeInputValue.trim(),
+        originalBarcode:
+          barcodeSource === 'scanned' ? formData.barcode : barcodeInputValue.trim() || undefined,
         localBarcode: barcodeSource === 'generated' ? formData.barcode : undefined,
         barcodeFormat: formData.barcodeFormat || undefined,
         description: formData.description.trim(),
@@ -174,13 +189,17 @@ const ProductCreate: React.FC = () => {
         companyId: companyId!,
       });
 
-      toast.success('تم إنشاء المنتج بنجاح');
+      // The success / error message comes from useCreateProduct (one message, not two)
       navigate('/products');
-    } catch (error) {
-      console.error('Create error:', error);
-      toast.error('حدث خطأ أثناء الإنشاء');
+    } catch {
+      // error message already shown by useCreateProduct
     }
-  }, [formData, barcodeSource, validateForm, createMutation, companyId, navigate]);
+  }, [formData, barcodeSource, barcodeInputValue, validateForm, createMutation, companyId, navigate]);
+
+  const costValue = parseFloat(formData.purchasePrice);
+  const sellingValue = parseFloat(formData.sellingPrice);
+  const margin =
+    costValue > 0 && sellingValue > 0 ? Math.round(((sellingValue - costValue) / sellingValue) * 1000) / 10 : null;
 
   // Category options
   const categoryOptions = [
@@ -202,7 +221,7 @@ const ProductCreate: React.FC = () => {
               onClick={() => navigate('/products')}
               className="text-gray-600"
             >
-              <ArrowLeft className="w-4 h-4" />
+              <ArrowRight className="w-4 h-4" />
             </Button>
             <div>
               <h1 className="text-xl font-bold text-gray-900">إضافة منتج جديد</h1>
@@ -219,119 +238,6 @@ const ProductCreate: React.FC = () => {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Barcode Section */}
-          <Card padding="lg">
-            <div className="space-y-4">
-              <div>
-                <h3 className="font-semibold text-gray-900 mb-2">الباركود</h3>
-                <p className="text-sm text-gray-600">
-                  اختر طريقة إضافة الباركود: إما مسح الباركود الأصلي للمنتج، أو توليد باركود محلي جديد
-                </p>
-              </div>
-
-              {!formData.barcode ? (
-                // No barcode yet - show both options
-                <div className="space-y-4">
-                  {/* Option 1: Scan/Enter Original Barcode */}
-                  <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                    <h4 className="text-sm font-semibold text-purple-900 mb-2">
-                      1️⃣ الباركود الأصلي للمنتج
-                    </h4>
-                    <p className="text-xs text-purple-700 mb-3">
-                      امسح أو أدخل الباركود المطبوع على المنتج من المصنع
-                    </p>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={barcodeInputValue}
-                        onChange={(e) => setBarcodeInputValue(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            if (barcodeInputValue.trim()) {
-                              handleBarcodeScan(barcodeInputValue.trim());
-                              setBarcodeInputValue('');
-                            }
-                          }
-                        }}
-                        placeholder="امسح أو اكتب الباركود هنا..."
-                        className="flex-1 px-3 py-2 border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-right font-mono"
-                      />
-                      <Button
-                        type="button"
-                        onClick={() => {
-                          if (barcodeInputValue.trim()) {
-                            handleBarcodeScan(barcodeInputValue.trim());
-                            setBarcodeInputValue('');
-                          }
-                        }}
-                        className="bg-purple-600 hover:bg-purple-700"
-                        disabled={!barcodeInputValue.trim()}
-                      >
-                        إضافة
-                      </Button>
-                    </div>
-                  </div>
-
-                  {/* Divider */}
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 border-t border-gray-300"></div>
-                    <span className="text-xs text-gray-500 font-medium">أو</span>
-                    <div className="flex-1 border-t border-gray-300"></div>
-                  </div>
-
-                  {/* Option 2: Generate New Barcode */}
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                    <h4 className="text-sm font-semibold text-green-900 mb-2">
-                      2️⃣ توليد باركود محلي جديد
-                    </h4>
-                    <p className="text-xs text-green-700 mb-3">
-                      إنشاء باركود فريد تلقائياً من النظام للمنتجات بدون باركود أصلي
-                    </p>
-                    <Button
-                      type="button"
-                      onClick={generateBarcode}
-                      disabled={isGenerating}
-                      className="w-full bg-green-600 hover:bg-green-700"
-                    >
-                      {isGenerating ? 'جاري التوليد...' : '✨ توليد باركود جديد'}
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                // Barcode set - show it
-                <div className="space-y-4">
-                  <div className={`rounded-lg p-4 text-center ${
-                    barcodeSource === 'scanned' ? 'bg-purple-50 border border-purple-200' : 'bg-green-50 border border-green-200'
-                  }`}>
-                    <p className={`text-xs mb-1 font-medium ${
-                      barcodeSource === 'scanned' ? 'text-purple-700' : 'text-green-700'
-                    }`}>
-                      {barcodeSource === 'scanned' ? '✅ باركود أصلي (من المصنع)' : '✨ باركود محلي (مولّد)'}
-                    </p>
-                    <p className="text-2xl font-mono font-bold text-gray-900">
-                      {formData.barcode}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setFormData(prev => ({ ...prev, barcode: '', sku: '' }));
-                        setBarcodeSource(null);
-                        setBarcodeInputValue('');
-                      }}
-                      className="text-xs text-blue-600 hover:underline mt-2"
-                    >
-                      تغيير الباركود
-                    </button>
-                  </div>
-                </div>
-              )}
-              {errors.barcode && (
-                <p className="text-sm text-red-600">{errors.barcode}</p>
-              )}
-            </div>
-          </Card>
-
           {/* Product Info */}
           <Card padding="lg">
             <div className="space-y-4">
@@ -348,6 +254,69 @@ const ProductCreate: React.FC = () => {
                 placeholder="أدخل اسم المنتج"
                 required
               />
+
+              {/* Barcode: one row. Scan / type + Enter, or generate, or leave empty (generated on save) */}
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">الباركود</label>
+                {formData.barcode ? (
+                  <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                    <span className="font-mono text-base font-semibold text-gray-900">{formData.barcode}</span>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs ${
+                        barcodeSource === 'scanned' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'
+                      }`}
+                    >
+                      {barcodeSource === 'scanned' ? 'باركود المصنع' : 'باركود محلي'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormData(prev => ({ ...prev, barcode: '', sku: '' }));
+                        setBarcodeSource(null);
+                        setBarcodeInputValue('');
+                      }}
+                      className="mr-auto text-xs text-blue-600 hover:underline"
+                    >
+                      تغيير
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={barcodeInputValue}
+                      onChange={(e) => {
+                        setBarcodeInputValue(e.target.value);
+                        if (errors.barcode) setErrors(prev => ({ ...prev, barcode: '' }));
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          // Scanners end with Enter: take the code, don't submit the form
+                          e.preventDefault();
+                          if (barcodeInputValue.trim()) {
+                            handleBarcodeScan(barcodeInputValue.trim());
+                            setBarcodeInputValue('');
+                          }
+                        }
+                      }}
+                      placeholder="امسح أو اكتب الباركود (فارغ = يُولَّد تلقائياً)"
+                      className={`flex-1 rounded-lg border px-3 py-2 text-right font-mono placeholder:font-sans focus:border-primary-500 focus:ring-2 focus:ring-primary-500 ${
+                        errors.barcode ? 'border-red-400' : 'border-gray-300'
+                      }`}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={generateBarcode}
+                      disabled={isGenerating}
+                      className="whitespace-nowrap"
+                    >
+                      {isGenerating ? 'جاري...' : '✨ توليد'}
+                    </Button>
+                  </div>
+                )}
+                {errors.barcode && <p className="mt-1 text-sm text-red-600">{errors.barcode}</p>}
+              </div>
 
               <Select
                 label="الفئة"
@@ -396,8 +365,14 @@ const ProductCreate: React.FC = () => {
                   required
                 />
 
+                {margin !== null && (
+                  <p className={`col-span-2 -mt-2 text-xs ${margin < 0 ? 'text-red-600' : 'text-gray-500'}`}>
+                    هامش الربح: {margin}%{margin < 0 ? ' (سعر البيع أقل من سعر الشراء)' : ''}
+                  </p>
+                )}
+
                 <Input
-                  label="الكمية"
+                  label="الكمية الافتتاحية"
                   type="number"
                   value={formData.stockQuantity}
                   onChange={(e) => handleInputChange('stockQuantity', e.target.value)}

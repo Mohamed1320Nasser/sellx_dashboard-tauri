@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import ProductListPrices from '../components/products/ProductListPrices';
-import { ArrowLeft, Save, X, Package, AlertCircle } from 'lucide-react';
+import { ArrowRight, Save, X, Package, AlertCircle } from 'lucide-react';
 import { Layout } from '../components/layout';
 import { Button, Input, Textarea, Select, Card } from '../components/ui';
 import { useSessionAuthStore } from '../stores/sessionAuthStore';
@@ -42,21 +42,25 @@ const ProductEdit: React.FC = () => {
   // Update mutation
   const updateMutation = useUpdateProduct();
 
-  // Populate form when product data loads
+  // Fill the form once per product: a background refresh must not wipe what the user is typing
+  const filledFor = useRef<string | null>(null);
+  const loadedStock = useRef<string>('');
   useEffect(() => {
-    if (product) {
+    if (product && filledFor.current !== id) {
+      filledFor.current = id!;
+      loadedStock.current = ((product as any).currentStock ?? (product as any).stockQuantity ?? 0).toString();
       setFormData({
         name: (product as any).name || '',
         sku: (product as any).sku || '',
         description: (product as any).description || '',
         purchasePrice: (product as any).purchasePrice?.toString() || '',
         sellingPrice: (product as any).sellingPrice?.toString() || '',
-        stockQuantity: ((product as any).currentStock || (product as any).stockQuantity || 0).toString(),
+        stockQuantity: loadedStock.current,
         minStockLevel: ((product as any).minStockLevel || 0).toString(),
         categoryId: (product as any).categoryId || '',
       });
     }
-  }, [product]);
+  }, [product, id]);
 
   // Handle form input changes
   const handleInputChange = (field: string, value: string) => {
@@ -91,11 +95,13 @@ const ProductEdit: React.FC = () => {
       newErrors.sellingPrice = 'سعر البيع يجب أن يكون أكبر من صفر';
     }
 
-    if (!formData.stockQuantity || parseInt(formData.stockQuantity) < 0) {
-      newErrors.stockQuantity = 'الكمية يجب أن تكون أكبر من أو تساوي صفر';
+    const qty = Number(formData.stockQuantity);
+    if (formData.stockQuantity === '' || !Number.isInteger(qty) || qty < 0) {
+      newErrors.stockQuantity = 'الكمية رقم صحيح صفر أو أكثر';
     }
 
-    if (!formData.minStockLevel || parseInt(formData.minStockLevel) < 0) {
+    const min = Number(formData.minStockLevel);
+    if (formData.minStockLevel === '' || !Number.isInteger(min) || min < 0) {
       newErrors.minStockLevel = 'الحد الأدنى للمخزون يجب أن يكون أكبر من أو يساوي صفر';
     }
 
@@ -121,7 +127,11 @@ const ProductEdit: React.FC = () => {
           description: formData.description.trim(),
           purchasePrice: parseFloat(formData.purchasePrice),
           sellingPrice: parseFloat(formData.sellingPrice),
-          stockQuantity: parseInt(formData.stockQuantity),
+          // Only a quantity the user changed is sent: sending the number loaded when the page
+          // opened would undo any sale made meanwhile (the server records it as an adjustment)
+          ...(formData.stockQuantity.trim() !== loadedStock.current && {
+            stockQuantity: parseInt(formData.stockQuantity),
+          }),
           minStockLevel: parseInt(formData.minStockLevel),
           categoryId: formData.categoryId,
           companyId: companyId!,
@@ -156,6 +166,11 @@ const ProductEdit: React.FC = () => {
     );
   }
 
+  const costValue = parseFloat(formData.purchasePrice);
+  const sellingValue = parseFloat(formData.sellingPrice);
+  const margin =
+    costValue > 0 && sellingValue > 0 ? Math.round(((sellingValue - costValue) / sellingValue) * 1000) / 10 : null;
+
   // Category options
   const categoryOptions = [
     { value: '', label: 'اختر الفئة' },
@@ -176,7 +191,7 @@ const ProductEdit: React.FC = () => {
               onClick={() => navigate('/products')}
               className="flex items-center space-x-2 space-x-reverse text-gray-600 hover:text-gray-900"
             >
-              <ArrowLeft className="w-4 h-4" />
+              <ArrowRight className="w-4 h-4" />
               <span>العودة</span>
             </Button>
             <div>
@@ -299,6 +314,12 @@ const ProductEdit: React.FC = () => {
                     required
                   />
 
+                  {margin !== null && (
+                    <p className={`-mt-2 text-xs ${margin < 0 ? 'text-red-600' : 'text-gray-500'}`}>
+                      هامش الربح: {margin}%{margin < 0 ? ' (سعر البيع أقل من سعر الشراء)' : ''}
+                    </p>
+                  )}
+
                   <Input
                     label="الكمية المتاحة"
                     type="number"
@@ -308,6 +329,12 @@ const ProductEdit: React.FC = () => {
                     placeholder="0"
                     required
                   />
+                  {formData.stockQuantity.trim() !== loadedStock.current && formData.stockQuantity !== '' && (
+                    <p className="-mt-2 text-xs text-amber-700">
+                      سيُسجَّل الفرق ({Number(formData.stockQuantity) - Number(loadedStock.current) > 0 ? '+' : ''}
+                      {Number(formData.stockQuantity) - Number(loadedStock.current)}) كتسوية مخزون باسمك
+                    </p>
+                  )}
 
                   <Input
                     label="الحد الأدنى للمخزون"
