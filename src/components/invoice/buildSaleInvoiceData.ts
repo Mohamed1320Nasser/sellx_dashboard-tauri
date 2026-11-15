@@ -18,6 +18,10 @@ const PAYMENT_STATUS_LABELS: Record<InvoiceStatus, string> = {
 
 const STATUS_TONES: Record<InvoiceStatus, PillTone> = { PAID: "green", PARTIAL: "amber", UNPAID: "red" };
 
+/** yyyy/mm/dd without the invisible direction marks the Arabic formatter adds (the PDF scrambles them) */
+const plainDate = (d: Date) =>
+  `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}`;
+
 const num = (v: unknown, fallback = 0) => {
   const n = typeof v === "number" ? v : parseFloat(String(v ?? ""));
   return Number.isFinite(n) ? n : fallback;
@@ -35,8 +39,10 @@ export async function buildSaleInvoiceData(params: {
   /** from the print settings */
   showQrCode?: boolean;
   footerText?: string;
+  terms?: string;
+  commercialRegister?: string;
 }): Promise<SaleInvoiceData> {
-  const { sale, company, cashier, kind = "sale", showQrCode = false, footerText } = params;
+  const { sale, company, cashier, kind = "sale", showQrCode = false, footerText, terms, commercialRegister } = params;
   const isPurchase = kind === "purchase";
   const isQuote = kind === "quote";
 
@@ -54,6 +60,7 @@ export async function buildSaleInvoiceData(params: {
     const quantity = num(item.quantity);
     const unitPrice = num(item.unitPrice ?? item.price ?? item.unitCost);
     return {
+      discount: num(item.lineDiscount),
       index: i + 1,
       productName: item.product?.name || item.productName || "منتج",
       sku: item.product?.sku || item.sku || undefined,
@@ -73,6 +80,7 @@ export async function buildSaleInvoiceData(params: {
   const itemsTotal = items.reduce((s, it) => s + it.total, 0);
   const subtotal = num(sale.subtotal, itemsTotal);
   // The API's remaining amount already counts returns; otherwise total - paid
+  const returnsAmount = isQuote ? 0 : Math.max(0, num(sale.returnCredit));
   const remainingAmount = isQuote
     ? 0
     : Math.max(0, Math.round(num(sale.remainingAmount, totalAmount - paidAmount) * 100) / 100);
@@ -110,7 +118,14 @@ export async function buildSaleInvoiceData(params: {
 
   return {
     kind,
-    title: isPurchase ? "فاتورة شراء" : isQuote ? "عرض سعر" : "فاتورة بيع",
+    // VAT on the invoice and a registered company: it is a tax invoice
+    title: isPurchase
+      ? "فاتورة شراء"
+      : isQuote
+        ? "عرض سعر"
+        : taxAmount > 0 && companyTaxNumber
+          ? "فاتورة ضريبية"
+          : "فاتورة بيع",
     receiptNumber:
       (isPurchase ? sale.invoiceNumber : isQuote ? sale.quoteNumber : sale.receiptNumber) ||
       `${isPurchase ? "PUR" : isQuote ? "QT" : "SALE"}-${sale.id ?? ""}`,
@@ -123,11 +138,14 @@ export async function buildSaleInvoiceData(params: {
     companyEmail: company?.email || company?.company?.email,
     companyTaxNumber,
     companyLogoUrl: company?.logoUrl || company?.company?.logoUrl,
+    commercialRegister: commercialRegister?.trim() || undefined,
 
     partyLabel: isPurchase ? "المورد" : "العميل",
     clientName: party?.name || sale.clientName || sale.supplierName || (isPurchase || isQuote ? "—" : "عميل نقدي"),
     clientPhone: party?.phone || undefined,
     clientEmail: party?.email || undefined,
+    clientAddress: party?.address || undefined,
+    clientBalance: !isPurchase && !isQuote && sale.clientBalance != null ? num(sale.clientBalance) : null,
 
     cashierName: sale.user?.fullname || cashier?.fullname || cashier?.name || cashier?.username,
     staffLabel: isPurchase ? "المستخدم" : isQuote ? "أعدّه" : "الكاشير",
@@ -144,6 +162,9 @@ export async function buildSaleInvoiceData(params: {
     signatureLabel: isPurchase ? "توقيع المورد" : isQuote ? "توقيع العميل بالموافقة" : "توقيع المستلم",
 
     items,
+    itemsCount: items.length,
+    totalQuantity: items.reduce((s, it) => s + it.quantity, 0),
+    showLineDiscount: items.some((it) => it.discount > 0),
 
     subtotal,
     discountAmount,
@@ -158,9 +179,26 @@ export async function buildSaleInvoiceData(params: {
     paymentStatus,
     paymentStatusLabel: PAYMENT_STATUS_LABELS[paymentStatus] || PAYMENT_STATUS_LABELS.PAID,
     paidAmount,
+    returnsAmount,
     remainingAmount,
+    payments: isQuote
+      ? []
+      : (sale.payments || []).map((p: any) => ({
+          dateLabel: plainDate(new Date(p.paymentDate || p.createdAt)),
+          methodLabel: PAYMENT_METHOD_LABELS[String(p.paymentMethod || "CASH").toUpperCase()] || "نقدًا",
+          amount: num(p.amount),
+        })),
 
     footerText: footerText?.trim() || undefined,
+    terms: terms?.trim() || undefined,
+    printedAtLabel: new Date().toLocaleString("ar-EG-u-nu-latn", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    }),
     qrValue,
     qrImageDataUrl,
   };

@@ -106,6 +106,35 @@ export const ReceiptsTab: React.FC = () => {
         </div>
       </Card>
 
+      {/* A4 invoice */}
+      <Card className="p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-1">فاتورة A4 وملف PDF</h3>
+        <p className="text-sm text-gray-500 mb-4">تظهر على فاتورة A4 وعروض الأسعار وملفات PDF فقط، وليس على الإيصال الحراري.</p>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">رقم السجل التجاري</label>
+            <Input
+              value={config.commercialRegister}
+              onChange={(e) => config.updateConfig({ commercialRegister: e.target.value })}
+              placeholder="مثال: 123456"
+              maxLength={60}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">الشروط والأحكام</label>
+            <textarea
+              value={config.invoiceTerms}
+              onChange={(e) => config.updateConfig({ invoiceTerms: e.target.value })}
+              rows={4}
+              maxLength={2000}
+              placeholder={"مثال:\n- البضاعة المباعة ترد أو تستبدل خلال 14 يومًا بحالتها الأصلية مع الفاتورة.\n- الأسعار شاملة ضريبة القيمة المضافة."}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+            <p className="text-xs text-gray-500 mt-1">كل سطر يظهر في سطر مستقل أسفل الفاتورة. اتركه فارغًا لإخفاء القسم.</p>
+          </div>
+        </div>
+      </Card>
+
       {/* Receipt Content */}
       <Card className="p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">محتوى الفاتورة</h3>

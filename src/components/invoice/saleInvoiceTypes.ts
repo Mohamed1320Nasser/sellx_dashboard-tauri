@@ -5,7 +5,15 @@ export interface SaleInvoiceLineItem {
   categoryName?: string;
   quantity: number;
   unitPrice: number;
+  /** line discount (quotes) */
+  discount: number;
   total: number;
+}
+
+export interface InvoicePaymentLine {
+  dateLabel: string;
+  methodLabel: string;
+  amount: number;
 }
 
 export type InvoiceKind = "sale" | "purchase" | "quote";
@@ -27,12 +35,17 @@ export interface SaleInvoiceData {
   companyEmail?: string;
   companyTaxNumber?: string;
   companyLogoUrl?: string;
+  /** السجل التجاري, from the print settings */
+  commercialRegister?: string;
 
   /** "العميل" for a sale, "المورد" for a purchase */
   partyLabel: string;
   clientName: string;
   clientPhone?: string;
   clientEmail?: string;
+  clientAddress?: string;
+  /** What the customer owes across all invoices today; null when unknown or no named customer */
+  clientBalance: number | null;
 
   cashierName?: string;
   /** "الكاشير" / "المستخدم" / "أعدّه" */
@@ -48,6 +61,10 @@ export interface SaleInvoiceData {
   signatureLabel: string;
 
   items: SaleInvoiceLineItem[];
+  itemsCount: number;
+  totalQuantity: number;
+  /** a discount column only when some line has one */
+  showLineDiscount: boolean;
 
   subtotal: number;
   discountAmount: number;
@@ -63,9 +80,16 @@ export interface SaleInvoiceData {
   paymentStatus: InvoiceStatus;
   paymentStatusLabel: string;
   paidAmount: number;
+  /** credit from completed returns against this invoice */
+  returnsAmount: number;
   remainingAmount: number;
+  /** payments made after the invoice (the money at the till is part of paidAmount) */
+  payments: InvoicePaymentLine[];
 
   footerText?: string;
+  /** Terms and conditions, from the print settings */
+  terms?: string;
+  printedAtLabel: string;
   /** Empty when the QR code is turned off in the print settings */
   qrValue: string;
   qrImageDataUrl: string;

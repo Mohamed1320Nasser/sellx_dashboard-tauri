@@ -53,6 +53,9 @@ interface PrinterConfig {
   // Text
   headerText: string;
   footerText: string;
+  /** A4 invoice: terms and conditions, and the commercial register number */
+  invoiceTerms: string;
+  commercialRegister: string;
 
   // Automation
   autoPrintOnPayment: boolean;
@@ -122,6 +125,8 @@ const DEFAULT_CONFIG: PrinterConfig = {
   // Text
   headerText: '',
   footerText: 'شكراً لزيارتكم',
+  invoiceTerms: '',
+  commercialRegister: '',
 
   // Automation
   autoPrintOnPayment: false,
@@ -201,6 +206,8 @@ export const usePrinterConfigStore = create<PrinterConfigStore>((set, get) => ({
           showQrCode: config.showQrCode ?? config.showQRCode ?? false,
           headerText: config.headerText || '',
           footerText: config.footerText || 'شكراً لزيارتكم',
+          invoiceTerms: config.invoiceTerms || '',
+          commercialRegister: config.commercialRegister || '',
           autoPrintOnPayment: config.autoPrintOnPayment ?? false,
           autoCut: config.autoCut ?? config.cutPaper ?? true,
           printCopies: config.printCopies || 1,
@@ -260,6 +267,8 @@ export const usePrinterConfigStore = create<PrinterConfigStore>((set, get) => ({
         showQRCode: state.showQrCode,
         headerText: state.headerText,
         footerText: state.footerText,
+        invoiceTerms: state.invoiceTerms,
+        commercialRegister: state.commercialRegister,
         autoPrintOnPayment: state.autoPrintOnPayment,
         cutPaper: state.autoCut,
         printCopies: state.printCopies,

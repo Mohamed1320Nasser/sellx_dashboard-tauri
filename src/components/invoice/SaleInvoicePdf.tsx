@@ -279,6 +279,54 @@ const styles = StyleSheet.create({
     textAlign: "right",
     backgroundColor: COLOR.rowAlt,
   },
+  colDisc: { width: 60, textAlign: "center" },
+  discText: { fontSize: 9, fontWeight: "bold", textAlign: "center", color: COLOR.red },
+  itemsFoot: {
+    flexDirection: "row-reverse",
+    gap: 14,
+    borderTopWidth: 1.5,
+    borderTopColor: COLOR.header,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+  },
+  itemsFootText: { fontSize: 8.5, color: COLOR.inkSoft },
+  box: {
+    borderWidth: 1,
+    borderColor: COLOR.line,
+    borderRadius: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginTop: 8,
+  },
+  boxTitle: { fontSize: 7.5, color: COLOR.inkFaint, fontWeight: "bold", marginBottom: 3, textAlign: "right" },
+  balanceBox: {
+    flexDirection: "row-reverse",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "#fff7ed",
+    borderColor: "#fed7aa",
+  },
+  balanceLabel: { fontSize: 8.5, color: COLOR.ink },
+  balanceValue: { fontSize: 10, fontWeight: "bold", color: "#9a3412" },
+  payRow: { flexDirection: "row-reverse", justifyContent: "space-between", paddingVertical: 1.5 },
+  payText: { fontSize: 8.5, color: COLOR.inkSoft },
+  clearRow: {
+    flexDirection: "row-reverse",
+    justifyContent: "space-between",
+    backgroundColor: COLOR.badgePaidBg,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  clearText: { color: COLOR.badgePaidInk, fontSize: 9.5, fontWeight: "bold" },
+  terms: {
+    marginHorizontal: 32,
+    marginTop: 16,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: COLOR.line,
+  },
+  termsTitle: { fontSize: 9, fontWeight: "bold", marginBottom: 3, textAlign: "right" },
+  termsBody: { fontSize: 8.5, color: COLOR.inkSoft, lineHeight: 1.6, textAlign: "right" },
   notes: { fontSize: 8.5, color: COLOR.inkSoft, marginTop: 8, textAlign: "right", lineHeight: 1.5 },
 
   signatures: {
@@ -377,6 +425,12 @@ export const SaleInvoicePdf: React.FC<{ data: SaleInvoiceData }> = ({ data }) =>
                   <Text style={styles.taxLineRowText}>{data.companyTaxNumber}</Text>
                 </View>
               ) : null}
+              {data.commercialRegister ? (
+                <View style={[styles.brandLineRow, { marginBottom: 0, marginTop: 3 }]}>
+                  <Text style={styles.taxLineRowText}>السجل التجاري:</Text>
+                  <Text style={styles.taxLineRowText}>{data.commercialRegister}</Text>
+                </View>
+              ) : null}
             </View>
           </View>
           <View style={styles.docMeta}>
@@ -399,6 +453,7 @@ export const SaleInvoicePdf: React.FC<{ data: SaleInvoiceData }> = ({ data }) =>
             ) : (
               <Text style={styles.infoSub}> </Text>
             )}
+            {data.clientAddress ? <Text style={styles.infoSub}>{data.clientAddress}</Text> : null}
           </View>
           <View style={styles.infoCell}>
             <Text style={styles.infoLabel}>{data.middleLabel}</Text>
@@ -418,6 +473,7 @@ export const SaleInvoicePdf: React.FC<{ data: SaleInvoiceData }> = ({ data }) =>
             <Text style={[styles.th, styles.colName]}>المنتج</Text>
             <Text style={[styles.th, styles.colQty]}>الكمية</Text>
             <Text style={[styles.th, styles.colPrice]}>سعر الوحدة</Text>
+            {data.showLineDiscount ? <Text style={[styles.th, styles.colDisc]}>الخصم</Text> : null}
             <Text style={[styles.th, styles.colTotal]}>الإجمالي</Text>
           </View>
           {data.items.map((item, i) => (
@@ -444,17 +500,49 @@ export const SaleInvoicePdf: React.FC<{ data: SaleInvoiceData }> = ({ data }) =>
               <View style={[styles.td, styles.colPrice]}>
                 <Text style={styles.numText}>{formatAmount(item.unitPrice)}</Text>
               </View>
+              {data.showLineDiscount ? (
+                <View style={[styles.td, styles.colDisc]}>
+                  <Text style={styles.discText}>{item.discount > 0 ? formatAmount(item.discount) : "—"}</Text>
+                </View>
+              ) : null}
               <View style={[styles.td, styles.colTotal]}>
                 <Text style={styles.numText}>{formatAmount(item.total)}</Text>
               </View>
             </View>
           ))}
+          <View style={styles.itemsFoot} wrap={false}>
+            <Text style={styles.itemsFootText}>عدد الأصناف: {data.itemsCount}</Text>
+            <Text style={styles.itemsFootText}>إجمالي الكميات: {data.totalQuantity}</Text>
+          </View>
         </View>
 
         {/* Totals + QR */}
         <View style={styles.totalsWrap} wrap={false}>
           <View style={styles.leftCol}>
             <Text style={styles.words}>{data.totalInWords}</Text>
+            {data.clientBalance !== null && Math.abs(data.clientBalance) >= 0.01 ? (
+              <View style={[styles.box, styles.balanceBox]}>
+                <Text style={styles.balanceLabel}>
+                  {data.clientBalance > 0 ? "إجمالي المستحق على العميل" : "رصيد دائن للعميل"} حتى {data.printedAtLabel}
+                </Text>
+                <Text style={styles.balanceValue}>{money(Math.abs(data.clientBalance))}</Text>
+              </View>
+            ) : null}
+            {data.payments.length ? (
+              <View style={styles.box}>
+                <Text style={styles.boxTitle}>دفعات لاحقة على الفاتورة</Text>
+                {data.payments.map((p, i) => (
+                  <View key={i} style={styles.payRow}>
+                    {/* date and method as separate pieces: mixed in one line the PDF breaks the date apart */}
+                    <View style={{ flexDirection: "row-reverse", gap: 6 }}>
+                      <Text style={styles.payText}>{p.methodLabel}</Text>
+                      <Text style={styles.payText}>{p.dateLabel}</Text>
+                    </View>
+                    <Text style={styles.payText}>{money(p.amount)}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
             {data.notes ? <Text style={styles.notes}>ملاحظات: {data.notes}</Text> : null}
             {data.qrImageDataUrl ? (
               <View style={[styles.qrSlot, { marginTop: 8 }]}>
@@ -478,7 +566,7 @@ export const SaleInvoicePdf: React.FC<{ data: SaleInvoiceData }> = ({ data }) =>
             {hasTax ? (
               <View style={styles.tRow}>
                 <Text style={[styles.tRowLabel, styles.taxValue]}>
-                  الضريبة{data.taxRate ? ` (${data.taxRate}%)` : ""}
+                  ضريبة القيمة المضافة{data.taxRate ? ` (${data.taxRate}%)` : ""}
                 </Text>
                 <Text style={[styles.tRowValue, styles.taxValue]}>{money(data.taxAmount)}</Text>
               </View>
@@ -490,23 +578,53 @@ export const SaleInvoicePdf: React.FC<{ data: SaleInvoiceData }> = ({ data }) =>
               </View>
             ) : null}
             <View style={styles.grandRow}>
-              <Text style={styles.grandLabel}>الإجمالي</Text>
+              <Text style={styles.grandLabel}>{data.kind === "quote" ? "إجمالي العرض" : "الإجمالي"}</Text>
               <Text style={styles.grandValue}>{money(data.totalAmount)}</Text>
             </View>
-            {isPartial ? (
+            {data.kind !== "quote" ? (
               <>
                 <View style={styles.tRow}>
                   <Text style={styles.tRowLabel}>المدفوع</Text>
                   <Text style={styles.tRowValue}>{money(data.paidAmount)}</Text>
                 </View>
-                <View style={styles.dueRow}>
-                  <Text style={styles.dueText}>المتبقي</Text>
-                  <Text style={styles.dueText}>{money(data.remainingAmount)}</Text>
-                </View>
+                {data.returnsAmount > 0 ? (
+                  <View style={styles.tRow}>
+                    <Text style={[styles.tRowLabel, styles.discountValue]}>مرتجعات</Text>
+                    <Text style={[styles.tRowValue, styles.discountValue]}>{money(data.returnsAmount, true)}</Text>
+                  </View>
+                ) : null}
+                {isPartial ? (
+                  <View style={styles.dueRow}>
+                    <Text style={styles.dueText}>المتبقي</Text>
+                    <Text style={styles.dueText}>{money(data.remainingAmount)}</Text>
+                  </View>
+                ) : (
+                  <View style={styles.clearRow}>
+                    <Text style={styles.clearText}>المتبقي</Text>
+                    <Text style={styles.clearText}>{money(0)}</Text>
+                  </View>
+                )}
               </>
             ) : null}
           </View>
         </View>
+
+        {data.terms ? (
+          <View style={styles.terms} wrap={false}>
+            <Text style={styles.termsTitle}>الشروط والأحكام</Text>
+            {data.terms.split("\n").map((line, i) => {
+              // a leading "-" or "•" would end up at the wrong end of the line: draw the bullet apart
+              const bullet = /^\s*[-•*]\s*/.test(line);
+              const text = line.replace(/^\s*[-•*]\s*/, "");
+              return (
+                <View key={i} style={{ flexDirection: "row-reverse", gap: 4 }}>
+                  {bullet ? <Text style={styles.termsBody}>•</Text> : null}
+                  <Text style={[styles.termsBody, { flex: 1 }]}>{text || " "}</Text>
+                </View>
+              );
+            })}
+          </View>
+        ) : null}
 
         {/* Signatures */}
         <View style={styles.signatures} wrap={false}>
@@ -524,7 +642,7 @@ export const SaleInvoicePdf: React.FC<{ data: SaleInvoiceData }> = ({ data }) =>
               style={styles.footPage}
               render={({ pageNumber, totalPages }) => `صفحة ${pageNumber} من ${totalPages}`}
             />
-            <Text style={styles.footBrand}>Powered by SellX</Text>
+            <Text style={styles.footBrand}>طُبعت في {data.printedAtLabel} · Powered by SellX</Text>
           </View>
         </View>
       </Page>
