@@ -27,7 +27,15 @@ export interface StocktakeItem {
   countedAt: string | null;
   difference: number | null;
   differenceValue: number | null;
-  product: { id: string; name: string; sku: string; stockQuantity: number; category?: { id: string; name: string } };
+  product: {
+    id: string;
+    name: string;
+    sku: string;
+    stockQuantity: number;
+    unit?: string | null;
+    allowDecimalQty?: boolean;
+    category?: { id: string; name: string };
+  };
   countedBy?: { id: number; fullname: string } | null;
 }
 

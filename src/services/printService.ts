@@ -83,6 +83,8 @@ export interface SellxReceiptData {
 export interface ReceiptItem {
   productName: string;
   quantity: number;
+  /** Unit label for weighed / measured goods ("كجم"); empty = piece */
+  unit?: string | null;
   unitPrice: number;
   total?: number;
   variantName?: string;

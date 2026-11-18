@@ -5,12 +5,16 @@ import { z } from 'zod';
 import { Button, Input, Select } from '../ui';
 import { useProducts } from '../../hooks/api/useProducts';
 import type { StockMovement } from '../../types/business';
+import { formatQty, parseQty, subQty, unitOf } from '../../utils/quantity';
 
 // Form validation schema
 const stockMovementSchema = z.object({
   productId: z.string().min(1, 'يرجى اختيار منتج'),
   direction: z.enum(['IN', 'OUT'], { message: 'اختر إضافة أو خصم' }),
-  quantity: z.number().int('الكمية يجب أن تكون رقماً صحيحاً').min(1, 'الكمية يجب أن تكون أكبر من 0'),
+  quantity: z
+    .number({ message: 'أدخل الكمية' })
+    .positive('الكمية يجب أن تكون أكبر من 0')
+    .refine(q => Math.abs(q * 1000 - Math.round(q * 1000)) < 1e-6, '3 أرقام عشرية بحد أقصى'),
   reason: z.string().optional(),
   reference: z.string().optional(),
 });
@@ -59,6 +63,8 @@ const StockMovementForm: React.FC<StockMovementFormProps> = ({
   const products = (productsData as any)?.data?.list || [];
   const selectedProductId = watch('productId');
   const selectedProduct = products.find(p => p.id === selectedProductId);
+  const unit = unitOf(selectedProduct) || 'وحدة';
+  const afterOut = subQty(selectedProduct?.stockQuantity, Number(watch('quantity')) || 0);
 
 
   // Reset form when stockMovement changes
@@ -81,7 +87,7 @@ const StockMovementForm: React.FC<StockMovementFormProps> = ({
         placeholder="اختر منتج"
         options={products.map((product) => ({
           value: String(product.id), // Ensure ID is string
-          label: `${product.name} (${product.sku}) - المخزون الحالي: ${product.stockQuantity}`,
+          label: `${product.name} (${product.sku}) - المخزون الحالي: ${formatQty(product.stockQuantity, unitOf(product))}`,
         }))}
         value={watch('productId')}
         onChange={(value) => setValue('productId', value)}
@@ -103,8 +109,9 @@ const StockMovementForm: React.FC<StockMovementFormProps> = ({
               <h3 className="text-sm font-medium text-blue-800">المخزون الحالي</h3>
               <div className="mt-2 text-sm text-blue-700">
                 <p><strong>المنتج:</strong> {selectedProduct.name}</p>
-                <p><strong>الكمية المتاحة:</strong> {selectedProduct.stockQuantity} وحدة</p>
-                <p><strong>الحد الأدنى:</strong> {selectedProduct.minStockLevel} وحدة</p>
+                <p><strong>الكمية المتاحة:</strong> {formatQty(selectedProduct.stockQuantity)} {unit}</p>
+                <p><strong>الحد الأدنى:</strong> {formatQty(selectedProduct.minStockLevel)} {unit}</p>
+                {selectedProduct.allowDecimalQty && <p className="text-xs">يقبل كسوراً (مثل 0.5)</p>}
               </div>
             </div>
           </div>
@@ -143,19 +150,27 @@ const StockMovementForm: React.FC<StockMovementFormProps> = ({
           الكمية <span className="text-red-500">*</span>
         </label>
         <Input
-          type="number"
-          {...register('quantity', { valueAsNumber: true })}
-          placeholder="أدخل الكمية"
+          type="text"
+          inputMode={selectedProduct?.allowDecimalQty ? 'decimal' : 'numeric'}
+          {...register('quantity', {
+            setValueAs: (v: unknown) => {
+              const q = parseQty(String(v ?? ''), selectedProduct ?? { allowDecimalQty: true });
+              return q === null ? NaN : q;
+            },
+          })}
+          placeholder={selectedProduct?.allowDecimalQty ? `أدخل الكمية (${unit})` : 'أدخل الكمية'}
           disabled={loading}
-          min="1"
         />
+        {selectedProduct && !selectedProduct.allowDecimalQty && Number.isNaN(Number(watch('quantity'))) && (
+          <p className="mt-1 text-xs text-gray-500">هذا المنتج يباع بالقطعة: أرقام صحيحة فقط</p>
+        )}
         {errors.quantity && (
           <p className="mt-1 text-sm text-red-600">{errors.quantity.message}</p>
         )}
         {watch('direction') === 'OUT' && selectedProduct && (
-          <p className={`mt-1 text-sm ${selectedProduct.stockQuantity - (Number(watch('quantity')) || 0) < 0 ? 'text-red-600' : 'text-gray-500'}`}>
-            المخزون بعد الخصم: {selectedProduct.stockQuantity - (Number(watch('quantity')) || 0)}
-            {selectedProduct.stockQuantity - (Number(watch('quantity')) || 0) < 0 && ' — الكمية أكبر من المتاح'}
+          <p className={`mt-1 text-sm ${afterOut < 0 ? 'text-red-600' : 'text-gray-500'}`}>
+            المخزون بعد الخصم: {formatQty(afterOut, unitOf(selectedProduct))}
+            {afterOut < 0 && ' — الكمية أكبر من المتاح'}
           </p>
         )}
       </div>

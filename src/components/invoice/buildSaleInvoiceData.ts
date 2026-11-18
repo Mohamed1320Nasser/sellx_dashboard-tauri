@@ -1,6 +1,7 @@
 import QRCode from "qrcode";
 import type { InvoiceKind, InvoiceStatus, PillTone, SaleInvoiceData, SaleInvoiceLineItem } from "./saleInvoiceTypes";
 import { amountInWords } from "../../utils/amountInWords";
+import { qtyTimes, sumQty } from '../../utils/quantity';
 
 const PAYMENT_METHOD_LABELS: Record<string, string> = {
   CASH: "نقدًا",
@@ -66,8 +67,9 @@ export async function buildSaleInvoiceData(params: {
       sku: item.product?.sku || item.sku || undefined,
       categoryName: item.product?.category?.name || undefined,
       quantity,
+      unit: (item.product?.unit || item.unit || "").trim() || undefined,
       unitPrice,
-      total: num(item.totalPrice ?? item.lineTotal ?? item.total, quantity * unitPrice),
+      total: num(item.totalPrice ?? item.lineTotal ?? item.total, qtyTimes(quantity, unitPrice)),
     };
   });
 
@@ -163,7 +165,9 @@ export async function buildSaleInvoiceData(params: {
 
     items,
     itemsCount: items.length,
-    totalQuantity: items.reduce((s, it) => s + it.quantity, 0),
+    totalQuantity: new Set(items.map((it) => it.unit || "")).size > 1 || items.some((it) => it.unit)
+      ? null
+      : sumQty(items.map((it) => it.quantity)),
     showLineDiscount: items.some((it) => it.discount > 0),
 
     subtotal,

@@ -165,7 +165,7 @@ tfoot td { padding: 7px 8px; font-size: 11px; color: #475569; border-top: 2px so
         <td class="c-name"><div style="font-weight:700">${esc(it.productName)}</div>${
             it.sku ? `<div class="sku"><span class="num">${esc(it.sku)}</span>${it.categoryName ? ` · ${esc(it.categoryName)}` : ""}</div>` : ""
           }</td>
-        <td class="c-num num">${qty(it.quantity)}</td>
+        <td class="c-num num">${qty(it.quantity)}${it.unit ? `<div class="sku">${esc(it.unit)}</div>` : ""}</td>
         <td class="c-num num">${amount(it.unitPrice)}</td>
         ${d.showLineDiscount ? `<td class="c-num num t-red">${it.discount > 0 ? amount(it.discount) : "—"}</td>` : ""}
         <td class="c-total num">${amount(it.total)}</td>
@@ -174,7 +174,9 @@ tfoot td { padding: 7px 8px; font-size: 11px; color: #475569; border-top: 2px so
         .join("")}
     </tbody>
     <tfoot>
-      <tr><td colspan="${cols}">عدد الأصناف: <b class="num">${d.itemsCount}</b> &nbsp;·&nbsp; إجمالي الكميات: <b class="num">${qty(d.totalQuantity)}</b></td></tr>
+      <tr><td colspan="${cols}">عدد الأصناف: <b class="num">${d.itemsCount}</b>${
+        d.totalQuantity === null ? "" : ` &nbsp;·&nbsp; إجمالي الكميات: <b class="num">${qty(d.totalQuantity)}</b>`
+      }</td></tr>
     </tfoot>
   </table>
 

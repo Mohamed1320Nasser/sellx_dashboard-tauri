@@ -146,6 +146,10 @@ export interface Product {
   stockQuantity: number;
   currentStock: number; // Add currentStock for sales
   minStockLevel: number;
+  /** Unit label next to quantities (e.g. "كجم"); empty = piece */
+  unit?: string | null;
+  /** Sold by weight / length: quantities may have up to 3 decimals */
+  allowDecimalQty?: boolean;
   categoryId: string;
   companyId: number;
   createdAt: string;

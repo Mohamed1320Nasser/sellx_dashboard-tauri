@@ -30,6 +30,7 @@ import { formatCurrency, formatNumber } from "../utils/currencyUtils";
 import { downloadQuotePdf, printQuoteA4, printQuoteThermal } from "../services/quotePrintService";
 import toast from "react-hot-toast";
 import type { Quote } from "../types";
+import { formatQty, unitOf } from '../utils/quantity';
 
 const QuoteView: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -524,7 +525,7 @@ const QuoteView: React.FC = () => {
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                             {formatCurrency(item.unitPrice)} {quote.currency}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatNumber(item.quantity)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatQty(item.quantity, unitOf(item.product))}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                             {item.lineDiscount > 0 ? (
                               <span className="text-green-600">

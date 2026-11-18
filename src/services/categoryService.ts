@@ -51,6 +51,7 @@ export interface CategoryReportProduct {
   purchasePrice: number;
   sellingPrice: number;
   stockQuantity: number;
+  unit?: string | null;
   minStockLevel: number;
   stockValue: number;
   retailValue: number;

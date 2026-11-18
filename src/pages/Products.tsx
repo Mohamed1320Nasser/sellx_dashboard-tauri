@@ -20,6 +20,7 @@ import { printBarcode } from "../services/smartPrintService";
 import { ensurePrinterMode } from "../services/printerModeService";
 import { PrintBarcodeModal } from "../components/modals/PrintBarcodeModal";
 import toast from 'react-hot-toast';
+import { formatQty } from "../utils/quantity";
 
 const Products: React.FC = () => {
   const navigate = useNavigate();
@@ -117,8 +118,9 @@ const Products: React.FC = () => {
                 isLow ? "text-warning-600" : isMedium ? "text-warning-500" : "text-success-600"
               }`}
             >
-              {stock}
+              {formatQty(stock)}
             </span>
+            {product.unit && <span className="text-xs text-gray-500">{product.unit}</span>}
             {isLow && (
               <Badge variant="warning" dot>
                 <AlertTriangle className="w-3 h-3 ml-1 inline" />

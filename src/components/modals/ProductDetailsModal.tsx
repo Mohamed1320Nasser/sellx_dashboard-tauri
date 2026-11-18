@@ -4,6 +4,7 @@ import { Modal } from '../ui';
 import { formatCurrency, formatNumber } from '../../utils/currencyUtils';
 import { formatTableDate } from '../../utils/dateUtils';
 import type { Product } from '../../types';
+import { formatQty, unitOf } from '../../utils/quantity';
 
 interface ProductDetailsModalProps {
   isOpen: boolean;
@@ -140,7 +141,7 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({
                   المخزون الحالي
                 </span>
                 <span className={`font-medium ${stockStatusColor}`}>
-                  {formatNumber(product.stockQuantity)}
+                  {formatQty(product.stockQuantity, unitOf(product))}
                 </span>
               </div>
 
@@ -150,7 +151,7 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({
                   الحد الأدنى للمخزون
                 </span>
                 <span className="font-medium text-gray-900">
-                  {formatNumber(product.minStockLevel || 0)}
+                  {formatQty(product.minStockLevel || 0, unitOf(product))}
                 </span>
               </div>
             </div>

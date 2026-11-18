@@ -13,6 +13,8 @@ import { z } from "zod";
 import toast from "react-hot-toast";
 import { useQuery } from "@tanstack/react-query";
 import { saleService } from "../services/saleService";
+import QtyInput from '../components/ui/QtyInput';
+import { addQty, allowsDecimal, cartCountLabel, formatQty, qtyTimes, subQty, sumQty, toQty, unitOf } from '../utils/quantity';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -32,6 +34,8 @@ interface ReturnItem {
   unitPrice: number;
   total: number;
   reason?: string;
+  allowDecimalQty?: boolean;
+  unit?: string | null;
 }
 
 const ReturnsCreate: React.FC = () => {
@@ -73,15 +77,15 @@ const ReturnsCreate: React.FC = () => {
 
   const saleLines = (productId: any) =>
     (selectedSale?.items || []).filter((item: any) => item.product.id === productId);
-  const soldQtyOf = (productId: any) => saleLines(productId).reduce((s: number, l: any) => s + l.quantity, 0);
+  const soldQtyOf = (productId: any) => sumQty(saleLines(productId).map((l: any) => l.quantity));
   const unitPriceOf = (productId: any) => {
     const lines = saleLines(productId);
-    const qty = lines.reduce((s: number, l: any) => s + l.quantity, 0);
-    const value = lines.reduce((s: number, l: any) => s + l.quantity * Number(l.unitPrice), 0);
+    const qty = sumQty(lines.map((l: any) => l.quantity));
+    const value = lines.reduce((s: number, l: any) => s + toQty(l.quantity) * Number(l.unitPrice), 0);
     return qty ? round2((value / qty) * priceFactor) : 0;
   };
   const maxQtyOf = (productId: any) =>
-    Math.max(0, soldQtyOf(productId) - (saleDetails?.returnedQuantities?.[productId] || 0));
+    Math.max(0, subQty(soldQtyOf(productId), saleDetails?.returnedQuantities?.[productId] || 0));
 
   // Mutations
   const createReturnMutation = useCreateReturn();
@@ -111,23 +115,28 @@ const ReturnsCreate: React.FC = () => {
 
     if (existingItem) {
       // Check if we can increment the quantity
-      if (existingItem.quantity >= maxQuantity) {
-        return; // Can't add more than the original sale quantity
+      if (existingItem.quantity >= maxQuantity || existingItem.allowDecimalQty) {
+        return; // Can't add more than the original sale quantity; weighed goods are typed
       }
-      
-      newItems = items.map(item => 
-        item.productId === product.id 
-          ? { ...item, quantity: item.quantity + 1, total: (item.quantity + 1) * item.unitPrice }
+      const next = Math.min(maxQuantity, addQty(existingItem.quantity, 1));
+      newItems = items.map(item =>
+        item.productId === product.id
+          ? { ...item, quantity: next, total: qtyTimes(next, item.unitPrice) }
           : item
       );
     } else {
       const price = unitPriceOf(product.id);
+      const weighed = allowsDecimal(product);
+      // Weighed goods start with all that is left to return; the cashier can type less
+      const quantity = weighed ? maxQuantity : 1;
       newItems = [...items, {
         productId: product.id,
         productName: product.name,
-        quantity: 1,
+        quantity,
         unitPrice: price,
-        total: price,
+        total: qtyTimes(quantity, price),
+        allowDecimalQty: weighed,
+        unit: unitOf(product) || null,
       }];
     }
     
@@ -155,7 +164,7 @@ const ReturnsCreate: React.FC = () => {
     
     const newItems = items.map(item =>
       item.productId === productId
-        ? { ...item, quantity, total: quantity * item.unitPrice }
+        ? { ...item, quantity, total: qtyTimes(quantity, item.unitPrice) }
         : item
     );
     
@@ -236,8 +245,10 @@ const ReturnsCreate: React.FC = () => {
           productName: line.product.name,
           quantity,
           unitPrice: price,
-          total: round2(price * quantity),
+          total: qtyTimes(quantity, price),
           reason: "إرجاع كامل للفاتورة",
+          allowDecimalQty: allowsDecimal(line.product),
+          unit: unitOf(line.product) || null,
         };
       })
       .filter((item: any) => item.quantity > 0);
@@ -286,7 +297,7 @@ const ReturnsCreate: React.FC = () => {
   // Product options for display
   const productOptions = filteredProducts.map((item: any) => ({
     value: item.product.id,
-    label: `${item.product.name} - ${formatCurrency(unitPriceOf(item.product.id))} (باع: ${formatNumber(item.quantity)})`,
+    label: `${item.product.name} - ${formatCurrency(unitPriceOf(item.product.id))} (باع: ${formatQty(item.quantity, unitOf(item.product))})`,
     product: item.product,
   }));
 
@@ -451,7 +462,7 @@ const ReturnsCreate: React.FC = () => {
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">عدد المنتجات</span>
                     <span className="font-medium">
-                      {items.reduce((sum, item) => sum + item.quantity, 0)}
+                      {cartCountLabel(items)}
                     </span>
                   </div>
 
@@ -462,7 +473,7 @@ const ReturnsCreate: React.FC = () => {
                         {items.map((item) => (
                           <div key={item.productId} className="flex justify-between text-xs">
                             <span className="text-gray-600 truncate">{item.productName}</span>
-                            <span className="text-gray-900 font-medium">{item.quantity}</span>
+                            <span className="text-gray-900 font-medium">{formatQty(item.quantity, item.unit)}</span>
                           </div>
                         ))}
                       </div>
@@ -577,7 +588,7 @@ const ReturnsCreate: React.FC = () => {
                                   {formatCurrency(unitPriceOf(option.product.id))}
                                 </span>
                                 <span className="text-xs text-gray-500">
-                                  باع: {formatNumber(soldQtyOf(option.product.id))} — متاح للإرجاع: {formatNumber(maxQuantity)}
+                                  باع: {formatQty(soldQtyOf(option.product.id), unitOf(option.product))} — متاح للإرجاع: {formatQty(maxQuantity, unitOf(option.product))}
                                 </span>
                               </div>
                               {isSelected && selectedQuantity >= maxQuantity && (
@@ -592,7 +603,7 @@ const ReturnsCreate: React.FC = () => {
                             <div className="mt-3 pt-3 border-t border-gray-200">
                               <div className="flex items-center justify-between">
                                 <span className="text-xs text-gray-600">
-                                  الكمية المختارة: {selectedQuantity}/{maxQuantity}
+                                  الكمية المختارة: {formatQty(selectedQuantity)}/{formatQty(maxQuantity, unitOf(option.product))}
                                 </span>
                                 <div className="flex items-center space-x-2 space-x-reverse">
                                   <Button
@@ -607,8 +618,15 @@ const ReturnsCreate: React.FC = () => {
                                   >
                                     <Minus className="w-3 h-3" />
                                   </Button>
-                                  <span className="text-sm font-medium w-6 text-center">
-                                    {selectedQuantity}
+                                  <span onClick={(e) => e.stopPropagation()}>
+                                    <QtyInput
+                                      product={option.product}
+                                      value={selectedQuantity}
+                                      onChange={(q) => updateQuantity(option.product.id, q)}
+                                      onInvalid={(m) => toast.error(m)}
+                                      aria-label={`كمية ${option.product.name}`}
+                                      className={`${allowsDecimal(option.product) ? "w-16" : "w-10"} rounded border border-gray-200 px-1 text-center text-sm font-medium`}
+                                    />
                                   </span>
                                   <Button
                                     type="button"

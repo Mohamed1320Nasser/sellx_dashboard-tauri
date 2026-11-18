@@ -11,6 +11,7 @@ import {
 import { formatNumber, formatCurrency } from "../../utils/currencyUtils";
 import { DashboardSummary as DashboardSummaryType } from "../../types/business";
 import { StatisticsCard } from "../ui";
+import { formatQty, unitOf } from '../../utils/quantity';
 
 interface DashboardSummaryProps {
   data: DashboardSummaryType;
@@ -210,8 +211,8 @@ const DashboardSummary: React.FC<DashboardSummaryProps> = ({
                     </div>
                   </div>
                   <div className="text-left">
-                    <p className="font-medium text-red-600">{formatNumber(product.stockQuantity)}</p>
-                    <p className="text-sm text-gray-500">من {formatNumber(product.minStockLevel)}</p>
+                    <p className="font-medium text-red-600">{formatQty(product.stockQuantity, unitOf(product))}</p>
+                    <p className="text-sm text-gray-500">من {formatQty(product.minStockLevel)}</p>
                   </div>
                 </div>
               ))

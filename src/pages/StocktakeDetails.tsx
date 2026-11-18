@@ -11,6 +11,7 @@ import { formatCurrency, formatNumber } from "../utils/currencyUtils";
 import { formatDateTime } from "../utils/dateUtils";
 import { handleApiError } from "../utils/errorHandler";
 import { STOCKTAKE_STATUS } from "./Stocktakes";
+import { formatQty, normalizeDigits, parseQty, toQty, unitOf } from "../utils/quantity";
 
 /** Rows drawn at once; search narrows a big count */
 const MAX_ROWS = 400;
@@ -53,7 +54,7 @@ const DiffBadge: React.FC<{ value: number | null }> = ({ value }) => {
   if (value === 0) return <span className="text-gray-600">مطابق</span>;
   return (
     <span className={`font-semibold ${value < 0 ? "text-red-600" : "text-green-700"}`} dir="ltr">
-      {value > 0 ? `+${formatNumber(value)}` : formatNumber(value)}
+      {value > 0 ? `+${formatQty(value)}` : formatQty(value)}
     </span>
   );
 };
@@ -64,20 +65,22 @@ const CountCell: React.FC<{ item: StocktakeItem; disabled: boolean; onSave: (ite
   disabled,
   onSave,
 }) => {
-  const [value, setValue] = useState(item.countedQty === null ? "" : String(item.countedQty));
-  useEffect(() => setValue(item.countedQty === null ? "" : String(item.countedQty)), [item.countedQty]);
+  const shown = item.countedQty === null ? "" : formatQty(item.countedQty);
+  const [value, setValue] = useState(shown);
+  useEffect(() => setValue(shown), [shown]);
   const commit = () => {
-    const current = item.countedQty === null ? "" : String(item.countedQty);
-    if (value.trim() !== current) onSave(item, value.trim());
+    const typed = normalizeDigits(value);
+    if (typed === shown || (typed !== "" && shown !== "" && toQty(typed) === toQty(item.countedQty))) return;
+    onSave(item, typed);
   };
   return (
     <input
-      type="number"
-      min={0}
-      inputMode="numeric"
+      type="text"
+      inputMode={item.product.allowDecimalQty ? "decimal" : "numeric"}
       value={value}
       disabled={disabled}
-      onChange={(e) => setValue(e.target.value)}
+      aria-label={`المعدود من ${item.product.name}`}
+      onChange={(e) => setValue(normalizeDigits(e.target.value))}
       onBlur={commit}
       onKeyDown={(e) => {
         if (e.key === "Enter") (e.target as HTMLInputElement).blur();
@@ -112,6 +115,8 @@ const StocktakeDetails: React.FC = () => {
   const items: StocktakeItem[] = stocktake?.items || [];
   const open = stocktake?.status === "IN_PROGRESS";
   const summary = stocktake?.summary;
+  // "قطعة" only when nothing in the count is weighed
+  const qtyWord = items.some((i) => i.product.allowDecimalQty) ? "وحدة" : "قطعة";
 
   useEffect(() => {
     if (open) scanRef.current?.focus();
@@ -121,12 +126,12 @@ const StocktakeDetails: React.FC = () => {
     e.preventDefault();
     const code = barcode.trim();
     if (!code) return;
-    const quantity = Number(scanQty) || 1;
+    const quantity = toQty(normalizeDigits(scanQty)) || 1;
     setBarcode("");
     try {
       const res = await countMutation.mutateAsync({ companyId, barcode: code, mode: "add", quantity });
       const item: StocktakeItem = res.data;
-      setLastScan({ ok: true, text: `${item.product.name}: المعدود ${formatNumber(item.countedQty ?? 0)}`, item });
+      setLastScan({ ok: true, text: `${item.product.name}: المعدود ${formatQty(item.countedQty ?? 0, unitOf(item.product))}`, item });
     } catch (error) {
       const message = handleApiError(error);
       setLastScan({ ok: false, text: message });
@@ -141,9 +146,13 @@ const StocktakeDetails: React.FC = () => {
       if (value === "") {
         await countMutation.mutateAsync({ companyId, productId: item.productId, mode: "clear" });
       } else {
-        const quantity = Number(value);
-        if (!Number.isInteger(quantity) || quantity < 0) {
-          toast.error("الكمية يجب أن تكون رقماً صحيحاً من صفر فأكثر");
+        const quantity = parseQty(value, item.product);
+        if (quantity === null || quantity < 0) {
+          toast.error(
+            item.product.allowDecimalQty
+              ? "الكمية صفر أو أكثر (حتى 3 أرقام عشرية)"
+              : "الكمية يجب أن تكون رقماً صحيحاً من صفر فأكثر"
+          );
           return;
         }
         await countMutation.mutateAsync({ companyId, productId: item.productId, mode: "set", quantity });
@@ -191,9 +200,10 @@ const StocktakeDetails: React.FC = () => {
       .map((item, i) => {
         const diff = item.difference || 0;
         const system = item.systemQty;
+        const u = escapeHtml(unitOf(item.product));
         return `<tr><td>${i + 1}</td><td>${escapeHtml(item.product.name)}</td><td>${escapeHtml(item.product.sku)}</td><td>${
-          system ?? ""
-        }</td><td>${item.countedQty ?? ""}</td><td class="${diff < 0 ? "neg" : "pos"}" dir="ltr">${diff > 0 ? "+" : ""}${diff}</td><td>${escapeHtml(
+          system === null || system === undefined ? "" : formatQty(system)
+        }</td><td>${item.countedQty === null ? "" : formatQty(item.countedQty)}</td><td class="${diff < 0 ? "neg" : "pos"}" dir="ltr">${diff > 0 ? "+" : ""}${formatQty(diff)} ${u}</td><td>${escapeHtml(
           formatCurrency(item.differenceValue || 0)
         )}</td></tr>`;
       })
@@ -207,8 +217,8 @@ const StocktakeDetails: React.FC = () => {
        <table><thead><tr><th>#</th><th>المنتج</th><th>الباركود</th><th>بالنظام</th><th>المعدود</th><th>الفرق</th><th>القيمة بالتكلفة</th></tr></thead>
        <tbody>${rows || `<tr><td colspan="7">لا توجد فروقات</td></tr>`}</tbody>
        <tfoot>
-         <tr><td colspan="5">العجز</td><td class="neg">${summary.shortageQty}</td><td>${escapeHtml(formatCurrency(summary.shortageValue))}</td></tr>
-         <tr><td colspan="5">الزيادة</td><td class="pos">${summary.surplusQty}</td><td>${escapeHtml(formatCurrency(summary.surplusValue))}</td></tr>
+         <tr><td colspan="5">العجز</td><td class="neg">${formatQty(summary.shortageQty)}</td><td>${escapeHtml(formatCurrency(summary.shortageValue))}</td></tr>
+         <tr><td colspan="5">الزيادة</td><td class="pos">${formatQty(summary.surplusQty)}</td><td>${escapeHtml(formatCurrency(summary.surplusValue))}</td></tr>
          <tr><td colspan="6">الصافي</td><td>${escapeHtml(formatCurrency(summary.netValue))}</td></tr>
        </tfoot></table>
        <div class="sign"><span>المسؤول: ..................</span><span>التوقيع: ..................</span></div>`
@@ -303,12 +313,12 @@ const StocktakeDetails: React.FC = () => {
           </div>
           <div className="rounded-xl border border-red-100 bg-red-50 p-4">
             <div className="text-sm text-red-700">العجز</div>
-            <div className="text-2xl font-bold text-red-700">{formatNumber(summary.shortageQty)} قطعة</div>
+            <div className="text-2xl font-bold text-red-700">{formatQty(summary.shortageQty)} {qtyWord}</div>
             <div className="text-sm text-red-700">{formatCurrency(summary.shortageValue)} بالتكلفة</div>
           </div>
           <div className="rounded-xl border border-green-100 bg-green-50 p-4">
             <div className="text-sm text-green-800">الزيادة</div>
-            <div className="text-2xl font-bold text-green-800">{formatNumber(summary.surplusQty)} قطعة</div>
+            <div className="text-2xl font-bold text-green-800">{formatQty(summary.surplusQty)} {qtyWord}</div>
             <div className="text-sm text-green-800">{formatCurrency(summary.surplusValue)} بالتكلفة</div>
           </div>
           <div className="rounded-xl border border-gray-200 bg-white p-4">
@@ -339,11 +349,13 @@ const StocktakeDetails: React.FC = () => {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-indigo-900 mb-1">عدد القطع</label>
+                <label className="block text-sm font-medium text-indigo-900 mb-1">الكمية</label>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
+                  aria-label="الكمية لكل مسح"
                   value={scanQty}
-                  onChange={(e) => setScanQty(e.target.value)}
+                  onChange={(e) => setScanQty(normalizeDigits(e.target.value))}
                   className="w-24 rounded-lg border border-indigo-300 bg-white px-3 py-3 text-lg text-center focus:border-indigo-500 focus:ring-indigo-500"
                 />
               </div>
@@ -425,12 +437,12 @@ const StocktakeDetails: React.FC = () => {
                     <tr key={item.id} className={item.difference ? (item.difference < 0 ? "bg-red-50/40" : "bg-green-50/40") : ""}>
                       <td className="px-4 py-2 font-medium text-gray-900">{item.product.name}</td>
                       <td className="px-4 py-2 font-mono text-gray-600">{item.product.sku}</td>
-                      <td className="px-4 py-2 text-gray-700">{formatNumber(system)}</td>
+                      <td className="px-4 py-2 text-gray-700">{formatQty(system, unitOf(item.product))}</td>
                       <td className="px-4 py-2">
                         {open ? (
                           <CountCell item={item} disabled={countMutation.isPending} onSave={saveRow} />
                         ) : (
-                          <span>{item.countedQty === null ? <span className="text-gray-400">لم يُعد</span> : formatNumber(item.countedQty)}</span>
+                          <span>{item.countedQty === null ? <span className="text-gray-400">لم يُعد</span> : formatQty(item.countedQty, unitOf(item.product))}</span>
                         )}
                       </td>
                       <td className="px-4 py-2">
@@ -479,9 +491,9 @@ const StocktakeDetails: React.FC = () => {
         message={
           confirm === "cancel"
             ? "سيتم إلغاء الجرد دون أي تغيير في المخزون. هل أنت متأكد؟"
-            : `سيتم تصحيح مخزون ${formatNumber(summary.withDifference)} منتج (عجز ${formatNumber(summary.shortageQty)} قطعة، زيادة ${formatNumber(
+            : `سيتم تصحيح مخزون ${formatNumber(summary.withDifference)} منتج (عجز ${formatQty(summary.shortageQty)} ${qtyWord}، زيادة ${formatQty(
                 summary.surplusQty
-              )} قطعة). المنتجات التي لم تُعد (${formatNumber(summary.uncounted)}) تبقى كما هي. لا يمكن التراجع بعد الاعتماد.`
+              )} ${qtyWord}). المنتجات التي لم تُعد (${formatNumber(summary.uncounted)}) تبقى كما هي. لا يمكن التراجع بعد الاعتماد.`
         }
         confirmText={confirm === "cancel" ? "إلغاء الجرد" : "اعتماد"}
         cancelText="رجوع"

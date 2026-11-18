@@ -15,6 +15,7 @@ import { formatCurrency, formatNumber } from '../utils/currencyUtils';
 import { formatTableDate } from '../utils/dateUtils';
 import toast from 'react-hot-toast';
 import { printReceipt } from '@/services/printService';
+import { formatQty, unitOf } from '../utils/quantity';
 // import type { Purchase } from '../types';
 
 const paymentMethodLabel = (method?: string | null) =>
@@ -597,7 +598,7 @@ const PurchasesDetails: React.FC = () => {
                               {formatCurrency(item.unitPrice)}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                              {formatNumber(item.quantity)}
+                              {formatQty(item.quantity, unitOf(item.product))}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                               {formatCurrency(item.totalPrice)}

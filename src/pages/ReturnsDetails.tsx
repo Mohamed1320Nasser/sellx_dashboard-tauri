@@ -9,6 +9,7 @@ import { formatDate } from "../utils/dateUtils";
 import { useReturn, useUpdateReturnStatus } from "../hooks/api/useReturns";
 import { useSessionAuthStore } from "../stores/sessionAuthStore";
 import { ReturnStatus } from "../types";
+import { formatQty, unitOf } from '../utils/quantity';
 
 const ReturnsDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -260,7 +261,7 @@ const ReturnsDetails: React.FC = () => {
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {formatNumber(item.quantity)}
+                            {formatQty(item.quantity, unitOf(item.product))}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                             {formatCurrency(item.unitPrice)}

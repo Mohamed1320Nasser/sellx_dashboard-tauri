@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
+import ProductUnitFields from "../products/ProductUnitFields";
+import { parseQty } from "../../utils/quantity";
 import { PackagePlus } from "lucide-react";
 import toast from "react-hot-toast";
 import { useQueryClient } from "@tanstack/react-query";
@@ -14,6 +16,8 @@ export interface QuickCreatedProduct {
   purchasePrice: number;
   sellingPrice: number;
   stockQuantity: number;
+  unit?: string | null;
+  allowDecimalQty?: boolean;
 }
 
 interface Props {
@@ -51,6 +55,7 @@ const QuickProductModal: React.FC<Props> = ({
   const [cost, setCost] = useState("");
   const [selling, setSelling] = useState("");
   const [quantity, setQuantity] = useState("1");
+  const [unitInfo, setUnitInfo] = useState({ allowDecimalQty: false, unit: "" });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
@@ -68,6 +73,7 @@ const QuickProductModal: React.FC<Props> = ({
     setCost("");
     setSelling("");
     setQuantity("1");
+    setUnitInfo({ allowDecimalQty: false, unit: "" });
     setErrors({});
     setTimeout(() => nameRef.current?.focus(), 50);
   }, [isOpen, initialBarcode, initialName, categories]);
@@ -83,8 +89,8 @@ const QuickProductModal: React.FC<Props> = ({
     if (!categoryId) e.categoryId = "اختر التصنيف";
     if (!(costValue > 0)) e.cost = "سعر الشراء يجب أن يكون أكبر من صفر";
     if (!(sellingValue > 0)) e.selling = "سعر البيع يجب أن يكون أكبر من صفر";
-    const q = Number(quantity);
-    if (!Number.isInteger(q) || q < 1) e.quantity = "الكمية رقم صحيح 1 أو أكثر";
+    const q = parseQty(quantity, unitInfo);
+    if (q === null || q <= 0) e.quantity = unitInfo.allowDecimalQty ? "الكمية أكبر من صفر (حتى 3 أرقام عشرية)" : "الكمية رقم صحيح 1 أو أكثر";
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -101,6 +107,8 @@ const QuickProductModal: React.FC<Props> = ({
         sellingPrice: sellingValue,
         stockQuantity: 0,
         minStockLevel: 0,
+        unit: unitInfo.unit.trim() || null,
+        allowDecimalQty: unitInfo.allowDecimalQty,
         categoryId,
         companyId,
       });
@@ -121,8 +129,10 @@ const QuickProductModal: React.FC<Props> = ({
           purchasePrice: Number(created.purchasePrice) || costValue,
           sellingPrice: Number(created.sellingPrice) || sellingValue,
           stockQuantity: 0,
+          unit: created.unit ?? (unitInfo.unit.trim() || null),
+          allowDecimalQty: created.allowDecimalQty ?? unitInfo.allowDecimalQty,
         },
-        Number(quantity),
+        parseQty(quantity, unitInfo) ?? 1,
         costValue
       );
     } catch (error) {
@@ -167,6 +177,14 @@ const QuickProductModal: React.FC<Props> = ({
           </div>
         </div>
 
+        <div className="grid grid-cols-2 gap-4">
+          <ProductUnitFields
+            allowDecimalQty={unitInfo.allowDecimalQty}
+            unit={unitInfo.unit}
+            onChange={setUnitInfo}
+          />
+        </div>
+
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Input
             label="سعر الشراء *"
@@ -187,10 +205,9 @@ const QuickProductModal: React.FC<Props> = ({
             error={errors.selling}
           />
           <Input
-            label="الكمية المشتراة *"
-            type="number"
-            min="1"
-            step="1"
+            label={`الكمية المشتراة *${unitInfo.unit.trim() ? ` (${unitInfo.unit.trim()})` : ""}`}
+            type="text"
+            inputMode={unitInfo.allowDecimalQty ? "decimal" : "numeric"}
             value={quantity}
             onChange={e => setQuantity(e.target.value)}
             error={errors.quantity}

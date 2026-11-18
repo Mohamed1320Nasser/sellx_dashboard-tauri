@@ -23,6 +23,7 @@ import {
   type ReportColumn,
 } from '../utils/reportExport';
 import toast from 'react-hot-toast';
+import { formatQty, unitOf } from '../utils/quantity';
 
 interface FlatRow extends CategoryReportProduct {
   categoryName: string;
@@ -92,7 +93,7 @@ const CategoryReport: React.FC = () => {
       ),
     },
     { key: 'categoryName', label: 'الفئة', render: (p) => <Badge variant="primary">{p.categoryName}</Badge> },
-    { key: 'stockQuantity', label: 'المخزون', render: (p) => <span className="font-medium">{formatNumber(p.stockQuantity)}</span> },
+    { key: 'stockQuantity', label: 'المخزون', render: (p) => <span className="font-medium">{formatQty(p.stockQuantity, p.unit)}</span> },
     { key: 'purchasePrice', label: 'سعر الشراء', render: (p) => formatCurrency(p.purchasePrice) },
     { key: 'sellingPrice', label: 'سعر البيع', render: (p) => formatCurrency(p.sellingPrice) },
     { key: 'stockValue', label: 'قيمة المخزون', render: (p) => formatCurrency(p.stockValue) },

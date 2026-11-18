@@ -23,6 +23,8 @@ import { saleToReceiptData } from "../services/receiptHtmlTemplate";
 import { PrintReceiptPreview } from "../components/printer/PrintReceiptPreview";
 import { usePrinterConfigStore } from "../stores/printerConfigStore";
 import { companyService } from "../services/companyService";
+import QtyInput from "../components/ui/QtyInput";
+import { addQty, allowsDecimal, cartCountLabel, formatQty, qtyTimes, toQty, unitOf } from "../utils/quantity";
 
 // Number inputs registered with valueAsNumber give NaN when left empty: treat that as "not entered"
 const isBlank = (v: unknown) => v === "" || v === null || v === undefined || (typeof v === "number" && Number.isNaN(v));
@@ -84,6 +86,9 @@ interface SaleItem {
   basePrice: number;
   total: number;
   stock: number;
+  /** Sold by weight / length: fractional quantity allowed */
+  allowDecimalQty?: boolean;
+  unit?: string | null;
 }
 
 const SalesCreate: React.FC = () => {
@@ -97,6 +102,27 @@ const SalesCreate: React.FC = () => {
   // bulk adds run one after another before React re-renders (they used to drop items)
   const [items, setItemsState] = useState<SaleItem[]>([]);
   const itemsRef = useRef<SaleItem[]>([]);
+  // Weighed goods: after adding, the cursor goes to the weight field
+  const qtyInputRefs = useRef(new Map<number, HTMLInputElement>());
+  const [focusQtyFor, setFocusQtyForState] = useState<number | null>(null);
+  // While true, the "back to the barcode box" focus is skipped so the weight field keeps the cursor
+  const weightFocusRef = useRef(false);
+  const setFocusQtyFor = (productId: number) => {
+    weightFocusRef.current = true;
+    setFocusQtyForState(productId);
+  };
+  useEffect(() => {
+    if (focusQtyFor === null) return;
+    const el = qtyInputRefs.current.get(focusQtyFor);
+    if (el) {
+      el.focus();
+      el.select();
+    }
+    setFocusQtyForState(null);
+    setTimeout(() => {
+      weightFocusRef.current = false;
+    }, 100);
+  });
   const setItems = useCallback((next: SaleItem[] | ((prev: SaleItem[]) => SaleItem[])) => {
     const value = typeof next === "function" ? next(itemsRef.current) : next;
     itemsRef.current = value;
@@ -219,7 +245,7 @@ const SalesCreate: React.FC = () => {
     setItems((prev) =>
       prev.map((item) => {
         const unitPrice = priceFor(item.productId, item.basePrice);
-        return unitPrice === item.unitPrice ? item : { ...item, unitPrice, total: item.quantity * unitPrice };
+        return unitPrice === item.unitPrice ? item : { ...item, unitPrice, total: qtyTimes(item.quantity, unitPrice) };
       })
     );
   }, [priceFor, listIsDefault, listPrices]);
@@ -357,44 +383,55 @@ const SalesCreate: React.FC = () => {
 
   // Add item to sale
   const addItem = (product: any) => {
-    const stock = product.currentStock || product.stockQuantity || 0;
+    const stock = toQty(product.currentStock || product.stockQuantity || 0);
     const current = itemsRef.current;
     const existingItem = current.find(item => item.productId === product.id);
     const currentQuantity = existingItem?.quantity || 0;
+    const weighed = allowsDecimal(product);
+
+    // Weighed goods: scanning again doesn't add "one more kilo", it opens the weight to edit
+    if (existingItem && weighed) {
+      setFocusQtyFor(product.id);
+      return;
+    }
 
     // Check stock validation
     if (currentQuantity >= stock) {
-      toast.error(`لا يمكن إضافة المزيد - الكمية المتاحة: ${stock}`);
+      toast.error(`لا يمكن إضافة المزيد - الكمية المتاحة: ${formatQty(stock, unitOf(product))}`);
       return;
     }
 
     if (existingItem) {
       // Update quantity
-      const newQuantity = existingItem.quantity + 1;
+      const newQuantity = addQty(existingItem.quantity, 1);
       const newItems = current.map(item =>
         item.productId === product.id
           ? {
               ...item,
               quantity: newQuantity,
-              total: newQuantity * item.unitPrice,
+              total: qtyTimes(newQuantity, item.unitPrice),
               stock,
             }
           : item
       );
       setItems(newItems);
     } else {
-      // Add new item
+      // Add new item: 1 piece, or 1 unit (kg / m) for weighed goods, then type the weight
       const unitPrice = priceFor(product.id, product.sellingPrice);
+      const quantity = weighed ? Math.min(1, stock) : 1;
       const newItem: SaleItem = {
         productId: product.id,
         productName: product.name,
-        quantity: 1,
+        quantity,
         unitPrice,
         basePrice: Number(product.sellingPrice) || 0,
-        total: unitPrice,
+        total: qtyTimes(quantity, unitPrice),
         stock,
+        allowDecimalQty: weighed,
+        unit: unitOf(product) || null,
       };
       setItems([...current, newItem]);
+      if (weighed) setFocusQtyFor(product.id);
     }
   };
 
@@ -452,7 +489,7 @@ const SalesCreate: React.FC = () => {
       // product not present in the currently loaded product page).
       const stock = getProductStock(productId) ?? currentItem?.stock ?? 0;
       if (quantity > stock) {
-        toast.error(`الكمية المطلوبة تتجاوز المخزون المتاح: ${stock}`);
+        toast.error(`الكمية المطلوبة تتجاوز المخزون المتاح: ${formatQty(stock, currentItem?.unit)}`);
         return;
       }
     }
@@ -462,7 +499,7 @@ const SalesCreate: React.FC = () => {
         ? {
             ...item,
             quantity,
-            total: quantity * item.unitPrice,
+            total: qtyTimes(quantity, item.unitPrice),
           }
         : item
     );
@@ -656,7 +693,7 @@ const SalesCreate: React.FC = () => {
         items: items.map(item => ({
           ...item,
           productName: item.productName,
-          product: { name: item.productName }
+          product: { name: item.productName, unit: item.unit, allowDecimalQty: item.allowDecimalQty }
         })),
       };
 
@@ -750,7 +787,10 @@ const SalesCreate: React.FC = () => {
   }, [hasOpenShift, shiftLoading]);
 
   // Back to the barcode box after a click in the cart, so the next scan is not lost
-  const focusScan = () => setTimeout(() => barcodeInputRef.current?.focus(), 0);
+  const focusScan = () =>
+    setTimeout(() => {
+      if (!weightFocusRef.current) barcodeInputRef.current?.focus();
+    }, 0);
 
   // Handle cancel
   const handleCancel = useCallback(() => {
@@ -764,7 +804,7 @@ const SalesCreate: React.FC = () => {
   // product page fetched so far.
   const productOptions = allLoadedProducts.map((product: any) => ({
     value: product.id,
-    label: `${product.name} - ${formatCurrency(priceFor(product.id, product.sellingPrice))} (المتاح: ${formatNumber(product.currentStock || product.stockQuantity)})`,
+    label: `${product.name} - ${formatCurrency(priceFor(product.id, product.sellingPrice))} (المتاح: ${formatQty(product.currentStock || product.stockQuantity, unitOf(product))})`,
     product,
   }));
 
@@ -995,7 +1035,7 @@ const SalesCreate: React.FC = () => {
                                   ? "text-primary-600"
                                   : "text-gray-500"
                             }`}>
-                              {stock} متاح
+                              {formatQty(stock, unitOf(option.product))} متاح
                             </span>
                             <span className={`font-bold text-sm ${isSelected ? "text-primary-700" : "text-primary-600"}`}>
                               {formatCurrency(priceFor(option.product.id, option.product.sellingPrice))}
@@ -1052,7 +1092,8 @@ const SalesCreate: React.FC = () => {
                               <span className="flex-1 ml-1 min-w-0">
                                 <span className="block font-medium text-gray-900 text-xs truncate">{item.productName}</span>
                                 <span className="block text-[11px] text-gray-500">
-                                  {item.quantity} × {formatCurrency(item.unitPrice)}
+                                  {formatQty(item.quantity, item.unit)} × {formatCurrency(item.unitPrice)}
+                                  {item.allowDecimalQty && item.unit ? ` / ${item.unit}` : ""}
                                 </span>
                               </span>
                               <button
@@ -1069,7 +1110,7 @@ const SalesCreate: React.FC = () => {
                             </div>
                             <div className="flex items-center justify-between mt-1.5">
                               <div className="flex items-center gap-0.5">
-                                <button
+                                {!item.allowDecimalQty && <button
                                   type="button"
                                   aria-label="إنقاص الكمية"
                                   onClick={() => {
@@ -1079,18 +1120,17 @@ const SalesCreate: React.FC = () => {
                                   className="w-7 h-7 rounded bg-gray-100 border border-gray-200 flex items-center justify-center hover:bg-gray-200 active:scale-95 transition-all"
                                 >
                                   <Minus className="w-3 h-3" />
-                                </button>
-                                <input
-                                  type="number"
-                                  min={1}
-                                  step={1}
-                                  value={item.quantity}
-                                  aria-label="الكمية"
-                                  onFocus={(e) => e.target.select()}
-                                  onChange={(e) => {
-                                    const q = parseInt(e.target.value, 10);
-                                    if (Number.isFinite(q) && q > 0) updateQuantity(item.productId, q);
+                                </button>}
+                                <QtyInput
+                                  ref={(el) => {
+                                    if (el) qtyInputRefs.current.set(item.productId, el);
+                                    else qtyInputRefs.current.delete(item.productId);
                                   }}
+                                  product={item}
+                                  value={item.quantity}
+                                  aria-label={item.allowDecimalQty ? `الوزن / الكمية (${item.unit || "وحدة"})` : "الكمية"}
+                                  onChange={(q) => updateQuantity(item.productId, q)}
+                                  onInvalid={(m) => toast.error(m)}
                                   onKeyDown={(e) => {
                                     // Enter = done with this line: back to scanning, not "save the sale"
                                     if (e.key === "Enter") {
@@ -1098,11 +1138,14 @@ const SalesCreate: React.FC = () => {
                                       focusScan();
                                     }
                                   }}
-                                  className={`w-12 rounded border border-gray-200 px-1 py-0.5 text-center text-sm font-bold [appearance:textfield] focus:border-primary-500 focus:ring-1 focus:ring-primary-500 [&::-webkit-inner-spin-button]:appearance-none ${
+                                  className={`${item.allowDecimalQty ? "w-20" : "w-12"} rounded border border-gray-200 px-1 py-0.5 text-center text-sm font-bold focus:border-primary-500 focus:ring-1 focus:ring-primary-500 ${
                                     isMaxReached ? "text-amber-600" : "text-gray-900"
                                   }`}
                                 />
-                                <button
+                                {item.allowDecimalQty && item.unit && (
+                                  <span className="text-[11px] text-gray-500">{item.unit}</span>
+                                )}
+                                {!item.allowDecimalQty && <button
                                   type="button"
                                   aria-label="زيادة الكمية"
                                   onClick={() => {
@@ -1117,7 +1160,7 @@ const SalesCreate: React.FC = () => {
                                   }`}
                                 >
                                   <Plus className="w-3 h-3" />
-                                </button>
+                                </button>}
                               </div>
                               <span className="font-bold text-sm text-primary-600">
                                 {formatCurrency(item.total)}
@@ -1479,7 +1522,7 @@ const SalesCreate: React.FC = () => {
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">إجمالي الكمية:</span>
-                <span className="font-medium">{items.reduce((sum, item) => sum + item.quantity, 0)} قطعة</span>
+                <span className="font-medium">{cartCountLabel(items)}</span>
               </div>
               {discountAmount > 0 && (
                 <div className="flex justify-between text-sm text-red-600">

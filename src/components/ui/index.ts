@@ -16,3 +16,4 @@ export { default as DataTable } from "./DataTable";
 export { default as DatePicker } from "./DatePicker";
 export { TabPanel, TabContent } from "./TabPanel";
 export { Toggle } from "./Toggle";
+export { default as QtyInput } from "./QtyInput";

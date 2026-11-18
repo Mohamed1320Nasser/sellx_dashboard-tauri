@@ -3,6 +3,7 @@ import { Modal } from '../ui';
 import { formatCurrency, formatDate, formatNumber } from '../../utils';
 import { Receipt, User, Calendar, Package, DollarSign } from 'lucide-react';
 import type { SalesReportItem } from '../../types/business';
+import { formatQty, unitOf } from '../../utils/quantity';
 
 interface SalesReportDetailsModalProps {
   sale: SalesReportItem | null;
@@ -126,7 +127,7 @@ const SalesReportDetailsModal: React.FC<SalesReportDetailsModalProps> = ({
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {formatNumber(item.quantity)}
+                      {formatQty(item.quantity, unitOf(item.product))}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {formatCurrency(item.unitPrice)}

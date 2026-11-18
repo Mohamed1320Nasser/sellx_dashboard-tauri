@@ -6,6 +6,7 @@
  */
 
 import type { SellxReceiptData } from '@/services/printService';
+import { formatQty, qtyTimes } from '../../utils/quantity';
 
 interface Props {
   data: SellxReceiptData;
@@ -93,10 +94,10 @@ export function SellxReceipt({ data }: Props) {
               </div>
               <div className="receipt__line-calc">
                 <span>
-                  {item.quantity} × {formatPrice(item.unitPrice)}
+                  {formatQty(item.quantity, item.unit)} × {formatPrice(item.unitPrice)}
                 </span>
                 <span className="receipt__line-total">
-                  {formatPrice(item.total || item.quantity * item.unitPrice)}
+                  {formatPrice(item.total || qtyTimes(item.quantity, item.unitPrice))}
                 </span>
               </div>
             </div>
@@ -130,9 +131,9 @@ export function SellxReceipt({ data }: Props) {
                   </div>
                 )}
               </td>
-              <td className="receipt__table-center">{item.quantity}</td>
+              <td className="receipt__table-center">{formatQty(item.quantity, item.unit)}</td>
               <td>{formatPrice(item.unitPrice)}</td>
-              <td>{formatPrice(item.total || item.quantity * item.unitPrice)}</td>
+              <td>{formatPrice(item.total || qtyTimes(item.quantity, item.unitPrice))}</td>
             </tr>
           ))}
         </tbody>

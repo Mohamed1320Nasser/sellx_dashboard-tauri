@@ -7,6 +7,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Button, Modal, Select } from "../ui";
 import { formatCurrency } from "../../utils/currencyUtils";
 import { useCreateSupplierReturn } from "../../hooks/api/usePurchases";
+import { addQty, formatQty, normalizeDigits, parseQty, qtyTimes, subQty, unitOf } from "../../utils/quantity";
 
 interface Props {
   isOpen: boolean;
@@ -20,6 +21,7 @@ const round = (n: number) => Math.round(n * 100) / 100;
 export function SupplierReturnModal({ isOpen, onClose, companyId, purchase }: Props) {
   const createReturn = useCreateSupplierReturn();
   const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [refund, setRefund] = useState("");
   const [refundTouched, setRefundTouched] = useState(false);
   const [refundMethod, setRefundMethod] = useState("CASH");
@@ -30,29 +32,40 @@ export function SupplierReturnModal({ isOpen, onClose, companyId, purchase }: Pr
     const items: any[] = purchase?.items || [];
     const subtotal = items.reduce((s, i) => s + Number(i.totalPrice || 0), 0);
     const taxFactor = subtotal > 0 ? (subtotal + Number(purchase?.taxAmount || 0)) / subtotal : 1;
-    const map = new Map<string, { productId: string; name: string; bought: number; value: number }>();
+    const map = new Map<
+      string,
+      { productId: string; name: string; bought: number; value: number; allowDecimalQty: boolean; unit: string }
+    >();
     for (const item of items) {
-      const row = map.get(item.productId) || { productId: item.productId, name: item.product?.name || "", bought: 0, value: 0 };
-      row.bought += item.quantity;
+      const row = map.get(item.productId) || {
+        productId: item.productId,
+        name: item.product?.name || "",
+        bought: 0,
+        value: 0,
+        allowDecimalQty: !!item.product?.allowDecimalQty,
+        unit: unitOf(item.product),
+      };
+      row.bought = addQty(row.bought, item.quantity);
       row.value += Number(item.totalPrice || 0);
       map.set(item.productId, row);
     }
     return [...map.values()].map(r => {
       const returned = purchase?.returnedQuantities?.[r.productId] || 0;
-      return { ...r, returned, left: r.bought - returned, unitValue: round((r.value / r.bought) * taxFactor) };
+      return { ...r, returned, left: subQty(r.bought, returned), unitValue: round((r.value / r.bought) * taxFactor) };
     });
   }, [purchase]);
 
   useEffect(() => {
     if (!isOpen) return;
     setQuantities({});
+    setDrafts({});
     setRefund("");
     setRefundTouched(false);
     setRefundMethod("CASH");
     setReason("");
   }, [isOpen]);
 
-  const value = round(rows.reduce((s, r) => s + (quantities[r.productId] || 0) * r.unitValue, 0));
+  const value = round(rows.reduce((s, r) => s + qtyTimes(quantities[r.productId] || 0, r.unitValue), 0));
   const owed = Math.max(0, Number(purchase?.remainingAmount || 0));
   const maxRefund = round(Math.max(0, value - owed));
   const refundValue = refundTouched ? Number(refund) || 0 : maxRefund;
@@ -84,23 +97,28 @@ export function SupplierReturnModal({ isOpen, onClose, companyId, purchase }: Pr
               <div className="flex-1 min-w-0">
                 <div className="font-medium text-gray-900 truncate">{r.name}</div>
                 <div className="text-xs text-gray-500">
-                  مشترى {r.bought} · مرتجع سابقاً {r.returned} · قيمة الوحدة {formatCurrency(r.unitValue)}
+                  مشترى {formatQty(r.bought, r.unit)} · مرتجع سابقاً {formatQty(r.returned)} · قيمة الوحدة {formatCurrency(r.unitValue)}
                 </div>
               </div>
               <input
-                type="number"
-                min={0}
-                max={r.left}
+                type="text"
+                inputMode={r.allowDecimalQty ? "decimal" : "numeric"}
                 disabled={r.left <= 0}
-                value={quantities[r.productId] ?? ""}
+                value={drafts[r.productId] ?? ""}
                 placeholder="0"
+                aria-label={`كمية ${r.name}`}
                 onChange={e => {
-                  const q = Math.min(r.left, Math.max(0, parseInt(e.target.value) || 0));
-                  setQuantities(prev => ({ ...prev, [r.productId]: q }));
+                  const text = normalizeDigits(e.target.value);
+                  setDrafts(prev => ({ ...prev, [r.productId]: text }));
+                  const parsed = text === "" ? 0 : parseQty(text, r);
+                  if (parsed !== null) setQuantities(prev => ({ ...prev, [r.productId]: Math.min(r.left, parsed) }));
                 }}
+                onBlur={() =>
+                  setDrafts(prev => ({ ...prev, [r.productId]: quantities[r.productId] ? formatQty(quantities[r.productId]) : "" }))
+                }
                 className="w-20 text-center border border-gray-300 rounded-lg py-1 disabled:bg-gray-100"
               />
-              <span className="text-xs text-gray-500 w-16">من {r.left}</span>
+              <span className="text-xs text-gray-500 w-20">من {formatQty(r.left, r.unit)}</span>
             </div>
           ))}
         </div>

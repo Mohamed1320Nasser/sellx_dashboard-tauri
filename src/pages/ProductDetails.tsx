@@ -12,6 +12,7 @@ import type { Product } from '../types';
 import { printBarcode } from '../services/smartPrintService';
 import toast from 'react-hot-toast';
 import { PrintBarcodeModal } from '../components/modals/PrintBarcodeModal';
+import { formatQty, unitOf } from '../utils/quantity';
 
 const ProductDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -220,7 +221,7 @@ const ProductDetails: React.FC = () => {
               <div>
                 <h3 className="text-lg font-semibold text-red-800">مخزون منخفض</h3>
                 <p className="text-red-700">
-                  المخزون الحالي ({formatNumber(currentStock)}) أقل من الحد الأدنى المطلوب ({formatNumber(minStock)})
+                  المخزون الحالي ({formatQty(currentStock, unitOf(product as any))}) أقل من الحد الأدنى المطلوب ({formatQty(minStock, unitOf(product as any))})
                 </p>
               </div>
             </div>
@@ -331,7 +332,7 @@ const ProductDetails: React.FC = () => {
                     <label className="block text-sm font-medium text-gray-700 mb-1">الكمية المتاحة</label>
                     <div className="bg-gray-50 rounded-lg p-3 border">
                       <span className={`font-medium ${stockStatusColor}`}>
-                        {formatNumber(currentStock)}
+                        {formatQty(currentStock, unitOf(product as any))}
                       </span>
                     </div>
                   </div>
@@ -340,7 +341,7 @@ const ProductDetails: React.FC = () => {
                     <label className="block text-sm font-medium text-gray-700 mb-1">الحد الأدنى للمخزون</label>
                     <div className="bg-gray-50 rounded-lg p-3 border">
                       <span className="text-gray-900">
-                        {formatNumber(minStock)}
+                        {formatQty(minStock, unitOf(product as any))}
                       </span>
                     </div>
                   </div>

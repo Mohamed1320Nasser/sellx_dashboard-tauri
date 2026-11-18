@@ -4,6 +4,8 @@ export interface SaleInvoiceLineItem {
   sku?: string;
   categoryName?: string;
   quantity: number;
+  /** Unit label for weighed / measured goods; empty = piece */
+  unit?: string;
   unitPrice: number;
   /** line discount (quotes) */
   discount: number;
@@ -62,7 +64,8 @@ export interface SaleInvoiceData {
 
   items: SaleInvoiceLineItem[];
   itemsCount: number;
-  totalQuantity: number;
+  /** Sum of quantities; null when the lines use different units (kg + pieces can't be added) */
+  totalQuantity: number | null;
   /** a discount column only when some line has one */
   showLineDiscount: boolean;
 

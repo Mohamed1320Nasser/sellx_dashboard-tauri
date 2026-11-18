@@ -12,6 +12,8 @@ import { validateBarcodeFormat } from '../services/barcodeService';
 import type { Product } from '../types';
 import { BarcodePreview } from '../components/barcode/BarcodePreview';
 import { usePrinterConfigStore } from '../stores/printerConfigStore';
+import ProductUnitFields from '../components/products/ProductUnitFields';
+import { normalizeDigits, parseQty, toQty } from '../utils/quantity';
 
 const ProductCreate: React.FC = () => {
   const navigate = useNavigate();
@@ -31,6 +33,8 @@ const ProductCreate: React.FC = () => {
     stockQuantity: '0',
     minStockLevel: '0',
     categoryId: '',
+    unit: '',
+    allowDecimalQty: false,
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -148,13 +152,14 @@ const ProductCreate: React.FC = () => {
     if (!formData.sellingPrice || parseFloat(formData.sellingPrice) <= 0) {
       newErrors.sellingPrice = 'سعر البيع مطلوب';
     }
-    const qty = Number(formData.stockQuantity);
-    if (formData.stockQuantity === '' || !Number.isInteger(qty) || qty < 0) {
-      newErrors.stockQuantity = 'الكمية رقم صحيح صفر أو أكثر';
+    const qtyRule = { allowDecimalQty: formData.allowDecimalQty };
+    const qty = parseQty(formData.stockQuantity, qtyRule);
+    if (qty === null || qty < 0) {
+      newErrors.stockQuantity = formData.allowDecimalQty ? 'الكمية صفر أو أكثر (حتى 3 أرقام عشرية)' : 'الكمية رقم صحيح صفر أو أكثر';
     }
-    const min = Number(formData.minStockLevel);
-    if (formData.minStockLevel === '' || !Number.isInteger(min) || min < 0) {
-      newErrors.minStockLevel = 'الحد الأدنى رقم صحيح صفر أو أكثر';
+    const min = parseQty(formData.minStockLevel, qtyRule);
+    if (min === null || min < 0) {
+      newErrors.minStockLevel = formData.allowDecimalQty ? 'الحد الأدنى صفر أو أكثر (حتى 3 أرقام عشرية)' : 'الحد الأدنى رقم صحيح صفر أو أكثر';
     }
 
     setErrors(newErrors);
@@ -183,8 +188,10 @@ const ProductCreate: React.FC = () => {
         description: formData.description.trim(),
         purchasePrice: parseFloat(formData.purchasePrice),
         sellingPrice: parseFloat(formData.sellingPrice),
-        stockQuantity: parseInt(formData.stockQuantity),
-        minStockLevel: parseInt(formData.minStockLevel),
+        stockQuantity: toQty(normalizeDigits(formData.stockQuantity)),
+        minStockLevel: toQty(normalizeDigits(formData.minStockLevel)),
+        unit: formData.unit.trim() || null,
+        allowDecimalQty: formData.allowDecimalQty,
         categoryId: formData.categoryId,
         companyId: companyId!,
       });
@@ -371,9 +378,16 @@ const ProductCreate: React.FC = () => {
                   </p>
                 )}
 
+                <ProductUnitFields
+                  allowDecimalQty={formData.allowDecimalQty}
+                  unit={formData.unit}
+                  onChange={next => setFormData(prev => ({ ...prev, ...next }))}
+                />
+
                 <Input
-                  label="الكمية الافتتاحية"
-                  type="number"
+                  label={`الكمية الافتتاحية${formData.unit.trim() ? ` (${formData.unit.trim()})` : ''}`}
+                  type="text"
+                  inputMode={formData.allowDecimalQty ? 'decimal' : 'numeric'}
                   value={formData.stockQuantity}
                   onChange={(e) => handleInputChange('stockQuantity', e.target.value)}
                   error={errors.stockQuantity}
@@ -383,7 +397,8 @@ const ProductCreate: React.FC = () => {
 
                 <Input
                   label="الحد الأدنى"
-                  type="number"
+                  type="text"
+                  inputMode={formData.allowDecimalQty ? 'decimal' : 'numeric'}
                   value={formData.minStockLevel}
                   onChange={(e) => handleInputChange('minStockLevel', e.target.value)}
                   error={errors.minStockLevel}

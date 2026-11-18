@@ -8,6 +8,8 @@ import { useSessionAuthStore } from '../stores/sessionAuthStore';
 import { useUpdateProduct, useProduct } from '../hooks/api/useProducts';
 import { useCategories } from '../hooks/api/useCategories';
 import toast from 'react-hot-toast';
+import ProductUnitFields from '../components/products/ProductUnitFields';
+import { formatQty, normalizeDigits, parseQty, subQty, toQty } from '../utils/quantity';
 
 const ProductEdit: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -25,6 +27,8 @@ const ProductEdit: React.FC = () => {
     stockQuantity: '',
     minStockLevel: '',
     categoryId: '',
+    unit: '',
+    allowDecimalQty: false,
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -48,7 +52,7 @@ const ProductEdit: React.FC = () => {
   useEffect(() => {
     if (product && filledFor.current !== id) {
       filledFor.current = id!;
-      loadedStock.current = ((product as any).currentStock ?? (product as any).stockQuantity ?? 0).toString();
+      loadedStock.current = formatQty((product as any).currentStock ?? (product as any).stockQuantity ?? 0);
       setFormData({
         name: (product as any).name || '',
         sku: (product as any).sku || '',
@@ -56,11 +60,18 @@ const ProductEdit: React.FC = () => {
         purchasePrice: (product as any).purchasePrice?.toString() || '',
         sellingPrice: (product as any).sellingPrice?.toString() || '',
         stockQuantity: loadedStock.current,
-        minStockLevel: ((product as any).minStockLevel || 0).toString(),
+        minStockLevel: formatQty((product as any).minStockLevel || 0),
         categoryId: (product as any).categoryId || '',
+        unit: (product as any).unit || '',
+        allowDecimalQty: !!(product as any).allowDecimalQty,
       });
     }
   }, [product, id]);
+
+  // A quantity is "changed" only when its value differs (7 and 7.000 are the same)
+  const stockChanged =
+    formData.stockQuantity.trim() !== '' && toQty(normalizeDigits(formData.stockQuantity)) !== toQty(loadedStock.current);
+  const stockDiff = subQty(normalizeDigits(formData.stockQuantity), loadedStock.current);
 
   // Handle form input changes
   const handleInputChange = (field: string, value: string) => {
@@ -95,14 +106,19 @@ const ProductEdit: React.FC = () => {
       newErrors.sellingPrice = 'سعر البيع يجب أن يكون أكبر من صفر';
     }
 
-    const qty = Number(formData.stockQuantity);
-    if (formData.stockQuantity === '' || !Number.isInteger(qty) || qty < 0) {
-      newErrors.stockQuantity = 'الكمية رقم صحيح صفر أو أكثر';
+    const qtyRule = { allowDecimalQty: formData.allowDecimalQty };
+    const qty = parseQty(formData.stockQuantity, qtyRule);
+    if (qty === null || qty < 0) {
+      newErrors.stockQuantity = formData.allowDecimalQty
+        ? 'الكمية صفر أو أكثر (حتى 3 أرقام عشرية)'
+        : 'الكمية رقم صحيح صفر أو أكثر. لإلغاء البيع بالوزن عدّل الكمية لرقم صحيح.';
     }
 
-    const min = Number(formData.minStockLevel);
-    if (formData.minStockLevel === '' || !Number.isInteger(min) || min < 0) {
-      newErrors.minStockLevel = 'الحد الأدنى للمخزون يجب أن يكون أكبر من أو يساوي صفر';
+    const min = parseQty(formData.minStockLevel, qtyRule);
+    if (min === null || min < 0) {
+      newErrors.minStockLevel = formData.allowDecimalQty
+        ? 'الحد الأدنى صفر أو أكثر (حتى 3 أرقام عشرية)'
+        : 'الحد الأدنى للمخزون رقم صحيح صفر أو أكثر';
     }
 
     setErrors(newErrors);
@@ -129,10 +145,12 @@ const ProductEdit: React.FC = () => {
           sellingPrice: parseFloat(formData.sellingPrice),
           // Only a quantity the user changed is sent: sending the number loaded when the page
           // opened would undo any sale made meanwhile (the server records it as an adjustment)
-          ...(formData.stockQuantity.trim() !== loadedStock.current && {
-            stockQuantity: parseInt(formData.stockQuantity),
+          ...(stockChanged && {
+            stockQuantity: toQty(normalizeDigits(formData.stockQuantity)),
           }),
-          minStockLevel: parseInt(formData.minStockLevel),
+          minStockLevel: toQty(normalizeDigits(formData.minStockLevel)),
+          unit: formData.unit.trim() || null,
+          allowDecimalQty: formData.allowDecimalQty,
           categoryId: formData.categoryId,
           companyId: companyId!,
         },
@@ -320,25 +338,35 @@ const ProductEdit: React.FC = () => {
                     </p>
                   )}
 
+                  <div className="grid grid-cols-2">
+                    <ProductUnitFields
+                      allowDecimalQty={formData.allowDecimalQty}
+                      unit={formData.unit}
+                      onChange={next => setFormData(prev => ({ ...prev, ...next }))}
+                    />
+                  </div>
+
                   <Input
-                    label="الكمية المتاحة"
-                    type="number"
+                    label={`الكمية المتاحة${formData.unit.trim() ? ` (${formData.unit.trim()})` : ''}`}
+                    type="text"
+                    inputMode={formData.allowDecimalQty ? 'decimal' : 'numeric'}
                     value={formData.stockQuantity}
                     onChange={(e) => handleInputChange('stockQuantity', e.target.value)}
                     error={errors.stockQuantity}
                     placeholder="0"
                     required
                   />
-                  {formData.stockQuantity.trim() !== loadedStock.current && formData.stockQuantity !== '' && (
+                  {stockChanged && formData.stockQuantity !== '' && (
                     <p className="-mt-2 text-xs text-amber-700">
-                      سيُسجَّل الفرق ({Number(formData.stockQuantity) - Number(loadedStock.current) > 0 ? '+' : ''}
-                      {Number(formData.stockQuantity) - Number(loadedStock.current)}) كتسوية مخزون باسمك
+                      سيُسجَّل الفرق ({stockDiff > 0 ? '+' : ''}
+                      {formatQty(stockDiff)}) كتسوية مخزون باسمك
                     </p>
                   )}
 
                   <Input
                     label="الحد الأدنى للمخزون"
-                    type="number"
+                    type="text"
+                    inputMode={formData.allowDecimalQty ? 'decimal' : 'numeric'}
                     value={formData.minStockLevel}
                     onChange={(e) => handleInputChange('minStockLevel', e.target.value)}
                     error={errors.minStockLevel}

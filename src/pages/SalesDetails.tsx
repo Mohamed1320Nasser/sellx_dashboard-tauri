@@ -15,6 +15,7 @@ import { generateSaleInvoicePdf } from '../components/invoice/generateSaleInvoic
 import { PermissionGuard } from '../components/common/PermissionGuard';
 import { useClients } from '../hooks/api/useClients';
 import { useUpdateSale } from '../hooks/api/useSales';
+import { formatQty, unitOf } from '../utils/quantity';
 
 const SalesDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -555,7 +556,7 @@ const SalesDetails: React.FC = () => {
                                 {formatCurrency(item.unitPrice)}
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                {formatNumber(item.quantity)}
+                                {formatQty(item.quantity, unitOf(item.product))}
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                                 {formatCurrency(item.totalPrice)}

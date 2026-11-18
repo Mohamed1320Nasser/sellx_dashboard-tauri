@@ -12,6 +12,10 @@ interface CreateProductRequest {
   sellingPrice: number;
   stockQuantity: number;
   minStockLevel: number;
+  /** Unit label (e.g. "كجم"); null = piece */
+  unit?: string | null;
+  /** Sold by weight / length: fractional quantities allowed */
+  allowDecimalQty?: boolean;
   categoryId: string;
   companyId: number;
 }

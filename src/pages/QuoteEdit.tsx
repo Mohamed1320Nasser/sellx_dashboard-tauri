@@ -26,6 +26,8 @@ import { formatCurrency } from "../utils/currencyUtils";
 import toast from "react-hot-toast";
 import { useScanner } from "../hooks/useScanner";
 import { toLocalDay } from '../utils/dateUtils';
+import QtyInput from '../components/ui/QtyInput';
+import { addQty, allowsDecimal, formatQty, qtyTimes, unitOf } from '../utils/quantity';
 
 interface QuoteItem {
   productId: string;
@@ -34,6 +36,8 @@ interface QuoteItem {
   unitPrice: number;
   lineTotal: number;
   stockQuantity: number;
+  allowDecimalQty?: boolean;
+  unit?: string | null;
 }
 
 const QuoteEdit: React.FC = () => {
@@ -131,8 +135,10 @@ const QuoteEdit: React.FC = () => {
           productName: item.productName || item.product?.name || "",
           quantity: item.quantity,
           unitPrice: item.unitPrice,
-          lineTotal: item.lineTotal || item.quantity * item.unitPrice,
+          lineTotal: item.lineTotal || qtyTimes(item.quantity, item.unitPrice),
           stockQuantity: item.product?.currentStock || item.product?.stockQuantity || 0,
+          allowDecimalQty: !!item.product?.allowDecimalQty,
+          unit: item.product?.unit || null,
         }));
         setItems(quoteItems);
       }
@@ -221,15 +227,21 @@ const QuoteEdit: React.FC = () => {
     const currentQuantity = existingItem?.quantity || 0;
 
     // Check stock validation (for quotes we allow exceeding stock but show warning)
+    // Weighed goods: the weight is typed in the line, adding again does not add a kilo
+    if (existingItem && allowsDecimal(product)) {
+      toast(`عدّل كمية ${product.name} من السطر (${unitOf(product) || "وحدة"})`);
+      return;
+    }
+
     if (currentQuantity >= stock) {
-      toast.error(`تحذير: الكمية تتجاوز المخزون المتاح (${stock})`);
+      toast.error(`تحذير: الكمية تتجاوز المخزون المتاح (${formatQty(stock, unitOf(product))})`);
     }
 
     if (existingItem) {
-      const newQuantity = existingItem.quantity + 1;
+      const newQuantity = addQty(existingItem.quantity, 1);
       const newItems = items.map((item) =>
         item.productId === productId
-          ? { ...item, quantity: newQuantity, lineTotal: newQuantity * item.unitPrice }
+          ? { ...item, quantity: newQuantity, lineTotal: qtyTimes(newQuantity, item.unitPrice) }
           : item
       );
       setItems(newItems);
@@ -242,6 +254,8 @@ const QuoteEdit: React.FC = () => {
         unitPrice: product.sellingPrice,
         lineTotal: product.sellingPrice,
         stockQuantity: stock,
+        allowDecimalQty: allowsDecimal(product),
+        unit: unitOf(product) || null,
       };
       setItems([...items, newItem]);
       toast.success(`تم إضافة ${product.name}`);
@@ -257,7 +271,7 @@ const QuoteEdit: React.FC = () => {
 
     const newItems = items.map((item) =>
       item.productId === productId
-        ? { ...item, quantity, lineTotal: quantity * item.unitPrice }
+        ? { ...item, quantity, lineTotal: qtyTimes(quantity, item.unitPrice) }
         : item
     );
     setItems(newItems);
@@ -634,23 +648,29 @@ const QuoteEdit: React.FC = () => {
                           </div>
                           <div className="flex items-center justify-between mt-2">
                             <div className="flex items-center gap-1">
-                              <button
+                              {!item.allowDecimalQty && <button
                                 type="button"
                                 onClick={() => updateQuantity(item.productId, item.quantity - 1)}
                                 className="w-8 h-8 rounded-lg bg-gray-100 border border-gray-200 flex items-center justify-center hover:bg-gray-200 active:scale-95 transition-all"
                               >
                                 <Minus className="w-3.5 h-3.5" />
-                              </button>
-                              <span className={`w-10 text-center font-bold ${isMaxReached ? "text-amber-600" : "text-gray-900"}`}>
-                                {item.quantity}
-                              </span>
-                              <button
+                              </button>}
+                              <QtyInput
+                                product={item}
+                                value={item.quantity}
+                                onChange={(q) => updateQuantity(item.productId, q)}
+                                onInvalid={(m) => toast.error(m)}
+                                aria-label={`كمية ${item.productName}`}
+                                className={`${item.allowDecimalQty ? "w-20" : "w-12"} rounded border border-gray-200 px-1 py-1 text-center font-bold focus:border-primary-500 focus:ring-1 focus:ring-primary-500 ${isMaxReached ? "text-amber-600" : "text-gray-900"}`}
+                              />
+                              {item.unit && <span className="text-xs text-gray-500">{item.unit}</span>}
+                              {!item.allowDecimalQty && <button
                                 type="button"
                                 onClick={() => updateQuantity(item.productId, item.quantity + 1)}
                                 className="w-8 h-8 rounded-lg bg-primary-50 border border-primary-200 text-primary-600 flex items-center justify-center hover:bg-primary-100 active:scale-95 transition-all"
                               >
                                 <Plus className="w-3.5 h-3.5" />
-                              </button>
+                              </button>}
                             </div>
                             <span className="font-bold text-primary-600">
                               {formatCurrency(item.lineTotal)}

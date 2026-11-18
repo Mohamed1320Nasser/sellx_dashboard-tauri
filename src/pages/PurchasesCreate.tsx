@@ -26,6 +26,8 @@ import { PrintReceiptPreview } from "../components/printer/PrintReceiptPreview";
 import { PurchaseBarcodeModal, type PurchaseLabelItem } from "../components/modals/PurchaseBarcodeModal";
 import { productService } from "../services/productService";
 import { purchaseService, type LastSupplierCost } from "../services/purchaseService";
+import QtyInput from "../components/ui/QtyInput";
+import { addQty, allowsDecimal, formatQty, minQty, qtyTimes, sumQty, unitOf } from "../utils/quantity";
 
 interface PurchaseItem {
   productId: string;
@@ -41,6 +43,9 @@ interface PurchaseItem {
   updateProductPrice: boolean;
   /** Selling price typed on the screen; null = the suggested one */
   newSellingPrice: number | null;
+  /** Sold by weight / length: fractional quantity allowed */
+  allowDecimalQty?: boolean;
+  unit?: string | null;
 }
 
 interface PurchaseDraft {
@@ -270,9 +275,9 @@ const PurchasesCreate: React.FC = () => {
     setItems(prev => {
       const existing = prev.find(item => item.productId === product.id);
       if (existing) {
-        const q = existing.quantity + quantity;
+        const q = addQty(existing.quantity, quantity);
         return prev.map(item =>
-          item.productId === product.id ? { ...item, quantity: q, totalPrice: round2(q * item.unitPrice) } : item
+          item.productId === product.id ? { ...item, quantity: q, totalPrice: qtyTimes(q, item.unitPrice) } : item
         );
       }
       // The last cost, never the selling price: a product with no cost starts empty
@@ -285,11 +290,13 @@ const PurchasesCreate: React.FC = () => {
           sku: product.sku,
           quantity,
           unitPrice: cost,
-          totalPrice: round2(quantity * cost),
+          totalPrice: qtyTimes(quantity, cost),
           productCost: unitCost !== undefined ? 0 : Number(product.purchasePrice) || 0,
           currentProductPrice: Number(product.sellingPrice) || 0,
           updateProductPrice: false,
           newSellingPrice: unitCost !== undefined ? Number(product.sellingPrice) || null : null,
+          allowDecimalQty: allowsDecimal(product),
+          unit: unitOf(product) || null,
         },
       ];
     });
@@ -301,7 +308,7 @@ const PurchasesCreate: React.FC = () => {
       prev.map(item => {
         if (item.productId !== productId) return item;
         const next = { ...item, ...change(item) };
-        return { ...next, totalPrice: round2(next.quantity * next.unitPrice) };
+        return { ...next, totalPrice: qtyTimes(next.quantity, next.unitPrice) };
       })
     );
 
@@ -310,8 +317,9 @@ const PurchasesCreate: React.FC = () => {
   const stepQuantity = (productId: string, delta: number) => {
     const item = itemsRef.current.find(i => i.productId === productId);
     if (!item) return;
-    if (item.quantity + delta <= 0) removeItem(productId);
-    else updateItem(productId, i => ({ quantity: i.quantity + delta }));
+    const next = addQty(item.quantity, delta);
+    if (next <= 0) removeItem(productId);
+    else updateItem(productId, () => ({ quantity: next }));
   };
 
   // ------------------------------------------------------------------ scanning
@@ -373,7 +381,7 @@ const PurchasesCreate: React.FC = () => {
     if (!supplierId) list.push("اختر المورد");
     if (!invoiceNumber.trim()) list.push("أدخل رقم فاتورة المورد");
     if (items.length === 0) list.push("أضف منتجاً واحداً على الأقل");
-    const noQty = items.find(i => !(i.quantity >= 1));
+    const noQty = items.find(i => !(i.quantity >= minQty(i)) || (!i.allowDecimalQty && !Number.isInteger(i.quantity)));
     if (noQty) list.push(`أدخل كمية ${noQty.productName}`);
     const noCost = items.find(i => !(i.unitPrice > 0));
     if (noCost) list.push(`أدخل سعر شراء ${noCost.productName}`);
@@ -469,6 +477,7 @@ const PurchasesCreate: React.FC = () => {
             items: items.map(item => ({
               productName: item.productName,
               quantity: item.quantity,
+              unit: item.unit,
               unitPrice: item.unitPrice,
               total: item.totalPrice,
             })),
@@ -502,8 +511,9 @@ const PurchasesCreate: React.FC = () => {
         productId: item.productId,
         name: item.productName,
         sku: item.sku ?? null,
-        purchasedQty: Number(item.quantity),
-        stock: Number(item.quantity),
+        // Weighed goods get one shelf label, not one per kilo
+        purchasedQty: item.allowDecimalQty ? 1 : Number(item.quantity),
+        stock: item.allowDecimalQty ? 1 : Number(item.quantity),
       }));
       try {
         const saved: any = await purchaseService.getById(purchaseData.id, companyId);
@@ -513,8 +523,8 @@ const PurchasesCreate: React.FC = () => {
             productId: it.productId,
             name: it.product?.name || "",
             sku: it.product?.sku,
-            purchasedQty: it.quantity,
-            stock: it.product?.stockQuantity ?? it.quantity,
+            purchasedQty: it.product?.allowDecimalQty ? 1 : Number(it.quantity),
+            stock: it.product?.allowDecimalQty ? 1 : Number(it.product?.stockQuantity ?? it.quantity),
           }));
         }
       } catch {
@@ -579,7 +589,7 @@ const PurchasesCreate: React.FC = () => {
     setDueDate(d);
   };
 
-  const totalQty = items.reduce((s, i) => s + (i.quantity || 0), 0);
+  const totalQty = sumQty(items.map(i => i.quantity || 0));
 
   // ------------------------------------------------------------------ render
   return (
@@ -838,7 +848,7 @@ const PurchasesCreate: React.FC = () => {
                             >
                               {line && (
                                 <span className="absolute -top-2 -right-2 rounded-md bg-primary-600 px-1.5 text-xs font-bold text-white">
-                                  ×{line.quantity}
+                                  ×{formatQty(line.quantity)}
                                 </span>
                               )}
                               <div className="truncate font-medium text-gray-800">{product.name}</div>
@@ -869,7 +879,7 @@ const PurchasesCreate: React.FC = () => {
                 <div className="mb-2 flex items-center justify-between">
                   <h3 className="flex items-center gap-2 font-semibold text-gray-900">
                     <ShoppingCart className="h-5 w-5 text-primary-600" />
-                    الأصناف ({items.length}) · {totalQty} قطعة
+                    الأصناف ({items.length}){items.some(i => i.allowDecimalQty) ? "" : ` · ${totalQty} قطعة`}
                   </h3>
                   {items.length > 0 && <span className="font-bold text-success-700">{formatCurrency(subtotal)}</span>}
                 </div>
@@ -925,18 +935,15 @@ const PurchasesCreate: React.FC = () => {
                               >
                                 <Minus className="h-4 w-4" />
                               </button>
-                              <input
-                                type="number"
-                                inputMode="numeric"
-                                min="1"
-                                step="1"
-                                value={item.quantity === 0 ? "" : item.quantity}
-                                onChange={e => updateItem(item.productId, () => ({ quantity: Math.max(0, Math.floor(Number(e.target.value) || 0)) }))}
-                                onFocus={e => e.target.select()}
-                                onBlur={() => item.quantity < 1 && updateItem(item.productId, () => ({ quantity: 1 }))}
+                              <QtyInput
+                                product={item}
+                                value={item.quantity}
+                                onChange={q => updateItem(item.productId, () => ({ quantity: q }))}
+                                onInvalid={m => toast.error(m)}
                                 aria-label={`كمية ${item.productName}`}
-                                className="no-spin h-9 w-16 rounded border border-gray-300 text-center font-bold focus:border-primary-500 focus:ring-2 focus:ring-primary-500"
+                                className={`h-9 ${item.allowDecimalQty ? "w-20" : "w-16"} rounded border border-gray-300 text-center font-bold focus:border-primary-500 focus:ring-2 focus:ring-primary-500`}
                               />
+                              {item.unit && <span className="text-xs text-gray-500">{item.unit}</span>}
                               <button
                                 type="button"
                                 onClick={() => stepQuantity(item.productId, 1)}

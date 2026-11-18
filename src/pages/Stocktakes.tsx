@@ -10,6 +10,7 @@ import { useStartStocktake, useStocktakes } from "../hooks/api/useStocktakes";
 import type { Stocktake, StocktakeStatus } from "../services/stocktakeService";
 import { formatCurrency, formatNumber } from "../utils/currencyUtils";
 import { formatDateTime } from "../utils/dateUtils";
+import { formatQty, unitOf } from '../utils/quantity';
 
 export const STOCKTAKE_STATUS: Record<StocktakeStatus, { label: string; className: string }> = {
   IN_PROGRESS: { label: "جاري العد", className: "bg-amber-100 text-amber-800 border-amber-200" },
@@ -92,7 +93,7 @@ const Stocktakes: React.FC = () => {
         render: (s: Stocktake) =>
           s.summary.shortageQty ? (
             <span className="text-red-600 font-medium">
-              {formatNumber(s.summary.shortageQty)} قطعة ({formatCurrency(s.summary.shortageValue)})
+              {formatQty(s.summary.shortageQty)} ({formatCurrency(s.summary.shortageValue)})
             </span>
           ) : (
             <span className="text-gray-400">-</span>
@@ -104,7 +105,7 @@ const Stocktakes: React.FC = () => {
         render: (s: Stocktake) =>
           s.summary.surplusQty ? (
             <span className="text-green-700 font-medium">
-              {formatNumber(s.summary.surplusQty)} قطعة ({formatCurrency(s.summary.surplusValue)})
+              {formatQty(s.summary.surplusQty)} ({formatCurrency(s.summary.surplusValue)})
             </span>
           ) : (
             <span className="text-gray-400">-</span>

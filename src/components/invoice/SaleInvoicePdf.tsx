@@ -2,6 +2,7 @@ import React from "react";
 import { Document, Page, View, Text, Image, StyleSheet } from "@react-pdf/renderer";
 import { registerSaleInvoiceFonts } from "./saleInvoiceFonts";
 import type { SaleInvoiceData } from "./saleInvoiceTypes";
+import { formatQty } from '../../utils/quantity';
 
 registerSaleInvoiceFonts();
 
@@ -495,7 +496,8 @@ export const SaleInvoicePdf: React.FC<{ data: SaleInvoiceData }> = ({ data }) =>
                 ) : null}
               </View>
               <View style={[styles.td, styles.colQty]}>
-                <Text style={styles.numText}>{item.quantity}</Text>
+                <Text style={styles.numText}>{formatQty(item.quantity)}</Text>
+                {item.unit ? <Text style={styles.itemSku}>{item.unit}</Text> : null}
               </View>
               <View style={[styles.td, styles.colPrice]}>
                 <Text style={styles.numText}>{formatAmount(item.unitPrice)}</Text>
@@ -512,7 +514,9 @@ export const SaleInvoicePdf: React.FC<{ data: SaleInvoiceData }> = ({ data }) =>
           ))}
           <View style={styles.itemsFoot} wrap={false}>
             <Text style={styles.itemsFootText}>عدد الأصناف: {data.itemsCount}</Text>
-            <Text style={styles.itemsFootText}>إجمالي الكميات: {data.totalQuantity}</Text>
+            {data.totalQuantity === null ? null : (
+              <Text style={styles.itemsFootText}>إجمالي الكميات: {formatQty(data.totalQuantity)}</Text>
+            )}
           </View>
         </View>
 
