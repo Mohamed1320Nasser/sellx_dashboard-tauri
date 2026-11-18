@@ -2,6 +2,7 @@ import QRCode from "qrcode";
 import type { InvoiceKind, InvoiceStatus, PillTone, SaleInvoiceData, SaleInvoiceLineItem } from "./saleInvoiceTypes";
 import { amountInWords } from "../../utils/amountInWords";
 import { qtyTimes, sumQty } from '../../utils/quantity';
+import { salePaymentLabel } from '../../utils/paymentMethods';
 
 const PAYMENT_METHOD_LABELS: Record<string, string> = {
   CASH: "نقدًا",
@@ -9,6 +10,7 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
   MOBILE_WALLET: "محفظة إلكترونية",
   BANK_TRANSFER: "تحويل بنكي",
   CREDIT: "آجل",
+  SPLIT: "مقسّم",
 };
 
 const PAYMENT_STATUS_LABELS: Record<InvoiceStatus, string> = {
@@ -179,7 +181,10 @@ export async function buildSaleInvoiceData(params: {
     totalAmount,
     totalInWords: amountInWords(totalAmount),
 
-    paymentMethodLabel: PAYMENT_METHOD_LABELS[method] || "نقدًا",
+    // split payment: "نقدًا 200 + بطاقة 300"
+    paymentMethodLabel: isPurchase
+      ? PAYMENT_METHOD_LABELS[method] || "نقدًا"
+      : salePaymentLabel({ paymentMethod: method, checkoutParts: sale.checkoutParts }, PAYMENT_METHOD_LABELS, "نقدًا"),
     paymentStatus,
     paymentStatusLabel: PAYMENT_STATUS_LABELS[paymentStatus] || PAYMENT_STATUS_LABELS.PAID,
     paidAmount,

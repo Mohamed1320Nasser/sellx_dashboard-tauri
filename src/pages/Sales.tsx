@@ -142,7 +142,10 @@ const Sales: React.FC = () => {
         const methods: Record<string, { label: string; variant: 'primary' | 'success' | 'warning' }> = {
           CASH: { label: "نقدي", variant: "success" },
           CARD: { label: "بطاقة", variant: "primary" },
+          MOBILE_WALLET: { label: "محفظة", variant: "primary" },
+          BANK_TRANSFER: { label: "تحويل بنكي", variant: "primary" },
           CREDIT: { label: "آجل", variant: "warning" },
+          SPLIT: { label: "مقسّم", variant: "primary" },
         };
         const method = methods[paymentMethod] || { label: paymentMethod, variant: "primary" as const };
         return <Badge variant={method.variant}>{method.label}</Badge>;
@@ -215,7 +218,10 @@ const Sales: React.FC = () => {
     { value: "", label: "جميع الطرق" },
     { value: "CASH", label: "نقدي" },
     { value: "CARD", label: "بطاقة" },
+    { value: "MOBILE_WALLET", label: "محفظة" },
+    { value: "BANK_TRANSFER", label: "تحويل بنكي" },
     { value: "CREDIT", label: "آجل" },
+    { value: "SPLIT", label: "مقسّم (أكثر من طريقة)" },
   ];
 
   const paymentStatusOptions = [

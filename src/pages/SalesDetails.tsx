@@ -16,6 +16,7 @@ import { PermissionGuard } from '../components/common/PermissionGuard';
 import { useClients } from '../hooks/api/useClients';
 import { useUpdateSale } from '../hooks/api/useSales';
 import { formatQty, unitOf } from '../utils/quantity';
+import { SALE_METHOD_LABELS } from '../utils/paymentMethods';
 
 const SalesDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -170,7 +171,8 @@ const SalesDetails: React.FC = () => {
     CARD: 'بطاقة ائتمان',
     MOBILE_WALLET: 'محفظة إلكترونية',
     BANK_TRANSFER: 'تحويل بنكي',
-    CREDIT: 'آجل'
+    CREDIT: 'آجل',
+    SPLIT: 'مقسّم'
   };
 
   const paymentMethodColor = {
@@ -178,7 +180,8 @@ const SalesDetails: React.FC = () => {
     CARD: 'text-blue-600 bg-blue-50',
     MOBILE_WALLET: 'text-indigo-600 bg-indigo-50',
     BANK_TRANSFER: 'text-cyan-600 bg-cyan-50',
-    CREDIT: 'text-orange-600 bg-orange-50'
+    CREDIT: 'text-orange-600 bg-orange-50',
+    SPLIT: 'text-purple-600 bg-purple-50'
   };
 
   const paymentStatusText = {
@@ -331,6 +334,17 @@ const SalesDetails: React.FC = () => {
                       }`}>
                         {paymentMethodText[sale.paymentMethod as keyof typeof paymentMethodText] || sale.paymentMethod}
                       </span>
+                      {/* split payment: what each method paid at the till */}
+                      {sale.paymentMethod === 'SPLIT' && (sale.checkoutParts?.length ?? 0) > 0 && (
+                        <ul className="mt-2 space-y-1 text-sm">
+                          {sale.checkoutParts!.map((p) => (
+                            <li key={p.method} className="flex justify-between">
+                              <span className="text-gray-600">{SALE_METHOD_LABELS[p.method] || p.method}</span>
+                              <span className="font-medium">{formatCurrency(p.amount)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </div>
                   </div>
 

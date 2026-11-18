@@ -24,7 +24,8 @@ import { PrintReceiptPreview } from "../components/printer/PrintReceiptPreview";
 import { usePrinterConfigStore } from "../stores/printerConfigStore";
 import { companyService } from "../services/companyService";
 import QtyInput from "../components/ui/QtyInput";
-import { addQty, allowsDecimal, cartCountLabel, formatQty, qtyTimes, toQty, unitOf } from "../utils/quantity";
+import { addQty, allowsDecimal, cartCountLabel, formatQty, normalizeDigits, qtyTimes, toQty, unitOf } from "../utils/quantity";
+import { MAX_SPLIT_PARTS, SPLIT_PART_METHODS, partsLabel, type SplitPartMethod } from "../utils/paymentMethods";
 
 // Number inputs registered with valueAsNumber give NaN when left empty: treat that as "not entered"
 const isBlank = (v: unknown) => v === "" || v === null || v === undefined || (typeof v === "number" && Number.isNaN(v));
@@ -35,7 +36,7 @@ const blankAsUndefined = (schema: z.ZodTypeAny) => z.preprocess((v) => (isBlank(
 const saleBaseSchema = z.object({
   clientType: z.enum(["cash", "existing", "new"]),
   clientId: z.number().optional(),
-  paymentMethod: z.enum(["CASH", "CARD", "MOBILE_WALLET", "CREDIT"]),
+  paymentMethod: z.enum(["CASH", "CARD", "MOBILE_WALLET", "CREDIT", "SPLIT"]),
   additionalFee: blankAsZero(z.coerce.number().min(0, "الرسوم الإضافية يجب أن تكون أكبر من أو تساوي صفر")) as unknown as z.ZodDefault<z.ZodNumber>,
   additionalFeeLabel: z.string().optional(),
   notes: z.string().optional(),
@@ -287,11 +288,29 @@ const SalesCreate: React.FC = () => {
   const total = taxableAmount + taxAmount + additionalFee;
   const roundedTotal = Math.round(total * 100) / 100;
 
-  // Cash tendered by the customer and the change to hand back
+  // Split payment (تقسيم): the amount paid with each method; the unpaid rest is the customer's debt
+  const [splitRows, setSplitRows] = useState<{ method: SplitPartMethod; amount: string }[]>([]);
+  const splitAmountRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const isSplit = watch("paymentMethod") === "SPLIT";
+  const splitAmount = (text: string) => {
+    const n = Number(normalizeDigits(text).trim());
+    return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : 0;
+  };
+  const splitPaid = Math.round(splitRows.reduce((sum, r) => sum + splitAmount(r.amount), 0) * 100) / 100;
+  const splitRest = Math.round((roundedTotal - splitPaid) * 100) / 100;
+  const splitCash = Math.round(
+    splitRows.filter((r) => r.method === "CASH").reduce((sum, r) => sum + splitAmount(r.amount), 0) * 100
+  ) / 100;
+
+  // Cash tendered by the customer and the change to hand back (split: change from the cash part only)
   const [received, setReceived] = useState("");
-  const changeDue = received.trim() === "" ? null : Math.round((Number(received) - roundedTotal) * 100) / 100;
+  const cashDue = isSplit ? splitCash : roundedTotal;
+  const changeDue = received.trim() === "" ? null : Math.round((Number(normalizeDigits(received)) - cashDue) * 100) / 100;
+  const takesCash = watch("paymentMethod") === "CASH" || (isSplit && splitCash > 0);
   const cashShortRef = useRef(false);
-  cashShortRef.current = watch("paymentMethod") === "CASH" && changeDue !== null && changeDue < 0;
+  cashShortRef.current = takesCash && changeDue !== null && changeDue < 0;
+  // Why a split payment can't be finished yet (checked before the confirm dialog opens)
+  const splitProblemRef = useRef<string | null>(null);
 
   // Barcode scanning handler - now uses the new barcode API
   const handleBarcodeScan = async (barcode: string) => {
@@ -524,6 +543,16 @@ const SalesCreate: React.FC = () => {
 
 
   // Show confirmation modal before sale
+  splitProblemRef.current = !isSplit
+    ? null
+    : splitPaid <= 0
+      ? "أدخل المبلغ المدفوع بكل طريقة"
+      : splitRest < -0.01
+        ? `مجموع طرق الدفع أكبر من الإجمالي بـ ${formatCurrency(-splitRest)}`
+        : splitRest > 0.01 && (clientType === "cash" || (clientType === "existing" && !watch("clientId")))
+          ? `الباقي (${formatCurrency(splitRest)}) يُسجل على العميل: اختر عميلاً أو أكمل المبلغ`
+          : null;
+
   const handleShowConfirm = useCallback(() => {
     if (itemsRef.current.length === 0) {
       toast.error("يجب إضافة منتجات للبيع");
@@ -531,6 +560,10 @@ const SalesCreate: React.FC = () => {
     }
     if (cashShortRef.current) {
       toast.error("المبلغ المستلم أقل من الإجمالي");
+      return;
+    }
+    if (splitProblemRef.current) {
+      toast.error(splitProblemRef.current);
       return;
     }
     if (skipConfirm) {
@@ -552,6 +585,7 @@ const SalesCreate: React.FC = () => {
           F7: "CARD",
           F8: "MOBILE_WALLET",
           F9: "CREDIT",
+          F10: "SPLIT",
         };
         if (e.key === "F2") {
           e.preventDefault();
@@ -592,6 +626,24 @@ const SalesCreate: React.FC = () => {
     if (data.paymentMethod === "CASH" && changeDue !== null && changeDue < 0) {
       toast.error("المبلغ المستلم أقل من الإجمالي");
       return;
+    }
+    if (data.paymentMethod === "SPLIT") {
+      if (splitPaid <= 0) {
+        toast.error("أدخل المبلغ المدفوع بكل طريقة");
+        return;
+      }
+      if (splitRest < -0.01) {
+        toast.error(`مجموع طرق الدفع أكبر من الإجمالي بـ ${formatCurrency(-splitRest)}`);
+        return;
+      }
+      if (splitRest > 0.01 && (data.clientType === "cash" || (data.clientType === "existing" && !data.clientId))) {
+        toast.error(`الباقي (${formatCurrency(splitRest)}) يُسجل على العميل: اختر عميلاً أو أكمل المبلغ`);
+        return;
+      }
+      if (splitCash > 0 && changeDue !== null && changeDue < 0) {
+        toast.error("المبلغ المستلم نقداً أقل من الجزء النقدي");
+        return;
+      }
     }
     if (!listIsDefault && (listPricesLoading || !listPrices)) {
       toast.error("جاري تحميل أسعار القائمة، حاول بعد لحظة");
@@ -654,9 +706,15 @@ const SalesCreate: React.FC = () => {
         saleData.discountPercent = data.discountPercent;
       }
 
+      // Split: the amount per method; the server adds them up and the rest is the customer's debt.
       // Credit (آجل): only the down payment typed in the field is paid (empty = nothing paid).
       // Every other method is paid in full at the till.
-      if (data.paymentMethod === "CREDIT") {
+      if (data.paymentMethod === "SPLIT") {
+        delete saleData.paymentMethod;
+        saleData.payments = splitRows
+          .map((r) => ({ method: r.method, amount: splitAmount(r.amount) }))
+          .filter((r) => r.amount > 0);
+      } else if (data.paymentMethod === "CREDIT") {
         const downPayment = Number.isFinite(data.paidAmount) ? Number(data.paidAmount) : 0;
         saleData.paidAmount = Math.min(Math.max(downPayment, 0), roundedTotal);
       } else {
@@ -683,9 +741,12 @@ const SalesCreate: React.FC = () => {
       const saleWithItems = {
         ...saleData_fromAPI,  // Data returned from API
         ...saleData,          // Original sale data (fallback)
-        change: data.paymentMethod === "CASH" && changeDue !== null && changeDue > 0 ? changeDue : 0,
+        // "payments" on a sale means later debt payments; the split parts are checkoutParts
+        payments: [],
+        checkoutParts: saleData_fromAPI.checkoutParts || saleData.payments,
+        change: takesCash && changeDue !== null && changeDue > 0 ? changeDue : 0,
         // cash handed over by the customer (printed as المستلم next to the change)
-        received: data.paymentMethod === "CASH" && changeDue !== null && changeDue >= 0 ? Number(received) : undefined,
+        received: takesCash && changeDue !== null && changeDue >= 0 ? Number(normalizeDigits(received)) : undefined,
         clientName:
           saleData_fromAPI.client?.name ||
           (clientId && selectedClient?.id === clientId ? selectedClient.name : undefined) ||
@@ -729,7 +790,8 @@ const SalesCreate: React.FC = () => {
       // The sale/client mutations already showed the server's message
       console.error("[SalesCreate] Error creating sale:", error);
     }
-  }, [items, createSaleMutation, createClientMutation, companyId, roundedTotal, changeDue, discountAmount, received, selectedClient, selectedPriceList, listIsDefault, listPricesLoading, listPrices]);
+  }, [items, createSaleMutation, createClientMutation, companyId, roundedTotal, changeDue, discountAmount, received, selectedClient, selectedPriceList, listIsDefault, listPricesLoading, listPrices,
+    splitRows, splitPaid, splitRest, splitCash, takesCash]);
   // A form that does not pass validation must say why (it used to do nothing at all)
   const handleInvalid = (formErrors: Record<string, any>) => {
     const first = Object.values(formErrors)[0];
@@ -741,6 +803,7 @@ const SalesCreate: React.FC = () => {
   const resetForNextSale = () => {
     setItems([]);
     setReceived("");
+    setSplitRows([]);
     setSelectedClient(null);
     setClientType("cash");
     setShowFees(false);
@@ -759,6 +822,16 @@ const SalesCreate: React.FC = () => {
 
   const selectPayment = (method: SaleFormData["paymentMethod"]) => {
     setValue("paymentMethod", method);
+    // Split: start with cash + card, cursor in the first amount
+    if (method === "SPLIT") {
+      if (splitRows.length === 0) {
+        setSplitRows([
+          { method: "CASH", amount: "" },
+          { method: "CARD", amount: "" },
+        ]);
+      }
+      setTimeout(() => splitAmountRefs.current[0]?.focus(), 0);
+    }
     // A credit sale is a debt, so it needs a customer: go straight to the customer box
     if (method === "CREDIT" && clientType === "cash") {
       setClientType("existing");
@@ -901,7 +974,7 @@ const SalesCreate: React.FC = () => {
           </Button>
         </form>
         <p className="-mt-2 text-[11px] text-gray-400">
-          اختصارات: F2 الباركود · F3 البحث · F6 نقدي · F7 بطاقة · F8 محفظة · F9 آجل · Ctrl+Enter إتمام البيع
+          اختصارات: F2 الباركود · F3 البحث · F6 نقدي · F7 بطاقة · F8 محفظة · F9 آجل · F10 تقسيم · Ctrl+Enter إتمام البيع
         </p>
 
         {/* POS Layout - Products Left, Cart Right */}
@@ -1229,7 +1302,9 @@ const SalesCreate: React.FC = () => {
                   const limit = clientBalance.creditLimit;
                   const newDebt = watch("paymentMethod") === "CREDIT"
                     ? Math.max(0, roundedTotal - (Number(watch("paidAmount")) || 0))
-                    : 0;
+                    : isSplit
+                      ? Math.max(0, splitRest)
+                      : 0;
                   const over = limit !== null && owes + newDebt > limit + 0.01;
                   return (
                     <div className={`rounded px-2 py-1.5 text-xs ${over ? "bg-red-50 text-red-700" : "bg-gray-50 text-gray-600"}`}>
@@ -1285,12 +1360,13 @@ const SalesCreate: React.FC = () => {
                 {/* Payment Method - Compact */}
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">الدفع</label>
-                  <div className="grid grid-cols-4 gap-1">
+                  <div className="grid grid-cols-5 gap-1">
                     {[
                       { value: "CASH", label: "نقدي", key: "F6" },
                       { value: "CARD", label: "بطاقة", key: "F7" },
                       { value: "MOBILE_WALLET", label: "محفظة", key: "F8" },
                       { value: "CREDIT", label: "آجل", key: "F9" },
+                      { value: "SPLIT", label: "تقسيم", key: "F10" },
                     ].map((method) => (
                       <button
                         key={method.value}
@@ -1370,19 +1446,110 @@ const SalesCreate: React.FC = () => {
                   </div>
                 )}
 
-                {watch("paymentMethod") === "CASH" && (
+                {isSplit && (
+                  <div className="space-y-1.5 rounded-lg border border-purple-200 bg-purple-50/40 p-2">
+                    {splitRows.map((row, i) => (
+                      <div key={i} className="flex items-center gap-1">
+                        <select
+                          aria-label="طريقة الدفع"
+                          value={row.method}
+                          onChange={(e) =>
+                            setSplitRows((rows) => rows.map((r, j) => (j === i ? { ...r, method: e.target.value as SplitPartMethod } : r)))
+                          }
+                          className="h-8 rounded border border-gray-300 bg-white px-1 text-xs"
+                        >
+                          {SPLIT_PART_METHODS.map((m) => (
+                            <option key={m.value} value={m.value}>{m.label}</option>
+                          ))}
+                        </select>
+                        <input
+                          ref={(el) => { splitAmountRefs.current[i] = el; }}
+                          inputMode="decimal"
+                          placeholder="المبلغ"
+                          value={row.amount}
+                          onChange={(e) =>
+                            setSplitRows((rows) => rows.map((r, j) => (j === i ? { ...r, amount: e.target.value } : r)))
+                          }
+                          onKeyDown={(e) => {
+                            // Enter moves to the next amount (never finishes the sale by itself)
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              splitAmountRefs.current[i + 1]?.focus();
+                            }
+                          }}
+                          className="h-8 min-w-0 flex-1 rounded border border-gray-300 bg-white px-2 text-sm"
+                        />
+                        <button
+                          type="button"
+                          title="ضع الباقي في هذه الطريقة"
+                          disabled={splitRest <= 0}
+                          onClick={() =>
+                            setSplitRows((rows) =>
+                              rows.map((r, j) =>
+                                j === i ? { ...r, amount: String(Math.round((splitAmount(r.amount) + splitRest) * 100) / 100) } : r
+                              )
+                            )
+                          }
+                          className="h-8 rounded bg-white px-2 text-[11px] font-medium text-purple-700 border border-purple-200 hover:bg-purple-50 disabled:opacity-40"
+                        >
+                          الباقي
+                        </button>
+                        {splitRows.length > 1 && (
+                          <button
+                            type="button"
+                            aria-label="حذف"
+                            onClick={() => setSplitRows((rows) => rows.filter((_, j) => j !== i))}
+                            className="h-8 w-7 rounded text-gray-400 hover:bg-red-50 hover:text-red-600"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    <div className="flex items-center justify-between text-xs">
+                      {splitRows.length < MAX_SPLIT_PARTS ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const used = new Set(splitRows.map((r) => r.method));
+                            const next = SPLIT_PART_METHODS.find((m) => !used.has(m.value))?.value || "CASH";
+                            setSplitRows((rows) => [...rows, { method: next, amount: "" }]);
+                            setTimeout(() => splitAmountRefs.current[splitRows.length]?.focus(), 0);
+                          }}
+                          className="font-medium text-purple-700 hover:underline"
+                        >
+                          + طريقة أخرى
+                        </button>
+                      ) : <span />}
+                      <span className={`font-semibold ${splitRest < -0.01 ? "text-red-600" : splitRest > 0.01 ? "text-amber-700" : "text-green-700"}`}>
+                        {splitRest < -0.01
+                          ? `أكبر من الإجمالي بـ ${formatCurrency(-splitRest)}`
+                          : splitRest > 0.01
+                            ? `المتبقي: ${formatCurrency(splitRest)}`
+                            : "تم تغطية الإجمالي"}
+                      </span>
+                    </div>
+                    {splitRest > 0.01 && (
+                      <p className="text-[11px] text-amber-700">
+                        {clientType === "cash" ? "المتبقي يُسجل آجلاً على العميل: اختر عميلاً أو أكمل المبلغ" : "المتبقي يُسجل آجلاً على العميل"}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {takesCash && (
                   <div className="space-y-1">
                     <Input
                       type="number"
                       min={0}
-                      placeholder="المبلغ المستلم من العميل"
+                      placeholder={isSplit ? `المستلم نقداً (الجزء النقدي ${formatCurrency(splitCash)}) — اختياري` : "المبلغ المستلم من العميل"}
                       value={received}
                       onChange={(e) => setReceived(e.target.value)}
                       onKeyDown={(e) => {
                         // type the cash handed over, Enter = finish the sale
                         if (e.key === "Enter") {
                           e.preventDefault();
-                          handleShowConfirm();
+                          if (!isSplit) handleShowConfirm();
                         }
                       }}
                       className="text-sm"
@@ -1507,7 +1674,9 @@ const SalesCreate: React.FC = () => {
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">طريقة الدفع:</span>
                 <span className="font-medium">
-                  {{ CASH: "نقدي", CARD: "بطاقة", MOBILE_WALLET: "محفظة", CREDIT: "آجل" }[watch("paymentMethod")]}
+                  {isSplit
+                    ? partsLabel(splitRows.map((r) => ({ method: r.method, amount: splitAmount(r.amount) })).filter((r) => r.amount > 0))
+                    : { CASH: "نقدي", CARD: "بطاقة", MOBILE_WALLET: "محفظة", CREDIT: "آجل", SPLIT: "تقسيم" }[watch("paymentMethod")]}
                 </span>
               </div>
               {priceLists.length > 1 && selectedPriceList && (
@@ -1540,7 +1709,13 @@ const SalesCreate: React.FC = () => {
                 <span>المجموع الكلي:</span>
                 <span className="text-primary-600">{formatCurrency(total)}</span>
               </div>
-              {watch("paymentMethod") === "CASH" && changeDue !== null && changeDue >= 0 && (
+              {isSplit && splitRest > 0.01 && (
+                <div className="flex justify-between text-sm font-semibold text-amber-700">
+                  <span>الباقي على العميل (آجل):</span>
+                  <span>{formatCurrency(splitRest)}</span>
+                </div>
+              )}
+              {takesCash && changeDue !== null && changeDue >= 0 && (
                 <div className="flex justify-between text-sm font-semibold text-green-700">
                   <span>المستلم {formatCurrency(Number(received))} — الباقي للعميل:</span>
                   <span>{formatCurrency(changeDue)}</span>

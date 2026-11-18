@@ -369,7 +369,9 @@ export interface Sale {
   // Payment tracking
   paidAmount: number;
   paymentStatus: SalePaymentStatus;
-  paymentMethod?: "CASH" | "CARD" | "CREDIT";
+  paymentMethod?: "CASH" | "CARD" | "MOBILE_WALLET" | "BANK_TRANSFER" | "CREDIT" | "SPLIT";
+  /** Money taken at the till per method (split payment: cash 200 + card 300) */
+  checkoutParts?: { method: string; amount: number }[];
   // Profit tracking
   totalCost?: number;
   totalProfit?: number;
@@ -400,8 +402,10 @@ export interface CreateSaleRequest {
   companyId: number;
   receiptNumber: string;
   clientId?: number;
-  paymentMethod?: "CASH" | "CARD" | "CREDIT";
+  paymentMethod?: "CASH" | "CARD" | "MOBILE_WALLET" | "BANK_TRANSFER" | "CREDIT";
   saleDate?: string;
+  /** Split payment: amount per method. Replaces paymentMethod + paidAmount; the rest is debt. */
+  payments?: { method: string; amount: number }[];
   additionalFee?: number;
   additionalFeeLabel?: string;
   // New fields for tax and discount

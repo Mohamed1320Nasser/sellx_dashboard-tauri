@@ -37,6 +37,7 @@ const METHOD_LABELS: Record<string, string> = {
   MOBILE_WALLET: "محفظة",
   BANK_TRANSFER: "تحويل بنكي",
   CREDIT: "آجل",
+  SPLIT: "مقسّم",
 };
 
 const Shifts: React.FC = () => {

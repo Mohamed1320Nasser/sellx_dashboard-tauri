@@ -1,3 +1,4 @@
+import { salePaymentLabel } from '../utils/paymentMethods';
 /**
  * Maps a sale, a purchase or a price quote into the data the thermal receipt (SellxReceipt) shows.
  * The A4 invoice uses components/invoice/buildSaleInvoiceData instead.
@@ -8,6 +9,7 @@ const SALE_PAYMENT_LABELS: Record<string, string> = {
   MOBILE_WALLET: 'محفظة إلكترونية',
   BANK_TRANSFER: 'تحويل بنكي',
   CREDIT: 'آجل',
+  SPLIT: 'مقسّم',
 };
 
 export function saleToReceiptData(params: {
@@ -83,7 +85,8 @@ export function saleToReceiptData(params: {
         received: sale.received !== undefined && sale.received !== null ? parseFloat(sale.received) : undefined,
       };
     })(),
-    paymentMethod: SALE_PAYMENT_LABELS[String(sale.paymentMethod || 'CASH').toUpperCase()] || 'نقداً',
+    // split payment: "نقداً 200 + بطاقة 300"
+    paymentMethod: salePaymentLabel(sale, SALE_PAYMENT_LABELS, 'نقداً'),
     clientName: sale.client?.name || sale.clientName,
 
     // SELLX-SPECIFIC
