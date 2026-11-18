@@ -53,10 +53,11 @@ const QtyInput = React.forwardRef<HTMLInputElement, Props>(
           const q = parseQty(draft, product);
           if (q === null || q <= 0) {
             if (draft !== "" && q === null) onInvalid?.(qtyError(product));
-            setDraft(formatQty(value));
-          } else {
-            setDraft(formatQty(q));
+          } else if (q !== value) {
+            // the parent may refuse it (e.g. more than in stock): show what was really kept
+            onChange(q);
           }
+          setDraft(formatQty(value));
           setInvalid(false);
           onBlur?.(e);
         }}

@@ -12,6 +12,10 @@ interface Notification {
 
 interface UIStore {
   sidebarCollapsed: boolean;
+  /** The POS folds the menu while selling; this is not saved, so the user's own choice is kept */
+  posFold: boolean;
+  /** The user's choice before the POS folded the menu */
+  savedSidebarCollapsed: boolean;
   theme: "light" | "dark";
   language: "ar" | "en";
   notifications: Notification[];
@@ -19,6 +23,7 @@ interface UIStore {
   // Actions
   toggleSidebar: () => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
+  setPosFold: (fold: boolean) => void;
   setTheme: (theme: "light" | "dark") => void;
   setLanguage: (language: "ar" | "en") => void;
   addNotification: (
@@ -32,6 +37,8 @@ export const useUIStore = create<UIStore>()(
   persist(
     (set, get) => ({
       sidebarCollapsed: false,
+      posFold: false,
+      savedSidebarCollapsed: false,
       theme: "light",
       language: "ar",
       notifications: [],
@@ -42,6 +49,13 @@ export const useUIStore = create<UIStore>()(
 
       setSidebarCollapsed: (collapsed) => {
         set({ sidebarCollapsed: collapsed });
+      },
+
+      setPosFold: (fold) => {
+        const state = get();
+        if (fold === state.posFold) return;
+        if (fold) set({ posFold: true, savedSidebarCollapsed: state.sidebarCollapsed, sidebarCollapsed: true });
+        else set({ posFold: false, sidebarCollapsed: state.savedSidebarCollapsed });
       },
 
       setTheme: (theme) => {
@@ -85,7 +99,8 @@ export const useUIStore = create<UIStore>()(
     {
       name: "ui-storage",
       partialize: (state) => ({
-        sidebarCollapsed: state.sidebarCollapsed,
+        // while the POS has the menu folded, save the user's own choice, not the fold
+        sidebarCollapsed: state.posFold ? state.savedSidebarCollapsed : state.sidebarCollapsed,
         theme: state.theme,
         language: state.language,
       }),

@@ -7,9 +7,11 @@ import { usePermissions } from '../../hooks/usePermissions';
 
 interface LayoutProps {
     children: React.ReactNode;
+    /** Tight page padding for full-screen work pages (the POS) */
+    compact?: boolean;
 }
 
-const Layout: React.FC<LayoutProps> = ({ children }) => {
+const Layout: React.FC<LayoutProps> = ({ children, compact = false }) => {
     const { sidebarCollapsed } = useUIStore();
     const permissionsLoaded = useRef(false);
     
@@ -54,7 +56,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
                 {/* Page content with professional spacing */}
                 <main className="flex-1 overflow-auto bg-gray-50">
-                    <div className="pl-6 pr-4 sm:pl-8 sm:pr-6 lg:pl-12 lg:pr-8 py-6 transition-all duration-300 ease-in-out">
+                    <div className={`${compact ? "px-3 py-3" : "pl-6 pr-4 sm:pl-8 sm:pr-6 lg:pl-12 lg:pr-8 py-6"} transition-all duration-300 ease-in-out`}>
                         <DesktopUpdateBanner />
                         {children}
                     </div>

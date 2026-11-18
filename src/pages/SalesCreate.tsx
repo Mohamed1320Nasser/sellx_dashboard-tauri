@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { ArrowRight, X, ShoppingCart, Plus, Minus, Trash2, Search, Package, AlertTriangle, PauseCircle, ListRestart } from "lucide-react";
+import { ArrowRight, X, ShoppingCart, Plus, Minus, Trash2, Search, Package, AlertTriangle, PauseCircle, ListRestart, Keyboard } from "lucide-react";
 import { Layout } from "../components/layout";
 import { Button, Input, Select, Modal } from "../components/ui";
 import { useSessionAuthStore } from "../stores/sessionAuthStore";
@@ -30,6 +30,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import HeldSalesModal, { heldSalesKey, useHeldSales } from "../components/sales/HeldSalesModal";
 import { heldSaleError, heldSaleService, type HeldSaleRow, type ResumedSale } from "../services/heldSaleService";
 import { usePermissionStore } from "../stores/permissionStore";
+import { useUIStore } from "../stores/uiStore";
 
 // Number inputs registered with valueAsNumber give NaN when left empty: treat that as "not entered"
 const isBlank = (v: unknown) => v === "" || v === null || v === undefined || (typeof v === "number" && Number.isNaN(v));
@@ -520,7 +521,8 @@ const SalesCreate: React.FC = () => {
       // product not present in the currently loaded product page).
       const stock = getProductStock(productId) ?? currentItem?.stock ?? 0;
       if (quantity > stock) {
-        toast.error(`الكمية المطلوبة تتجاوز المخزون المتاح: ${formatQty(stock, currentItem?.unit)}`);
+        // one message per product, not one per key typed
+        toast.error(`الكمية المطلوبة تتجاوز المخزون المتاح: ${formatQty(stock, currentItem?.unit)}`, { id: `stock-${productId}` });
         return;
       }
     }
@@ -1007,6 +1009,12 @@ const SalesCreate: React.FC = () => {
     return () => window.removeEventListener("resize", fit);
   }, [hasOpenShift, shiftLoading]);
 
+  // The menu is not needed while selling: fold the sidebar to its icon rail, give it back on leaving
+  useEffect(() => {
+    useUIStore.getState().setPosFold(true);
+    return () => useUIStore.getState().setPosFold(false);
+  }, []);
+
   // Back to the barcode box after a click in the cart, so the next scan is not lost
   const focusScan = () =>
     setTimeout(() => {
@@ -1039,49 +1047,90 @@ const SalesCreate: React.FC = () => {
   ];
 
   return (
-    <Layout>
-      <div className="w-full space-y-4">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4 space-x-reverse">
+    <Layout compact>
+      <div className="w-full space-y-3">
+        {/* One header row: back, scan box, options. The work area gets the rest of the screen. */}
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            onClick={() => navigate('/sales')}
+            title="العودة إلى المبيعات"
+            className="flex-shrink-0 px-2 text-gray-600 hover:text-gray-900"
+          >
+            <ArrowRight className="w-5 h-5" />
+          </Button>
+          <h1 className="hidden flex-shrink-0 text-lg font-bold text-gray-900 xl:block">بيع جديد</h1>
+          <form onSubmit={handleBarcodeSubmit} className="flex min-w-0 flex-1 gap-2">
+            <input
+              ref={barcodeInputRef}
+              type="text"
+              value={barcodeInput}
+              onChange={(e) => setBarcodeInput(e.target.value)}
+              placeholder="امسح الباركود أو اكتبه ثم Enter (F2)"
+              className="min-w-0 flex-1 rounded-lg border border-gray-300 px-4 py-2.5 text-right text-base focus:border-primary-500 focus:ring-2 focus:ring-primary-500"
+              autoFocus
+            />
             <Button
-              variant="ghost"
-              onClick={() => navigate('/sales')}
-              className="flex items-center space-x-2 space-x-reverse text-gray-600 hover:text-gray-900"
+              type="submit"
+              disabled={!barcodeInput.trim()}
+              className="flex-shrink-0 bg-primary-600 px-5 hover:bg-primary-700"
             >
-              <ArrowRight className="w-4 h-4" />
-              <span>العودة</span>
+              إضافة
             </Button>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">عملية بيع جديدة</h1>
+          </form>
+          <details className="relative flex-shrink-0">
+            <summary
+              title="اختصارات لوحة المفاتيح"
+              className="flex h-10 cursor-pointer list-none items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 text-sm text-gray-600 hover:bg-gray-50 [&::-webkit-details-marker]:hidden"
+            >
+              <Keyboard className="h-4 w-4" />
+            </summary>
+            <div className="absolute left-0 top-12 z-40 w-64 rounded-lg border border-gray-200 bg-white p-3 text-sm shadow-lg">
+              <p className="mb-2 font-semibold text-gray-800">اختصارات لوحة المفاتيح</p>
+              <ul className="space-y-1 text-gray-600">
+                {[
+                  ["F2", "خانة الباركود"],
+                  ["F3", "البحث عن منتج"],
+                  ["F4", "تعليق الفاتورة"],
+                  ["F6", "نقدي"],
+                  ["F7", "بطاقة"],
+                  ["F8", "محفظة"],
+                  ["F9", "آجل"],
+                  ["F10", "تقسيم الدفع"],
+                  ["Ctrl+Enter", "إتمام البيع"],
+                ].map(([key, label]) => (
+                  <li key={key} className="flex justify-between">
+                    <span>{label}</span>
+                    <kbd className="rounded border border-gray-300 bg-gray-50 px-1.5 text-xs font-mono">{key}</kbd>
+                  </li>
+                ))}
+              </ul>
             </div>
-          </div>
-          <div className="flex items-center space-x-2 space-x-reverse">
-            <label
-              className="flex items-center gap-1 text-xs text-gray-500 ml-2 cursor-pointer select-none"
-              title="عند الإيقاف يُحفظ البيع مباشرة بدون نافذة التأكيد (Ctrl+Enter للحفظ)"
-            >
-              <input
-                type="checkbox"
-                checked={!skipConfirm}
-                onChange={(e) => toggleSkipConfirm(!e.target.checked)}
-              />
-              تأكيد قبل الحفظ
-            </label>
-            <Button
-              onClick={handleCancel}
-              variant="outline"
-              className="text-gray-600 hover:text-gray-900"
-            >
-              <X className="w-4 h-4 ml-1" />
-              إلغاء
-            </Button>
-          </div>
+          </details>
+          <label
+            className="hidden flex-shrink-0 cursor-pointer select-none items-center gap-1 text-xs text-gray-500 lg:flex"
+            title="عند الإيقاف يُحفظ البيع مباشرة بدون نافذة التأكيد (Ctrl+Enter للحفظ)"
+          >
+            <input
+              type="checkbox"
+              checked={!skipConfirm}
+              onChange={(e) => toggleSkipConfirm(!e.target.checked)}
+            />
+            تأكيد قبل الحفظ
+          </label>
+          <Button
+            onClick={handleCancel}
+            variant="outline"
+            className="flex-shrink-0 text-gray-600 hover:text-gray-900"
+          >
+            <X className="w-4 h-4 ml-1" />
+            إلغاء
+          </Button>
         </div>
 
         {/* No open shift: the sale is still allowed, but its cash is not counted in any drawer */}
         {!shiftLoading && !hasOpenShift && (
-          <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
             <div className="flex items-center gap-2 text-amber-800">
               <AlertTriangle className="w-5 h-5 flex-shrink-0" />
               <span className="text-sm">
@@ -1100,31 +1149,6 @@ const SalesCreate: React.FC = () => {
           </div>
         )}
 
-        {/* Barcode Scanner Input */}
-        <form onSubmit={handleBarcodeSubmit} className="flex gap-2">
-          <div className="relative flex-1">
-            <input
-              ref={barcodeInputRef}
-              type="text"
-              value={barcodeInput}
-              onChange={(e) => setBarcodeInput(e.target.value)}
-              placeholder="امسح الباركود أو اكتبه ثم Enter (F2)"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-right"
-              autoFocus
-            />
-          </div>
-          <Button
-            type="submit"
-            disabled={!barcodeInput.trim()}
-            className="bg-primary-600 hover:bg-primary-700 px-6"
-          >
-            إضافة
-          </Button>
-        </form>
-        <p className="-mt-2 text-[11px] text-gray-400">
-          اختصارات: F2 الباركود · F3 البحث · F6 نقدي · F7 بطاقة · F8 محفظة · F9 آجل · F10 تقسيم · F4 تعليق · Ctrl+Enter إتمام البيع
-        </p>
-
         {/* POS Layout - Products Left, Cart Right */}
         <form
           onSubmit={(e) => {
@@ -1134,12 +1158,12 @@ const SalesCreate: React.FC = () => {
         >
           <div
             ref={posGridRef}
-            className="grid grid-cols-1 lg:grid-cols-12 gap-4"
+            className="grid grid-cols-1 gap-3 lg:grid-cols-12"
             style={posHeight ? { height: posHeight } : undefined}
           >
 
-            {/* LEFT SIDE - Products (8 columns) */}
-            <div className="lg:col-span-8 flex flex-col bg-white rounded-lg border border-gray-200 overflow-hidden">
+            {/* Products: wide screens = products | cart | payment; smaller = products | (cart over payment) */}
+            <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-gray-200 bg-white lg:col-span-6 xl:col-span-4 2xl:col-span-5">
               {/* Category Tabs */}
               <div className="flex-shrink-0 border-b border-gray-200 bg-gray-50 p-2">
                 <div className="flex gap-2 overflow-x-auto scrollbar-thin">
@@ -1189,7 +1213,7 @@ const SalesCreate: React.FC = () => {
               {/* Products Grid */}
               <div className="flex-1 overflow-y-auto p-3">
                 {productOptions.length > 0 ? (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 gap-2 2xl:grid-cols-3">
                     {productOptions.map((option) => {
                       const isSelected = isProductSelected(option.product.id);
                       const selectedQuantity = getSelectedQuantity(option.product.id);
@@ -1284,48 +1308,25 @@ const SalesCreate: React.FC = () => {
               </div>
             </div>
 
-            {/* RIGHT SIDE - Cart & Info (4 columns) */}
-            <div className="lg:col-span-4 flex min-h-0 flex-col gap-3">
-              {/* Cart and sale options scroll; the totals and the pay button below always stay on screen */}
-              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto">
-              {/* Cart Items */}
-              <div className="bg-white rounded-lg border border-gray-200 flex flex-col">
-                <div className="px-2 py-2 border-b border-gray-200 bg-gray-50 flex-shrink-0">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-semibold text-gray-900 text-sm flex items-center gap-1.5">
-                      <ShoppingCart className="w-4 h-4" />
-                      السلة
-                    </h3>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs text-gray-500">{items.length} منتج</span>
-                      <button
-                        type="button"
-                        title="تعليق الفاتورة (F4)"
-                        onClick={openHoldModal}
-                        disabled={items.length === 0 || holding}
-                        className="inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-40"
-                      >
-                        <PauseCircle className="h-3.5 w-3.5" />
-                        تعليق
-                      </button>
-                      <button
-                        type="button"
-                        title="الفواتير المعلقة"
-                        onClick={() => setShowHeldList(true)}
-                        className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-medium ${
-                          heldCount > 0
-                            ? "border-primary-200 bg-primary-50 text-primary-700 hover:bg-primary-100"
-                            : "border-gray-200 bg-white text-gray-500 hover:bg-gray-50"
-                        }`}
-                      >
-                        <ListRestart className="h-3.5 w-3.5" />
-                        معلقة{heldCount > 0 ? ` (${heldCount})` : ""}
-                      </button>
-                    </div>
-                  </div>
+            {/* Cart + payment. On wide screens this wrapper disappears and they become two columns. */}
+            <div className="flex min-h-0 flex-col gap-3 lg:col-span-6 xl:contents">
+              {/* Cart: takes all the height it can, scrolls on its own */}
+              <div className="flex min-h-0 flex-1 basis-0 flex-col overflow-hidden rounded-lg border border-gray-200 bg-white xl:col-span-4">
+                <div className="flex flex-shrink-0 items-center justify-between border-b border-gray-200 bg-gray-50 px-3 py-2">
+                  <h3 className="flex items-center gap-1.5 text-base font-semibold text-gray-900">
+                    <ShoppingCart className="h-5 w-5" />
+                    السلة
+                  </h3>
+                  <span className="text-sm text-gray-600">
+                    {items.length === 0
+                      ? "فارغة"
+                      : items.some((i) => i.allowDecimalQty)
+                        ? `${items.length} صنف`
+                        : `${items.length} صنف · ${cartCountLabel(items)}`}
+                  </span>
                 </div>
 
-                <div className="flex-1 overflow-y-auto">
+                <div className="min-h-0 flex-1 overflow-y-auto">
                   {items.length > 0 ? (
                     <div className="divide-y divide-gray-100">
                       {items.map((item) => {
@@ -1333,65 +1334,60 @@ const SalesCreate: React.FC = () => {
                         const isMaxReached = item.quantity >= stock;
 
                         return (
-                          <div key={item.productId} className={`px-2 py-2 transition-colors ${isMaxReached ? "bg-amber-50" : "hover:bg-gray-50"}`}>
-                            <div className="flex justify-between items-center">
-                              <span className="flex-1 ml-1 min-w-0">
-                                <span className="block font-medium text-gray-900 text-xs truncate">{item.productName}</span>
-                                <span className="block text-[11px] text-gray-500">
-                                  {formatQty(item.quantity, item.unit)} × {formatCurrency(item.unitPrice)}
-                                  {item.allowDecimalQty && item.unit ? ` / ${item.unit}` : ""}
-                                </span>
-                              </span>
-                              <button
-                                type="button"
-                                aria-label="حذف من السلة"
-                                onClick={() => {
-                                  removeItem(item.productId);
-                                  focusScan();
-                                }}
-                                className="text-red-400 hover:text-red-600 hover:bg-red-50 p-1 rounded transition-colors"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                          <div
+                            key={item.productId}
+                            className={`flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 transition-colors ${isMaxReached ? "bg-amber-50" : "hover:bg-gray-50"}`}
+                          >
+                            {/* name keeps at least ~9rem; on a narrow cart the controls drop to a second line */}
+                            <div className="min-w-[9rem] flex-1">
+                              <p className="truncate text-sm font-medium text-gray-900" title={item.productName}>{item.productName}</p>
+                              <p className="whitespace-nowrap text-xs text-gray-500">
+                                {formatCurrency(item.unitPrice)}
+                                {item.allowDecimalQty && item.unit ? ` / ${item.unit}` : ""}
+                                {isMaxReached && <span className="mr-1 text-amber-600">· آخر الكمية</span>}
+                              </p>
                             </div>
-                            <div className="flex items-center justify-between mt-1.5">
-                              <div className="flex items-center gap-0.5">
-                                {!item.allowDecimalQty && <button
+                            <div className="mr-auto flex flex-shrink-0 items-center gap-2">
+                            <div className="flex items-center gap-1">
+                              {!item.allowDecimalQty && (
+                                <button
                                   type="button"
                                   aria-label="إنقاص الكمية"
                                   onClick={() => {
                                     updateQuantity(item.productId, item.quantity - 1);
                                     focusScan();
                                   }}
-                                  className="w-7 h-7 rounded bg-gray-100 border border-gray-200 flex items-center justify-center hover:bg-gray-200 active:scale-95 transition-all"
+                                  className="flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-gray-100 transition-all hover:bg-gray-200 active:scale-95"
                                 >
-                                  <Minus className="w-3 h-3" />
-                                </button>}
-                                <QtyInput
-                                  ref={(el) => {
-                                    if (el) qtyInputRefs.current.set(item.productId, el);
-                                    else qtyInputRefs.current.delete(item.productId);
-                                  }}
-                                  product={item}
-                                  value={item.quantity}
-                                  aria-label={item.allowDecimalQty ? `الوزن / الكمية (${item.unit || "وحدة"})` : "الكمية"}
-                                  onChange={(q) => updateQuantity(item.productId, q)}
-                                  onInvalid={(m) => toast.error(m)}
-                                  onKeyDown={(e) => {
-                                    // Enter = done with this line: back to scanning, not "save the sale"
-                                    if (e.key === "Enter") {
-                                      e.preventDefault();
-                                      focusScan();
-                                    }
-                                  }}
-                                  className={`${item.allowDecimalQty ? "w-20" : "w-12"} rounded border border-gray-200 px-1 py-0.5 text-center text-sm font-bold focus:border-primary-500 focus:ring-1 focus:ring-primary-500 ${
-                                    isMaxReached ? "text-amber-600" : "text-gray-900"
-                                  }`}
-                                />
-                                {item.allowDecimalQty && item.unit && (
-                                  <span className="text-[11px] text-gray-500">{item.unit}</span>
-                                )}
-                                {!item.allowDecimalQty && <button
+                                  <Minus className="h-4 w-4" />
+                                </button>
+                              )}
+                              <QtyInput
+                                ref={(el) => {
+                                  if (el) qtyInputRefs.current.set(item.productId, el);
+                                  else qtyInputRefs.current.delete(item.productId);
+                                }}
+                                product={item}
+                                value={item.quantity}
+                                aria-label={item.allowDecimalQty ? `الوزن / الكمية (${item.unit || "وحدة"})` : "الكمية"}
+                                onChange={(q) => updateQuantity(item.productId, q)}
+                                onInvalid={(m) => toast.error(m)}
+                                onKeyDown={(e) => {
+                                  // Enter = done with this line: back to scanning, not "save the sale"
+                                  if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    focusScan();
+                                  }
+                                }}
+                                className={`${item.allowDecimalQty ? "w-20" : "w-12"} h-8 rounded-md border border-gray-300 px-1 text-center text-base font-bold focus:border-primary-500 focus:ring-1 focus:ring-primary-500 ${
+                                  isMaxReached ? "text-amber-600" : "text-gray-900"
+                                }`}
+                              />
+                              {item.allowDecimalQty && item.unit && (
+                                <span className="w-8 text-xs text-gray-500">{item.unit}</span>
+                              )}
+                              {!item.allowDecimalQty && (
+                                <button
                                   type="button"
                                   aria-label="زيادة الكمية"
                                   onClick={() => {
@@ -1399,37 +1395,51 @@ const SalesCreate: React.FC = () => {
                                     focusScan();
                                   }}
                                   disabled={isMaxReached}
-                                  className={`w-7 h-7 rounded border flex items-center justify-center active:scale-95 transition-all ${
+                                  className={`flex h-8 w-8 items-center justify-center rounded-md border transition-all active:scale-95 ${
                                     isMaxReached
-                                      ? "bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed"
-                                      : "bg-primary-50 border-primary-200 text-primary-600 hover:bg-primary-100"
+                                      ? "cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400"
+                                      : "border-primary-200 bg-primary-50 text-primary-600 hover:bg-primary-100"
                                   }`}
                                 >
-                                  <Plus className="w-3 h-3" />
-                                </button>}
-                              </div>
-                              <span className="font-bold text-sm text-primary-600">
-                                {formatCurrency(item.total)}
-                              </span>
+                                  <Plus className="h-4 w-4" />
+                                </button>
+                              )}
+                            </div>
+                            <span className="w-24 whitespace-nowrap text-left text-base font-bold text-gray-900">
+                              {formatCurrency(item.total)}
+                            </span>
+                            <button
+                              type="button"
+                              aria-label="حذف من السلة"
+                              title="حذف"
+                              onClick={() => {
+                                removeItem(item.productId);
+                                focusScan();
+                              }}
+                              className="flex-shrink-0 rounded p-1.5 text-red-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
                             </div>
                           </div>
                         );
                       })}
                     </div>
                   ) : (
-                    <div className="flex flex-col items-center justify-center h-full text-gray-400 py-6">
-                      <ShoppingCart className="w-10 h-10 mb-1" />
-                      <p className="text-xs">السلة فارغة</p>
+                    <div className="flex h-full flex-col items-center justify-center py-8 text-gray-400">
+                      <ShoppingCart className="mb-2 h-12 w-12" />
+                      <p className="text-sm">امسح باركود أو اختر منتجاً</p>
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Sale Info - Compact */}
-              <div className="bg-white rounded-lg border border-gray-200 p-3 space-y-3">
+              {/* Payment: options scroll, totals + buttons stay at the bottom */}
+              <div className="flex min-h-0 flex-1 basis-0 flex-col gap-3 xl:col-span-4 2xl:col-span-3">
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto rounded-lg border border-gray-200 bg-white p-3">
                 {/* Client Type - Compact */}
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">العميل</label>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">العميل</label>
                   <div className="grid grid-cols-3 gap-1">
                     {[
                       { value: "cash", label: "نقدي" },
@@ -1447,7 +1457,7 @@ const SalesCreate: React.FC = () => {
                             setSelectedClient(null);
                           }
                         }}
-                        className={`py-1.5 px-2 rounded text-xs font-medium transition-all ${
+                        className={`h-9 px-2 rounded-md text-sm font-medium transition-all ${
                           clientType === type.value
                             ? "bg-primary-600 text-white"
                             : "bg-gray-100 text-gray-600 hover:bg-gray-200"
@@ -1490,14 +1500,14 @@ const SalesCreate: React.FC = () => {
 
                 {priceLists.length > 1 && (
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">قائمة الأسعار</label>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">قائمة الأسعار</label>
                     <div className="flex flex-wrap gap-1">
                       {priceLists.map((list) => (
                         <button
                           key={list.id}
                           type="button"
                           onClick={() => setChosenPriceListId(list.id)}
-                          className={`py-1.5 px-3 rounded text-xs font-medium transition-all ${
+                          className={`h-8 px-3 rounded-md text-sm font-medium transition-all ${
                             selectedPriceList?.id === list.id
                               ? "bg-emerald-600 text-white"
                               : "bg-gray-100 text-gray-600 hover:bg-gray-200"
@@ -1508,7 +1518,7 @@ const SalesCreate: React.FC = () => {
                       ))}
                     </div>
                     {customerPriceListId && selectedPriceList?.id === customerPriceListId && (
-                      <p className="mt-1 text-[11px] text-emerald-700">قائمة العميل</p>
+                      <p className="mt-1 text-xs text-emerald-700">قائمة العميل</p>
                     )}
                   </div>
                 )}
@@ -1532,7 +1542,7 @@ const SalesCreate: React.FC = () => {
 
                 {/* Payment Method - Compact */}
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">الدفع</label>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">الدفع</label>
                   <div className="grid grid-cols-5 gap-1">
                     {[
                       { value: "CASH", label: "نقدي", key: "F6" },
@@ -1546,7 +1556,7 @@ const SalesCreate: React.FC = () => {
                         type="button"
                         title={method.key}
                         onClick={() => selectPayment(method.value as SaleFormData["paymentMethod"])}
-                        className={`py-1.5 px-2 rounded text-xs font-medium transition-all ${
+                        className={`h-9 px-2 rounded-md text-sm font-medium transition-all ${
                           watch("paymentMethod") === method.value
                             ? "bg-primary-600 text-white"
                             : "bg-gray-100 text-gray-600 hover:bg-gray-200"
@@ -1629,7 +1639,7 @@ const SalesCreate: React.FC = () => {
                           onChange={(e) =>
                             setSplitRows((rows) => rows.map((r, j) => (j === i ? { ...r, method: e.target.value as SplitPartMethod } : r)))
                           }
-                          className="h-8 rounded border border-gray-300 bg-white px-1 text-xs"
+                          className="h-9 rounded-md border border-gray-300 bg-white px-1 text-sm"
                         >
                           {SPLIT_PART_METHODS.map((m) => (
                             <option key={m.value} value={m.value}>{m.label}</option>
@@ -1650,7 +1660,7 @@ const SalesCreate: React.FC = () => {
                               splitAmountRefs.current[i + 1]?.focus();
                             }
                           }}
-                          className="h-8 min-w-0 flex-1 rounded border border-gray-300 bg-white px-2 text-sm"
+                          className="h-9 min-w-0 flex-1 rounded-md border border-gray-300 bg-white px-2 text-base"
                         />
                         <button
                           type="button"
@@ -1663,7 +1673,7 @@ const SalesCreate: React.FC = () => {
                               )
                             )
                           }
-                          className="h-8 rounded bg-white px-2 text-[11px] font-medium text-purple-700 border border-purple-200 hover:bg-purple-50 disabled:opacity-40"
+                          className="h-9 rounded-md bg-white px-2 text-xs font-medium text-purple-700 border border-purple-200 hover:bg-purple-50 disabled:opacity-40"
                         >
                           الباقي
                         </button>
@@ -1672,7 +1682,7 @@ const SalesCreate: React.FC = () => {
                             type="button"
                             aria-label="حذف"
                             onClick={() => setSplitRows((rows) => rows.filter((_, j) => j !== i))}
-                            className="h-8 w-7 rounded text-gray-400 hover:bg-red-50 hover:text-red-600"
+                            className="h-9 w-7 rounded text-lg text-gray-400 hover:bg-red-50 hover:text-red-600"
                           >
                             ×
                           </button>
@@ -1703,7 +1713,7 @@ const SalesCreate: React.FC = () => {
                       </span>
                     </div>
                     {splitRest > 0.01 && (
-                      <p className="text-[11px] text-amber-700">
+                      <p className="text-xs text-amber-700">
                         {clientType === "cash" ? "المتبقي يُسجل آجلاً على العميل: اختر عميلاً أو أكمل المبلغ" : "المتبقي يُسجل آجلاً على العميل"}
                       </p>
                     )}
@@ -1774,8 +1784,6 @@ const SalesCreate: React.FC = () => {
                 )}
               </div>
 
-              </div>
-
               {/* Totals & Submit */}
               <div className="flex-shrink-0 bg-white rounded-lg border border-gray-200 p-3 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
                 <div className="space-y-1 text-sm mb-3">
@@ -1807,6 +1815,31 @@ const SalesCreate: React.FC = () => {
                   </div>
                 </div>
 
+                <div className="mb-2 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    title="تعليق الفاتورة (F4)"
+                    onClick={openHoldModal}
+                    disabled={items.length === 0 || holding}
+                    className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 text-sm font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-40"
+                  >
+                    <PauseCircle className="h-4 w-4" />
+                    تعليق
+                  </button>
+                  <button
+                    type="button"
+                    title="الفواتير المعلقة"
+                    onClick={() => setShowHeldList(true)}
+                    className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border text-sm font-medium ${
+                      heldCount > 0
+                        ? "border-primary-300 bg-primary-50 text-primary-700 hover:bg-primary-100"
+                        : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                    }`}
+                  >
+                    <ListRestart className="h-4 w-4" />
+                    معلقة{heldCount > 0 ? ` (${heldCount})` : ""}
+                  </button>
+                </div>
                 <Button
                   type="button"
                   onClick={handleShowConfirm}
@@ -1819,6 +1852,7 @@ const SalesCreate: React.FC = () => {
                 >
                   {createSaleMutation.isPending ? "جاري الإنشاء..." : `إتمام البيع - ${formatCurrency(total)}`}
                 </Button>
+              </div>
               </div>
             </div>
           </div>
