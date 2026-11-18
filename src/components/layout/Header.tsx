@@ -42,6 +42,7 @@ const Header: React.FC = () => {
         // Page titles mapping
         const pageTitles: { [key: string]: string } = {
             '/analytics': 'التحليلات',
+            '/settings/audit-log': 'سجل العمليات',
             '/users': 'إدارة المستخدمين',
             '/user-management': 'إدارة المستخدمين',
             '/company': 'إدارة الشركة',
