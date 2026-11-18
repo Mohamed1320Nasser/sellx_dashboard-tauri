@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { ArrowRight, X, ShoppingCart, Plus, Minus, Trash2, Search, Package, AlertTriangle } from "lucide-react";
+import { ArrowRight, X, ShoppingCart, Plus, Minus, Trash2, Search, Package, AlertTriangle, PauseCircle, ListRestart } from "lucide-react";
 import { Layout } from "../components/layout";
 import { Button, Input, Select, Modal } from "../components/ui";
 import { useSessionAuthStore } from "../stores/sessionAuthStore";
@@ -26,6 +26,10 @@ import { companyService } from "../services/companyService";
 import QtyInput from "../components/ui/QtyInput";
 import { addQty, allowsDecimal, cartCountLabel, formatQty, normalizeDigits, qtyTimes, toQty, unitOf } from "../utils/quantity";
 import { MAX_SPLIT_PARTS, SPLIT_PART_METHODS, partsLabel, type SplitPartMethod } from "../utils/paymentMethods";
+import { useQueryClient } from "@tanstack/react-query";
+import HeldSalesModal, { heldSalesKey, useHeldSales } from "../components/sales/HeldSalesModal";
+import { heldSaleError, heldSaleService, type HeldSaleRow, type ResumedSale } from "../services/heldSaleService";
+import { usePermissionStore } from "../stores/permissionStore";
 
 // Number inputs registered with valueAsNumber give NaN when left empty: treat that as "not entered"
 const isBlank = (v: unknown) => v === "" || v === null || v === undefined || (typeof v === "number" && Number.isNaN(v));
@@ -233,8 +237,16 @@ const SalesCreate: React.FC = () => {
   // A customer brings their own list; cash and new customers buy at the default list
   const customerPriceListId =
     clientType === "existing" ? selectedClient?.priceListId ?? (clientBalance as any)?.priceListId ?? null : null;
+  // A resumed held cart comes back on the list it was held with (once, then the usual rules)
+  const pendingPriceListRef = useRef<string | null>(null);
   useEffect(() => {
     if (!defaultPriceList) return;
+    const pending = pendingPriceListRef.current && priceLists.find((l) => l.id === pendingPriceListRef.current);
+    if (pending) {
+      pendingPriceListRef.current = null;
+      setChosenPriceListId(pending.id);
+      return;
+    }
     const fromCustomer = priceLists.find((l) => l.id === customerPriceListId);
     setChosenPriceListId(fromCustomer ? fromCustomer.id : defaultPriceList.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -575,9 +587,12 @@ const SalesCreate: React.FC = () => {
 
   // Ctrl/Cmd + Enter completes the sale from anywhere on the screen
   const handleSubmitRef = useRef<(() => void) | null>(null);
+  const holdDialogOpenRef = useRef(false);
   const selectPaymentRef = useRef<(method: SaleFormData["paymentMethod"]) => void>(() => {});
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // the hold dialogs own the keyboard while open
+      if (holdDialogOpenRef.current) return;
       // F2 barcode, F3 product search, F6-F9 payment method (no dialog open)
       if (!showConfirmModal && !showPrintModal) {
         const payKeys: Record<string, SaleFormData["paymentMethod"]> = {
@@ -595,6 +610,11 @@ const SalesCreate: React.FC = () => {
         if (e.key === "F3") {
           e.preventDefault();
           productSearchRef.current?.focus();
+          return;
+        }
+        if (e.key === "F4") {
+          e.preventDefault();
+          openHoldRef.current();
           return;
         }
         if (payKeys[e.key]) {
@@ -820,6 +840,134 @@ const SalesCreate: React.FC = () => {
     setTimeout(() => barcodeInputRef.current?.focus(), 50);
   };
 
+  // ------------------------------------------------------------ hold sale (تعليق)
+  const queryClient = useQueryClient();
+  const role = usePermissionStore((state) => state.role);
+  const { data: heldData } = useHeldSales(companyId || 0);
+  const heldCount = heldData?.list?.length || 0;
+  const [showHoldModal, setShowHoldModal] = useState(false);
+  const [holdLabel, setHoldLabel] = useState("");
+  const [showHeldList, setShowHeldList] = useState(false);
+  const [holding, setHolding] = useState(false);
+
+  /** Park the current cart on the server; the screen is then ready for the next customer */
+  const holdCurrentCart = async (label: string) => {
+    if (itemsRef.current.length === 0) {
+      toast.error("السلة فارغة");
+      return false;
+    }
+    const v = watch();
+    setHolding(true);
+    try {
+      await heldSaleService.hold({
+        companyId: companyId!,
+        label: label.trim() || undefined,
+        clientId: clientType === "existing" ? v.clientId : undefined,
+        priceListId: selectedPriceList?.id,
+        items: itemsRef.current.map((i) => ({
+          productId: String(i.productId),
+          name: i.productName,
+          quantity: i.quantity,
+          unitPrice: i.unitPrice,
+        })),
+        discountType: v.discountType,
+        discountAmount: Number(v.discountAmount) || 0,
+        discountPercent: Number(v.discountPercent) || 0,
+        taxSettingId: v.taxSettingId || undefined,
+        additionalFee: Number(v.additionalFee) || 0,
+        additionalFeeLabel: v.additionalFeeLabel || undefined,
+        total: roundedTotal,
+      });
+      queryClient.invalidateQueries({ queryKey: heldSalesKey(companyId || 0) });
+      toast.success("تم تعليق الفاتورة");
+      resetForNextSale();
+      return true;
+    } catch (error) {
+      toast.error(heldSaleError(error, "تعذر تعليق الفاتورة"));
+      return false;
+    } finally {
+      setHolding(false);
+    }
+  };
+
+  const openHoldModal = () => {
+    if (itemsRef.current.length === 0) {
+      toast.error("السلة فارغة: لا يوجد ما يُعلّق");
+      return;
+    }
+    setHoldLabel(clientType === "existing" && selectedClient ? selectedClient.name : "");
+    setShowHoldModal(true);
+  };
+
+  /** Put a resumed cart back on the screen */
+  const applyResumed = (held: ResumedSale) => {
+    setReceived("");
+    setSplitRows([]);
+    pendingPriceListRef.current = held.priceListId;
+    setItems(
+      held.items.map((i) => ({
+        productId: i.productId as unknown as number,
+        productName: i.productName,
+        quantity: i.quantity,
+        unitPrice: i.unitPrice,
+        basePrice: i.basePrice,
+        total: qtyTimes(i.quantity, i.unitPrice),
+        stock: i.stockQuantity,
+        allowDecimalQty: i.allowDecimalQty,
+        unit: i.unit,
+      }))
+    );
+    reset({
+      clientType: held.client ? "existing" : "cash",
+      clientId: held.client?.id,
+      paymentMethod: "CASH",
+      additionalFee: held.additionalFee || 0,
+      additionalFeeLabel: held.additionalFeeLabel,
+      discountType: held.discountType || "none",
+      discountAmount: held.discountAmount || 0,
+      discountPercent: held.discountPercent || 0,
+      taxSettingId: held.taxSettingId,
+    });
+    setShowFees((held.additionalFee || 0) > 0);
+    if (held.client) {
+      setSelectedClient({ id: held.client.id, name: held.client.name, phone: held.client.phone, priceListId: held.client.priceListId ?? null } as PickedClient);
+      setClientType("existing");
+    } else {
+      setSelectedClient(null);
+      setClientType("cash");
+    }
+    const changed = held.items.filter((i) => i.priceChanged);
+    if (changed.length) {
+      toast(
+        `تغير السعر منذ التعليق: ${changed.map((i) => `${i.productName} (${formatCurrency(i.heldPrice)} ← ${formatCurrency(i.unitPrice)})`).join("، ")}`,
+        { icon: "⚠️", duration: 8000 }
+      );
+    }
+    if (held.removed.length) {
+      toast.error(`منتجات حُذفت من النظام ولم تعد للسلة: ${held.removed.join("، ")}`, { duration: 8000 });
+    }
+    if (!changed.length && !held.removed.length) toast.success("تم استئناف الفاتورة");
+    setTimeout(() => barcodeInputRef.current?.focus(), 50);
+  };
+
+  const resumeHeld = async (row: HeldSaleRow) => {
+    // nothing in the cart is lost: it is held first
+    if (itemsRef.current.length > 0) {
+      const held = await holdCurrentCart("");
+      if (!held) return;
+    }
+    try {
+      const data = await heldSaleService.resume(row.id, companyId!);
+      applyResumed(data);
+      setShowHeldList(false);
+    } catch (error) {
+      toast.error(heldSaleError(error, "تعذر استئناف الفاتورة"));
+    }
+  };
+  holdDialogOpenRef.current = showHoldModal || showHeldList;
+  const openHoldRef = useRef(openHoldModal);
+  openHoldRef.current = openHoldModal;
+
   const selectPayment = (method: SaleFormData["paymentMethod"]) => {
     setValue("paymentMethod", method);
     // Split: start with cash + card, cursor in the first amount
@@ -974,7 +1122,7 @@ const SalesCreate: React.FC = () => {
           </Button>
         </form>
         <p className="-mt-2 text-[11px] text-gray-400">
-          اختصارات: F2 الباركود · F3 البحث · F6 نقدي · F7 بطاقة · F8 محفظة · F9 آجل · F10 تقسيم · Ctrl+Enter إتمام البيع
+          اختصارات: F2 الباركود · F3 البحث · F6 نقدي · F7 بطاقة · F8 محفظة · F9 آجل · F10 تقسيم · F4 تعليق · Ctrl+Enter إتمام البيع
         </p>
 
         {/* POS Layout - Products Left, Cart Right */}
@@ -1148,7 +1296,32 @@ const SalesCreate: React.FC = () => {
                       <ShoppingCart className="w-4 h-4" />
                       السلة
                     </h3>
-                    <span className="text-xs text-gray-500">{items.length} منتج</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs text-gray-500">{items.length} منتج</span>
+                      <button
+                        type="button"
+                        title="تعليق الفاتورة (F4)"
+                        onClick={openHoldModal}
+                        disabled={items.length === 0 || holding}
+                        className="inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-40"
+                      >
+                        <PauseCircle className="h-3.5 w-3.5" />
+                        تعليق
+                      </button>
+                      <button
+                        type="button"
+                        title="الفواتير المعلقة"
+                        onClick={() => setShowHeldList(true)}
+                        className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-medium ${
+                          heldCount > 0
+                            ? "border-primary-200 bg-primary-50 text-primary-700 hover:bg-primary-100"
+                            : "border-gray-200 bg-white text-gray-500 hover:bg-gray-50"
+                        }`}
+                      >
+                        <ListRestart className="h-3.5 w-3.5" />
+                        معلقة{heldCount > 0 ? ` (${heldCount})` : ""}
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -1760,6 +1933,48 @@ const SalesCreate: React.FC = () => {
             </div>
           </div>
         </Modal>
+
+        {/* Hold sale: an optional name so the cart is easy to find later */}
+        <Modal isOpen={showHoldModal} onClose={() => setShowHoldModal(false)} title="تعليق الفاتورة" size="sm">
+          <form
+            className="space-y-3"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (holding) return;
+              const ok = await holdCurrentCart(holdLabel);
+              if (ok) setShowHoldModal(false);
+            }}
+          >
+            <p className="text-sm text-gray-600">
+              {items.length} صنف — {formatCurrency(roundedTotal)}. تُحفظ السلة ويمكن إكمالها من أي جهاز في المحل.
+            </p>
+            <Input
+              autoFocus
+              placeholder="اسم أو ملاحظة (اختياري) — مثال: أحمد، البدلة الزرقاء"
+              value={holdLabel}
+              maxLength={100}
+              onChange={(e) => setHoldLabel(e.target.value)}
+            />
+            <div className="flex gap-2">
+              <Button type="submit" disabled={holding} className="flex-1">
+                {holding ? "جاري التعليق..." : "تعليق"}
+              </Button>
+              <Button type="button" variant="outline" onClick={() => setShowHoldModal(false)}>
+                إلغاء
+              </Button>
+            </div>
+          </form>
+        </Modal>
+
+        <HeldSalesModal
+          isOpen={showHeldList}
+          onClose={() => setShowHeldList(false)}
+          companyId={companyId || 0}
+          currentUserId={user?.id}
+          canDeleteAny={role === "ADMIN" || role === "MANAGER"}
+          cartHasItems={items.length > 0}
+          onResume={resumeHeld}
+        />
 
         {/* Print Receipt Preview Modal */}
         {printableSale && (
