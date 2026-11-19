@@ -21,6 +21,7 @@ import toast from "react-hot-toast";
 import { Layout } from "../components/layout";
 import { ConfirmDialog } from "../components/ui";
 import ConvertQuoteModal from "../components/quotes/ConvertQuoteModal";
+import { Masked, RevealButton, useReveal } from "../components/ui/Secret";
 import { useConvertQuoteToSale, useDeleteQuote, useEmailQuote, useQuote, useUpdateQuote } from "../hooks/api/useQuotes";
 import { useSessionAuthStore } from "../stores/sessionAuthStore";
 import { formatTableDate } from "../utils/dateUtils";
@@ -138,6 +139,7 @@ const QuoteView: React.FC = () => {
   const updateMutation = useUpdateQuote();
   const [showConvert, setShowConvert] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
+  const [showProfit, toggleProfit] = useReveal();
   const [params, setParams] = useSearchParams();
 
   // "تحويل لفاتورة" from the quotes list lands here with ?convert=1
@@ -537,22 +539,30 @@ const QuoteView: React.FC = () => {
         {/* Internal: never printed */}
         {profit != null && (
           <div className={`${card} flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-3 text-sm`}>
-            <span className="text-xs font-medium text-gray-500">للإدارة فقط — لا يظهر للعميل</span>
+            <span className="flex items-center gap-1 text-xs font-medium text-gray-500">
+              <RevealButton shown={showProfit} onToggle={toggleProfit} what="التكلفة والربح" />
+              للإدارة فقط — لا يظهر للعميل
+            </span>
             <span className="text-gray-600">
-              التكلفة <b className="font-semibold text-gray-900">{formatCurrency(Number(quote.totalCost) || 0)}</b>
+              التكلفة{" "}
+              <b className="font-semibold text-gray-900">
+                <Masked shown={showProfit}>{formatCurrency(Number(quote.totalCost) || 0)}</Masked>
+              </b>
             </span>
             <span className="text-gray-600">
               الربح{" "}
               <b className={`font-semibold ${profit < 0 ? "text-red-600" : "text-emerald-700"}`}>
-                {formatCurrency(profit)}
-                {margin != null && (
-                  <span className="mr-1 font-normal text-gray-500">
-                    هامش <Pct v={margin} />
-                  </span>
-                )}
+                <Masked shown={showProfit}>
+                  {formatCurrency(profit)}
+                  {margin != null && (
+                    <span className="mr-1 font-normal text-gray-500">
+                      هامش <Pct v={margin} />
+                    </span>
+                  )}
+                </Masked>
               </b>
             </span>
-            {customCount > 0 && <span className="text-xs text-gray-500">يشمل {customCount} بند غير مسجل بالتكلفة المكتوبة له</span>}
+            {showProfit && customCount > 0 && <span className="text-xs text-gray-500">يشمل {customCount} بند غير مسجل بالتكلفة المكتوبة له</span>}
           </div>
         )}
       </div>

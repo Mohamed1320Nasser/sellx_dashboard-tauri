@@ -17,12 +17,15 @@ import { useClients } from '../hooks/api/useClients';
 import { useUpdateSale } from '../hooks/api/useSales';
 import { formatQty, packView, unitOf } from '../utils/quantity';
 import { SALE_METHOD_LABELS } from '../utils/paymentMethods';
+import { Masked, RevealButton, useReveal } from '../components/ui/Secret';
 
 const SalesDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { company, user } = useSessionAuthStore();
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  /** cost and profit stay hidden until asked for: the screen may face the customer */
+  const [showProfit, toggleProfit] = useReveal();
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [editingClient, setEditingClient] = useState(false);
   const [newClientId, setNewClientId] = useState('');
@@ -477,9 +480,10 @@ const SalesDetails: React.FC = () => {
                         <span className="text-sm font-medium text-emerald-700 flex items-center gap-1">
                           <TrendingUp className="w-4 h-4" />
                           صافي الربح
+                          <RevealButton shown={showProfit} onToggle={toggleProfit} what="الربح والتكلفة" className="text-emerald-700 hover:bg-emerald-100" />
                         </span>
                         <span className="font-bold text-emerald-600">
-                          {formatCurrency(sale.totalProfit)}
+                          <Masked shown={showProfit}>{formatCurrency(sale.totalProfit)}</Masked>
                         </span>
                       </div>
                     </>
@@ -513,12 +517,15 @@ const SalesDetails: React.FC = () => {
                   <Package className="w-5 h-5 text-purple-600" />
                 </div>
                 <h3 className="text-lg font-semibold text-gray-900 mr-3">منتجات الفاتورة</h3>
+                {sale.items?.some((item: any) => item.costPrice !== undefined && item.costPrice !== null) && (
+                  <RevealButton shown={showProfit} onToggle={toggleProfit} what="التكلفة والربح" withText className="mr-auto px-2" />
+                )}
               </div>
 
               {sale.items && sale.items.length > 0 ? (
                 (() => {
                   // Check if any item has cost/profit data
-                  const showCostProfit = sale.items.some((item: any) => item.costPrice !== undefined && item.costPrice !== null);
+                  const showCostProfit = showProfit && sale.items.some((item: any) => item.costPrice !== undefined && item.costPrice !== null);
                   // Footer label covers المنتج / السعر / الكمية; amounts sit under المجموع (and التكلفة / الربح)
                   const colSpan = 3;
 

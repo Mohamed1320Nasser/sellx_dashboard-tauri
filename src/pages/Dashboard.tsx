@@ -202,6 +202,7 @@ const Dashboard: React.FC = () => {
                         <StatisticsCard
                             icon={TrendingUp}
                             title="الربح الإجمالي"
+                            secret
                             value={isLoading ? '...' : formatCurrency(data?.overview?.grossProfit || 0)}
                             color="#10B981"
                             subtitle={isLoading ? '...' : `هامش ربح ${(data?.overview?.profitMargin || 0).toFixed(1)}%`}

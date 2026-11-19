@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Masked, RevealButton, useReveal } from "../ui/Secret";
 import {
   ArrowRight,
-  Info,
   PackagePlus,
   Plus,
   Search,
@@ -72,6 +72,7 @@ const QuoteForm: React.FC<Props> = ({
 }) => {
   const [form, setForm] = useState<QuoteFormState>(initial);
   /** a term just added from a chip focuses its text; "شرط آخر" focuses its title */
+  const [showProfit, toggleProfit] = useReveal();
   const [addedTerm, setAddedTerm] = useState<"label" | "value" | null>(null);
   const [tried, setTried] = useState(false);
   const set = (patch: Partial<QuoteFormState>) =>
@@ -670,8 +671,8 @@ const QuoteForm: React.FC<Props> = ({
               </dl>
 
               {form.lines.length > 0 && (
-                <div className="flex items-start gap-2 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600">
-                  <Info className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                <div className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                  <RevealButton shown={showProfit} onToggle={toggleProfit} what="الربح" className="-my-1" />
                   <span>
                     الربح المتوقع{" "}
                     <b
@@ -681,10 +682,12 @@ const QuoteForm: React.FC<Props> = ({
                           : "text-gray-900"
                       }
                     >
-                      {formatCurrency(totals.totalProfit)}
-                    </b>
-                    {totals.subtotal > 0 &&
-                      ` (\u2066${Math.round((totals.totalProfit / Math.max(totals.subtotal - totals.orderDiscount, 0.01)) * 1000) / 10}%\u2069)`}{" "}
+                      <Masked shown={showProfit}>
+                        {formatCurrency(totals.totalProfit)}
+                        {totals.subtotal > 0 &&
+                          ` (\u2066${Math.round((totals.totalProfit / Math.max(totals.subtotal - totals.orderDiscount, 0.01)) * 1000) / 10}%\u2069)`}
+                      </Masked>
+                    </b>{" "}
                     — لا يظهر للعميل.
                   </span>
                 </div>

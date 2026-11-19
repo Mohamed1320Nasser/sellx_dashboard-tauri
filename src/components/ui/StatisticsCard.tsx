@@ -1,6 +1,7 @@
 import React from 'react';
 import { LucideIcon } from 'lucide-react';
 import CountUp from 'react-countup';
+import { RevealButton, useReveal } from './Secret';
 
 interface StatisticsCardProps {
   icon: LucideIcon;
@@ -19,6 +20,8 @@ interface StatisticsCardProps {
   subtitle?: string;
   isLoading?: boolean;
   valueFontSize?: string; // Custom font size for the value
+  /** profit and the like: hidden behind an eye button (the screen may face a customer) */
+  secret?: boolean;
 }
 
 const StatisticsCard: React.FC<StatisticsCardProps> = ({
@@ -30,8 +33,11 @@ const StatisticsCard: React.FC<StatisticsCardProps> = ({
   growth,
   subtitle,
   isLoading = false,
-  valueFontSize
+  valueFontSize,
+  secret = false,
 }) => {
+  const [shown, toggle] = useReveal();
+  const hidden = secret && !shown;
   // Dynamic font size based on content length and value
   const getDynamicFontSize = (val: string | number): string => {
     if (valueFontSize) return valueFontSize; // Use custom font size if provided
@@ -99,6 +105,9 @@ const StatisticsCard: React.FC<StatisticsCardProps> = ({
   
   const cardContent = (
     <div className="relative bg-white rounded-xl p-6 shadow-sm border border-gray-100 hover:shadow-lg transition-all duration-300 hover:-translate-y-1.5">
+      {secret && !isLoading && (
+        <RevealButton shown={shown} onToggle={toggle} what={title} className="absolute top-4 left-4 z-10" />
+      )}
       {/* Icon */}
       <div 
         className="w-15 h-15 rounded-full flex items-center justify-center mb-4"
@@ -114,6 +123,8 @@ const StatisticsCard: React.FC<StatisticsCardProps> = ({
       <div className="mb-2">
         {isLoading ? (
           <div className="h-7 w-20 bg-gray-200 rounded animate-pulse"></div>
+        ) : hidden ? (
+          <h3 className="text-2xl font-normal text-gray-400 tracking-widest select-none">•••••</h3>
         ) : shouldAnimate(value) ? (
           <h3 className={`${dynamicFontSize} font-normal text-gray-900`}>
             <CountUp 
@@ -163,7 +174,7 @@ const StatisticsCard: React.FC<StatisticsCardProps> = ({
       )}
 
       {/* Subtitle */}
-      {subtitle && (
+      {subtitle && !hidden && (
         <p className="text-xs text-gray-500 mt-2">
           {subtitle}
         </p>
