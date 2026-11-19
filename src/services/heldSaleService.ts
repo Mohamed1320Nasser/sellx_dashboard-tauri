@@ -17,6 +17,7 @@ export interface HeldSaleItemInput {
   name?: string;
   quantity: number;
   unitPrice?: number;
+  packId?: string;
 }
 
 export interface HoldSaleRequest {
@@ -48,6 +49,8 @@ export interface ResumedItem {
   unitPrice: number;
   basePrice: number;
   priceChanged: boolean;
+  /** Held as a pack: quantity and prices are per pack */
+  pack?: { id: string; name: string; factor: number; sellingPrice: number };
 }
 
 export interface ResumedSale {

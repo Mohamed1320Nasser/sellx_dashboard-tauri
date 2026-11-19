@@ -9,6 +9,7 @@ import { useUpdateProduct, useProduct } from '../hooks/api/useProducts';
 import { useCategories } from '../hooks/api/useCategories';
 import toast from 'react-hot-toast';
 import ProductUnitFields from '../components/products/ProductUnitFields';
+import ProductPacksEditor, { packsProblem, packsToRows, rowsToPacks, type PackRow } from '../components/products/ProductPacksEditor';
 import { formatQty, normalizeDigits, parseQty, subQty, toQty } from '../utils/quantity';
 
 const ProductEdit: React.FC = () => {
@@ -18,6 +19,8 @@ const ProductEdit: React.FC = () => {
   const companyId = company?.companyId || company?.company?.id;
 
   // Form state
+  const [packRows, setPackRows] = useState<PackRow[]>([]);
+  const [showPackErrors, setShowPackErrors] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     sku: '',
@@ -67,6 +70,7 @@ const ProductEdit: React.FC = () => {
         allowDecimalQty: !!(product as any).allowDecimalQty,
         scaleCode: (product as any).scaleCode || '',
       });
+      setPackRows(packsToRows((product as any).packs));
     }
   }, [product, id]);
 
@@ -123,6 +127,12 @@ const ProductEdit: React.FC = () => {
         : 'الحد الأدنى للمخزون رقم صحيح صفر أو أكثر';
     }
 
+    const packProblem = packsProblem(packRows, formData.allowDecimalQty);
+    if (packProblem) {
+      newErrors.packs = packProblem;
+      setShowPackErrors(true);
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -132,7 +142,8 @@ const ProductEdit: React.FC = () => {
     e.preventDefault();
 
     if (!validateForm()) {
-      toast.error('يرجى تصحيح الأخطاء في النموذج');
+      // one message: the pack problem when there is one, else the general one
+      toast.error(packsProblem(packRows, formData.allowDecimalQty) ?? 'يرجى تصحيح الأخطاء في النموذج', { id: 'form-problem' });
       return;
     }
 
@@ -154,6 +165,7 @@ const ProductEdit: React.FC = () => {
           unit: formData.unit.trim() || null,
           allowDecimalQty: formData.allowDecimalQty,
           scaleCode: formData.allowDecimalQty ? formData.scaleCode.trim() || null : null,
+          packs: rowsToPacks(packRows),
           categoryId: formData.categoryId,
           companyId: companyId!,
         },
@@ -348,6 +360,17 @@ const ProductEdit: React.FC = () => {
                       onChange={next => setFormData(prev => ({ ...prev, ...next }))}
                       scaleCode={formData.scaleCode}
                       onScaleCodeChange={code => setFormData(prev => ({ ...prev, scaleCode: code }))}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2">
+                    <ProductPacksEditor
+                      packs={packRows}
+                      onChange={setPackRows}
+                      piecePrice={parseFloat(formData.sellingPrice) || 0}
+                      unit={formData.unit.trim()}
+                      allowDecimalQty={formData.allowDecimalQty}
+                      showErrors={showPackErrors}
                     />
                   </div>
 

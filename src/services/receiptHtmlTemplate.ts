@@ -1,3 +1,4 @@
+import { packView } from '../utils/quantity';
 import { salePaymentLabel } from '../utils/paymentMethods';
 /**
  * Maps a sale, a purchase or a price quote into the data the thermal receipt (SellxReceipt) shows.
@@ -50,15 +51,19 @@ export function saleToReceiptData(params: {
     companyLogo: company?.logoUrl || company?.company?.logoUrl,
 
     // Items (properly map from API structure)
-    items: (sale.items || []).map((item: any) => ({
-      productName: item.product?.name || item.productName || 'منتج',
-      variantName: item.variantName,
-      sku: item.product?.sku || item.sku,
-      quantity: Number(item.quantity) || 1,
-      unit: item.product?.unit || item.unit || null,
-      unitPrice: parseFloat(item.unitPrice || item.price || 0),
-      total: parseFloat(item.totalPrice || item.total || (item.quantity * (item.unitPrice || item.price)) || 0),
-    })),
+    items: (sale.items || []).map((item: any) => {
+      // a pack line prints as packs ("juice - كرتونة 12", 2 x 100)
+      const pack = item.packName ? packView(item) : null;
+      return {
+        productName: pack ? pack.name : item.product?.name || item.productName || 'منتج',
+        variantName: item.variantName,
+        sku: item.product?.sku || item.sku,
+        quantity: pack ? pack.quantity : Number(item.quantity) || 1,
+        unit: pack ? pack.unit : item.product?.unit || item.unit || null,
+        unitPrice: pack ? pack.unitPrice : parseFloat(item.unitPrice || item.price || 0),
+        total: parseFloat(item.totalPrice || item.total || (item.quantity * (item.unitPrice || item.price)) || 0),
+      };
+    }),
 
     // Financial totals (API structure: subtotal, discountAmount, taxAmount, totalAmount)
     subtotal: parseFloat(sale.subtotal || 0),

@@ -95,7 +95,28 @@ interface SaleItem {
   /** Sold by weight / length: fractional quantity allowed */
   allowDecimalQty?: boolean;
   unit?: string | null;
+  /** Sold as a pack (carton of 12 ...): quantity = packs, unitPrice = price of one pack */
+  packId?: string | null;
+  packName?: string | null;
+  packFactor?: number | null;
+  /** The product's packs, to switch the line between piece and pack */
+  packs?: ProductPack[];
+  /** The product sold by the piece (price, weighed or not), to switch a pack line back */
+  piece?: { sellingPrice: number; allowDecimalQty: boolean };
 }
+
+interface ProductPack {
+  id: string;
+  name: string;
+  factor: number;
+  sellingPrice: number;
+  barcode?: string | null;
+}
+
+/** One cart line per product and pack: pieces and cartons of the same product sit side by side */
+const lineKey = (item: { productId: number | string; packId?: string | null }) => `${item.productId}|${item.packId || ""}`;
+/** Pieces a line takes from stock */
+const piecesOf = (item: SaleItem) => (item.packFactor ? qtyTimes(item.quantity, item.packFactor) : item.quantity);
 
 const SalesCreate: React.FC = () => {
   const navigate = useNavigate();
@@ -109,13 +130,13 @@ const SalesCreate: React.FC = () => {
   const [items, setItemsState] = useState<SaleItem[]>([]);
   const itemsRef = useRef<SaleItem[]>([]);
   // Weighed goods: after adding, the cursor goes to the weight field
-  const qtyInputRefs = useRef(new Map<number, HTMLInputElement>());
-  const [focusQtyFor, setFocusQtyForState] = useState<number | null>(null);
+  const qtyInputRefs = useRef(new Map<string, HTMLInputElement>());
+  const [focusQtyFor, setFocusQtyForState] = useState<string | null>(null);
   // While true, the "back to the barcode box" focus is skipped so the weight field keeps the cursor
   const weightFocusRef = useRef(false);
-  const setFocusQtyFor = (productId: number) => {
+  const setFocusQtyFor = (key: string) => {
     weightFocusRef.current = true;
-    setFocusQtyForState(productId);
+    setFocusQtyForState(key);
   };
   useEffect(() => {
     if (focusQtyFor === null) return;
@@ -258,6 +279,7 @@ const SalesCreate: React.FC = () => {
     if (!listIsDefault && !listPrices) return;
     setItems((prev) =>
       prev.map((item) => {
+        if (item.packId) return item; // a pack has its own price, not the list's
         const unitPrice = priceFor(item.productId, item.basePrice);
         return unitPrice === item.unitPrice ? item : { ...item, unitPrice, total: qtyTimes(item.quantity, unitPrice) };
       })
@@ -348,10 +370,12 @@ const SalesCreate: React.FC = () => {
         }
         setTimeout(() => barcodeInputRef.current?.focus(), 100);
       } else if (product) {
-        addItem(product);
         setBarcodeInput(""); // Clear input
-        // one short message that the next scan replaces (they used to pile up)
-        toast.success(`تمت الإضافة: ${product.name}`, { id: "pos-scan", duration: 1500 });
+        // the carton's own barcode adds a carton
+        if (addItem(product, undefined, product.pack ?? null)) {
+          // one short message that the next scan replaces (they used to pile up)
+          toast.success(`تمت الإضافة: ${product.name}${product.pack ? ` - ${product.pack.name}` : ""}`, { id: "pos-scan", duration: 1500 });
+        }
 
         // Auto-focus barcode input for next scan
         setTimeout(() => {
@@ -423,24 +447,33 @@ const SalesCreate: React.FC = () => {
 
   // Add item to sale
   // labelQty: the weight read from a scale label (the whole packet is added at once)
-  const addItem = (product: any, labelQty?: number) => {
+  // pack: sell as this pack (scanned the carton's barcode, or chosen on the line)
+  const addItem = (product: any, labelQty?: number, pack?: ProductPack | null): boolean => {
     const stock = toQty(product.currentStock || product.stockQuantity || 0);
     const current = itemsRef.current;
-    const existingItem = current.find(item => item.productId === product.id);
-    const currentQuantity = existingItem?.quantity || 0;
+    const key = lineKey({ productId: product.id, packId: pack?.id });
+    const existingItem = current.find(item => lineKey(item) === key);
     const weighed = allowsDecimal(product);
+    const packs: ProductPack[] = Array.isArray(product.packs) ? product.packs : [];
+    // pieces already taken by the product's other lines (pieces and packs share one stock)
+    const otherPieces = current
+      .filter(item => item.productId === product.id && lineKey(item) !== key)
+      .reduce((sum, item) => addQty(sum, piecesOf(item)), 0);
+    const piecesFor = (qty: number) => (pack ? qtyTimes(qty, pack.factor) : qty);
+    const fits = (qty: number) => addQty(otherPieces, piecesFor(qty)) <= stock;
+    const notEnough = () =>
+      toast.error(`لا يكفي المخزون - المتاح: ${formatQty(Math.max(0, stock - otherPieces), unitOf(product))}`, { id: "pos-scan" });
 
-    if (labelQty && labelQty > 0) {
-      const newQuantity = addQty(currentQuantity, labelQty);
-      if (newQuantity > stock) {
-        toast.error(`لا يكفي المخزون - المتاح: ${formatQty(stock, unitOf(product))}`, { id: "pos-scan" });
+    // Scale label: the packet's weight
+    if (labelQty && labelQty > 0 && !pack) {
+      const newQuantity = addQty(existingItem?.quantity || 0, labelQty);
+      if (!fits(newQuantity)) {
+        notEnough();
         return false;
       }
       if (existingItem) {
         setItems(current.map(item =>
-          item.productId === product.id
-            ? { ...item, quantity: newQuantity, total: qtyTimes(newQuantity, item.unitPrice), stock }
-            : item
+          lineKey(item) === key ? { ...item, quantity: newQuantity, total: qtyTimes(newQuantity, item.unitPrice), stock } : item
         ));
       } else {
         const unitPrice = priceFor(product.id, product.sellingPrice);
@@ -454,54 +487,71 @@ const SalesCreate: React.FC = () => {
           stock,
           allowDecimalQty: weighed,
           unit: unitOf(product) || null,
+          packs,
+          piece: { sellingPrice: Number(product.sellingPrice) || 0, allowDecimalQty: weighed },
         }]);
       }
       return true;
     }
 
-    // Weighed goods: scanning again doesn't add "one more kilo", it opens the weight to edit
-    if (existingItem && weighed) {
-      setFocusQtyFor(product.id);
-      return;
+    // Weighed goods by the piece line: scanning again doesn't add "one more kilo", it opens the weight to edit
+    if (existingItem && weighed && !pack) {
+      setFocusQtyFor(key);
+      return true;
     }
 
-    // Check stock validation
-    if (currentQuantity >= stock) {
-      toast.error(`لا يمكن إضافة المزيد - الكمية المتاحة: ${formatQty(stock, unitOf(product))}`);
-      return;
+    const newQuantity = existingItem ? addQty(existingItem.quantity, 1) : weighed && !pack ? Math.min(1, stock - otherPieces) : 1;
+    if (newQuantity <= 0 || !fits(newQuantity)) {
+      notEnough();
+      return false;
     }
 
     if (existingItem) {
-      // Update quantity
-      const newQuantity = addQty(existingItem.quantity, 1);
-      const newItems = current.map(item =>
-        item.productId === product.id
-          ? {
-              ...item,
-              quantity: newQuantity,
-              total: qtyTimes(newQuantity, item.unitPrice),
-              stock,
-            }
-          : item
-      );
-      setItems(newItems);
+      setItems(current.map(item =>
+        lineKey(item) === key ? { ...item, quantity: newQuantity, total: qtyTimes(newQuantity, item.unitPrice), stock } : item
+      ));
     } else {
-      // Add new item: 1 piece, or 1 unit (kg / m) for weighed goods, then type the weight
-      const unitPrice = priceFor(product.id, product.sellingPrice);
-      const quantity = weighed ? Math.min(1, stock) : 1;
+      // pack: its own price; piece: the price list's. Weighed by the piece: 1 kg, then type the weight
+      const unitPrice = pack ? pack.sellingPrice : priceFor(product.id, product.sellingPrice);
       const newItem: SaleItem = {
         productId: product.id,
         productName: product.name,
-        quantity,
+        quantity: newQuantity,
         unitPrice,
-        basePrice: Number(product.sellingPrice) || 0,
-        total: qtyTimes(quantity, unitPrice),
+        basePrice: pack ? pack.sellingPrice : Number(product.sellingPrice) || 0,
+        total: qtyTimes(newQuantity, unitPrice),
         stock,
-        allowDecimalQty: weighed,
+        allowDecimalQty: pack ? false : weighed,
         unit: unitOf(product) || null,
+        packs,
+        piece: { sellingPrice: Number(product.sellingPrice) || 0, allowDecimalQty: weighed },
+        ...(pack && { packId: pack.id, packName: pack.name, packFactor: pack.factor }),
       };
       setItems([...current, newItem]);
-      if (weighed) setFocusQtyFor(product.id);
+      if (weighed && !pack) setFocusQtyFor(key);
+    }
+    return true;
+  };
+
+  /** Switch a cart line between piece and one of the product's packs */
+  const changeLinePack = (key: string, packId: string) => {
+    const line = itemsRef.current.find(item => lineKey(item) === key);
+    if (!line) return;
+    const pack = (line.packs || []).find(p => p.id === packId) || null;
+    if ((pack?.id || null) === (line.packId || null)) return;
+    const rest = itemsRef.current.filter(item => lineKey(item) !== key);
+    itemsRef.current = rest;
+    const product = {
+      id: line.productId,
+      name: line.productName,
+      currentStock: getProductStock(line.productId) ?? line.stock,
+      sellingPrice: line.piece?.sellingPrice ?? line.basePrice,
+      unit: line.unit,
+      allowDecimalQty: line.piece?.allowDecimalQty ?? !!line.allowDecimalQty,
+      packs: line.packs,
+    };
+    if (!addItem(product, undefined, pack)) {
+      setItems([...rest, line]); // didn't fit: keep the line as it was
     }
   };
 
@@ -541,32 +591,36 @@ const SalesCreate: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId, location.state]);
 
-  // Update item quantity
-  const updateQuantity = (productId: number, quantity: number) => {
+  // Update a line's quantity (packs for a pack line)
+  const updateQuantity = (key: string, quantity: number) => {
     if (quantity <= 0) {
-      removeItem(productId);
+      removeItem(key);
       return;
     }
 
-    // Get current quantity to check if increasing
-    const currentItem = itemsRef.current.find(item => item.productId === productId);
-    const currentQuantity = currentItem?.quantity || 0;
+    const currentItem = itemsRef.current.find(item => lineKey(item) === key);
+    if (!currentItem) return;
+    const currentQuantity = currentItem.quantity;
 
-    // Only validate stock when INCREASING quantity
+    // Only validate stock when INCREASING quantity; pieces and packs of the product share one stock
     if (quantity > currentQuantity) {
       // Prefer live stock from the loaded product list, but fall back to the
       // stock captured when the item was added (e.g. via barcode scan for a
       // product not present in the currently loaded product page).
-      const stock = getProductStock(productId) ?? currentItem?.stock ?? 0;
-      if (quantity > stock) {
-        // one message per product, not one per key typed
-        toast.error(`الكمية المطلوبة تتجاوز المخزون المتاح: ${formatQty(stock, currentItem?.unit)}`, { id: `stock-${productId}` });
+      const stock = getProductStock(currentItem.productId) ?? currentItem.stock ?? 0;
+      const otherPieces = itemsRef.current
+        .filter(item => item.productId === currentItem.productId && lineKey(item) !== key)
+        .reduce((sum, item) => addQty(sum, piecesOf(item)), 0);
+      const pieces = currentItem.packFactor ? qtyTimes(quantity, currentItem.packFactor) : quantity;
+      if (addQty(otherPieces, pieces) > stock) {
+        // one message per line, not one per key typed
+        toast.error(`الكمية المطلوبة تتجاوز المخزون المتاح: ${formatQty(Math.max(0, stock - otherPieces), currentItem.unit)}`, { id: `stock-${key}` });
         return;
       }
     }
 
     const newItems = itemsRef.current.map(item =>
-      item.productId === productId
+      lineKey(item) === key
         ? {
             ...item,
             quantity,
@@ -577,20 +631,19 @@ const SalesCreate: React.FC = () => {
     setItems(newItems);
   };
 
-  // Remove item
-  const removeItem = (productId: number) => {
-    setItems(prev => prev.filter(item => item.productId !== productId));
+  // Remove a line
+  const removeItem = (key: string) => {
+    setItems(prev => prev.filter(item => lineKey(item) !== key));
   };
 
-  // Check if product is already selected
+  // Check if product is already selected (any line: piece or pack)
   const isProductSelected = (productId: number) => {
     return items.some(item => item.productId === productId);
   };
 
-  // Get selected item quantity
+  // Pieces of the product in the cart (a carton of 12 counts 12)
   const getSelectedQuantity = (productId: number) => {
-    const item = items.find(item => item.productId === productId);
-    return item ? item.quantity : 0;
+    return items.filter(item => item.productId === productId).reduce((sum, item) => addQty(sum, piecesOf(item)), 0);
   };
 
 
@@ -749,6 +802,7 @@ const SalesCreate: React.FC = () => {
           productId: String(item.productId), // Convert to string as backend expects
           quantity: item.quantity,
           unitPrice: item.unitPrice,
+          ...(item.packId && { packId: item.packId }),
         })),
         companyId: companyId!,
         ...(selectedPriceList && { priceListId: selectedPriceList.id }),
@@ -813,8 +867,11 @@ const SalesCreate: React.FC = () => {
           (data.clientType === "new" ? data.newClientName : undefined),
         items: items.map(item => ({
           ...item,
-          productName: item.productName,
-          product: { name: item.productName, unit: item.unit, allowDecimalQty: item.allowDecimalQty }
+          // a pack line prints as "juice - كرتونة 12", counted in cartons
+          productName: item.packName ? `${item.productName} - ${item.packName} ${formatQty(item.packFactor || 0)}` : item.productName,
+          product: item.packName
+            ? { name: item.productName, unit: item.packName, allowDecimalQty: false }
+            : { name: item.productName, unit: item.unit, allowDecimalQty: item.allowDecimalQty }
         })),
       };
 
@@ -909,6 +966,7 @@ const SalesCreate: React.FC = () => {
           name: i.productName,
           quantity: i.quantity,
           unitPrice: i.unitPrice,
+          ...(i.packId && { packId: i.packId }),
         })),
         discountType: v.discountType,
         discountAmount: Number(v.discountAmount) || 0,
@@ -953,8 +1011,9 @@ const SalesCreate: React.FC = () => {
         basePrice: i.basePrice,
         total: qtyTimes(i.quantity, i.unitPrice),
         stock: i.stockQuantity,
-        allowDecimalQty: i.allowDecimalQty,
+        allowDecimalQty: i.pack ? false : i.allowDecimalQty,
         unit: i.unit,
+        ...(i.pack && { packId: i.pack.id, packName: i.pack.name, packFactor: i.pack.factor }),
       }))
     );
     reset({
@@ -1368,21 +1427,44 @@ const SalesCreate: React.FC = () => {
                   {items.length > 0 ? (
                     <div className="divide-y divide-gray-100">
                       {items.map((item) => {
+                        const key = lineKey(item);
                         const stock = getProductStock(item.productId) ?? item.stock ?? 0;
-                        const isMaxReached = item.quantity >= stock;
+                        const productPieces = getSelectedQuantity(item.productId);
+                        // another one of this line (a piece, or a whole pack) would not fit
+                        const isMaxReached = addQty(productPieces, item.packFactor || 1) > stock;
 
                         return (
                           <div
-                            key={item.productId}
+                            key={key}
                             className={`flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 transition-colors ${isMaxReached ? "bg-amber-50" : "hover:bg-gray-50"}`}
                           >
                             {/* name keeps at least ~9rem; on a narrow cart the controls drop to a second line */}
                             <div className="min-w-[9rem] flex-1">
                               <p className="truncate text-sm font-medium text-gray-900" title={item.productName}>{item.productName}</p>
-                              <p className="whitespace-nowrap text-xs text-gray-500">
-                                {formatCurrency(item.unitPrice)}
-                                {item.allowDecimalQty && item.unit ? ` / ${item.unit}` : ""}
-                                {isMaxReached && <span className="mr-1 text-amber-600">· آخر الكمية</span>}
+                              <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-gray-500">
+                                {item.packs && item.packs.length > 0 ? (
+                                  <select
+                                    aria-label="البيع بالقطعة أو بالعبوة"
+                                    value={item.packId || ""}
+                                    onChange={(e) => {
+                                      changeLinePack(key, e.target.value);
+                                      focusScan();
+                                    }}
+                                    className="h-6 rounded border border-primary-200 bg-primary-50 py-0 pl-6 pr-1.5 text-xs font-medium text-primary-700 focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                                  >
+                                    <option value="">{item.piece?.allowDecimalQty ? item.unit || "وحدة" : "قطعة"}</option>
+                                    {item.packs.map((p) => (
+                                      <option key={p.id} value={p.id}>
+                                        {p.name} ({formatQty(p.factor)})
+                                      </option>
+                                    ))}
+                                  </select>
+                                ) : null}
+                                <span className="whitespace-nowrap">
+                                  {formatCurrency(item.unitPrice)}
+                                  {item.packName ? ` / ${item.packName}` : item.allowDecimalQty && item.unit ? ` / ${item.unit}` : ""}
+                                </span>
+                                {isMaxReached && <span className="whitespace-nowrap text-amber-600">· آخر الكمية</span>}
                               </p>
                             </div>
                             <div className="mr-auto flex flex-shrink-0 items-center gap-2">
@@ -1392,7 +1474,7 @@ const SalesCreate: React.FC = () => {
                                   type="button"
                                   aria-label="إنقاص الكمية"
                                   onClick={() => {
-                                    updateQuantity(item.productId, item.quantity - 1);
+                                    updateQuantity(key, item.quantity - 1);
                                     focusScan();
                                   }}
                                   className="flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-gray-100 transition-all hover:bg-gray-200 active:scale-95"
@@ -1402,13 +1484,13 @@ const SalesCreate: React.FC = () => {
                               )}
                               <QtyInput
                                 ref={(el) => {
-                                  if (el) qtyInputRefs.current.set(item.productId, el);
-                                  else qtyInputRefs.current.delete(item.productId);
+                                  if (el) qtyInputRefs.current.set(key, el);
+                                  else qtyInputRefs.current.delete(key);
                                 }}
                                 product={item}
                                 value={item.quantity}
                                 aria-label={item.allowDecimalQty ? `الوزن / الكمية (${item.unit || "وحدة"})` : "الكمية"}
-                                onChange={(q) => updateQuantity(item.productId, q)}
+                                onChange={(q) => updateQuantity(key, q)}
                                 onInvalid={(m) => toast.error(m)}
                                 onKeyDown={(e) => {
                                   // Enter = done with this line: back to scanning, not "save the sale"
@@ -1429,7 +1511,7 @@ const SalesCreate: React.FC = () => {
                                   type="button"
                                   aria-label="زيادة الكمية"
                                   onClick={() => {
-                                    updateQuantity(item.productId, item.quantity + 1);
+                                    updateQuantity(key, item.quantity + 1);
                                     focusScan();
                                   }}
                                   disabled={isMaxReached}
@@ -1451,7 +1533,7 @@ const SalesCreate: React.FC = () => {
                               aria-label="حذف من السلة"
                               title="حذف"
                               onClick={() => {
-                                removeItem(item.productId);
+                                removeItem(key);
                                 focusScan();
                               }}
                               className="flex-shrink-0 rounded p-1.5 text-red-400 transition-colors hover:bg-red-50 hover:text-red-600"

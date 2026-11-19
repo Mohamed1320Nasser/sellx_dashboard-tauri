@@ -70,7 +70,32 @@ export const formatQty = (value: unknown, unit?: string | null): string => {
 };
 
 /** Total of a cart: "3 قطع" when all pieces, else "5 أصناف". */
-export const cartCountLabel = (items: { quantity: unknown; allowDecimalQty?: boolean | null }[]): string => {
+export const cartCountLabel = (items: { quantity: unknown; allowDecimalQty?: boolean | null; packFactor?: number | null }[]): string => {
   if (items.some(i => i.allowDecimalQty)) return `${items.length} صنف`;
-  return `${sumQty(items.map(i => i.quantity))} قطعة`;
+  // a carton of 12 counts 12 pieces
+  return `${sumQty(items.map(i => (i.packFactor ? qtyTimes(i.quantity as number, i.packFactor) : i.quantity)))} قطعة`;
 };
+
+/**
+ * A saved sale line as the customer saw it. A pack line (carton of 12) is stored in pieces;
+ * this gives back "juice - كرتونة 12", 2 cartons at 100. Other lines are returned as they are.
+ */
+export function packView(item: any): { name: string; quantity: number; unitPrice: number; unit: string | null; isPack: boolean } {
+  const name = item?.product?.name || item?.productName || "منتج";
+  if (item?.packName && item?.packQty != null) {
+    return {
+      name: `${name} - ${item.packName} ${formatQty(Number(item.packFactor) || 0)}`,
+      quantity: Number(item.packQty),
+      unitPrice: Number(item.packPrice ?? 0),
+      unit: item.packName,
+      isPack: true,
+    };
+  }
+  return {
+    name,
+    quantity: Number(item?.quantity) || 0,
+    unitPrice: Number(item?.unitPrice ?? item?.price ?? 0),
+    unit: item?.product?.unit ?? item?.unit ?? null,
+    isPack: false,
+  };
+}

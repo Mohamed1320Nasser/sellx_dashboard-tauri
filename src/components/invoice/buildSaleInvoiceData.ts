@@ -1,7 +1,7 @@
 import QRCode from "qrcode";
 import type { InvoiceKind, InvoiceStatus, PillTone, SaleInvoiceData, SaleInvoiceLineItem } from "./saleInvoiceTypes";
 import { amountInWords } from "../../utils/amountInWords";
-import { qtyTimes, sumQty } from '../../utils/quantity';
+import { packView, qtyTimes, sumQty } from '../../utils/quantity';
 import { salePaymentLabel } from '../../utils/paymentMethods';
 
 const PAYMENT_METHOD_LABELS: Record<string, string> = {
@@ -60,16 +60,18 @@ export async function buildSaleInvoiceData(params: {
   });
 
   const items: SaleInvoiceLineItem[] = (sale.items || []).map((item: any, i: number) => {
-    const quantity = num(item.quantity);
-    const unitPrice = num(item.unitPrice ?? item.price ?? item.unitCost);
+    // a pack line shows as packs ("2 كرتونة x 100"), not as pieces
+    const view = item.packName ? packView(item) : null;
+    const quantity = view ? view.quantity : num(item.quantity);
+    const unitPrice = view ? view.unitPrice : num(item.unitPrice ?? item.price ?? item.unitCost);
     return {
       discount: num(item.lineDiscount),
       index: i + 1,
-      productName: item.product?.name || item.productName || "منتج",
+      productName: view ? view.name : item.product?.name || item.productName || "منتج",
       sku: item.product?.sku || item.sku || undefined,
       categoryName: item.product?.category?.name || undefined,
       quantity,
-      unit: (item.product?.unit || item.unit || "").trim() || undefined,
+      unit: view ? view.unit || undefined : (item.product?.unit || item.unit || "").trim() || undefined,
       unitPrice,
       total: num(item.totalPrice ?? item.lineTotal ?? item.total, qtyTimes(quantity, unitPrice)),
     };
