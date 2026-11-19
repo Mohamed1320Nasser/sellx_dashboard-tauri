@@ -9,6 +9,8 @@ export interface SaleInvoiceLineItem {
   unitPrice: number;
   /** line discount (quotes) */
   discount: number;
+  /** quote line description (specs, size, colour...) */
+  description?: string;
   total: number;
 }
 
@@ -71,6 +73,8 @@ export interface SaleInvoiceData {
 
   subtotal: number;
   discountAmount: number;
+  /** "الخصم (10%)" when the invoice discount was a percent */
+  discountLabel?: string;
   taxAmount: number;
   taxRate?: number;
   additionalFee: number;

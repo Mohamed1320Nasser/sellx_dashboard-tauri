@@ -1,739 +1,579 @@
-import React, { useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import React, { useEffect, useRef, useState } from "react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
-  ArrowLeft,
-  Printer,
-  FileDown,
-  Mail,
-  ShoppingCart,
-  Edit,
-  Trash2,
-  FileText,
-  DollarSign,
-  Package,
   AlertTriangle,
+  ArrowRight,
+  CheckCircle2,
+  ChevronDown,
   Download,
-  Building2,
-  Phone,
-  Mail as MailIcon,
-  MapPin,
+  Edit,
+  FileText,
+  Mail,
+  MoreVertical,
+  Printer,
+  Receipt,
+  ShoppingCart,
+  Trash2,
   User,
-  CheckCircle,
+  XCircle,
 } from "lucide-react";
+import toast from "react-hot-toast";
 import { Layout } from "../components/layout";
-import { Button, Card, Badge, Modal } from "../components/ui";
-import { useQuote, useDeleteQuote, useConvertQuoteToSale, useEmailQuote } from "../hooks/api/useQuotes";
-import { useClients } from "../hooks/api/useClients";
+import { ConfirmDialog } from "../components/ui";
+import ConvertQuoteModal from "../components/quotes/ConvertQuoteModal";
+import { useConvertQuoteToSale, useDeleteQuote, useEmailQuote, useQuote, useUpdateQuote } from "../hooks/api/useQuotes";
 import { useSessionAuthStore } from "../stores/sessionAuthStore";
 import { formatTableDate } from "../utils/dateUtils";
-import { formatCurrency, formatNumber } from "../utils/currencyUtils";
+import { formatCurrency } from "../utils/currencyUtils";
+import { formatQty, unitOf } from "../utils/quantity";
 import { downloadQuotePdf, printQuoteA4, printQuoteThermal } from "../services/quotePrintService";
-import toast from "react-hot-toast";
-import type { Quote } from "../types";
-import { formatQty, unitOf } from '../utils/quantity';
+import type { Quote, QuoteItem, QuoteStatus } from "../types";
+
+const card = "rounded-2xl border border-gray-200 bg-white shadow-sm";
+
+const STATUS: Record<QuoteStatus, { label: string; cls: string }> = {
+  DRAFT: { label: "مسودة", cls: "bg-gray-100 text-gray-700" },
+  SENT: { label: "مُرسل", cls: "bg-blue-100 text-blue-700" },
+  PRINTED: { label: "مطبوع", cls: "bg-sky-100 text-sky-700" },
+  ACCEPTED: { label: "مقبول", cls: "bg-emerald-100 text-emerald-700" },
+  REJECTED: { label: "مرفوض", cls: "bg-red-100 text-red-700" },
+};
+
+/** A small popup menu: closes on an outside click or Escape */
+const Menu: React.FC<{
+  label: React.ReactNode;
+  ariaLabel: string;
+  buttonClass: string;
+  children: (close: () => void) => React.ReactNode;
+}> = ({ label, ariaLabel, buttonClass, children }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+  return (
+    <div ref={ref} className="relative">
+      <button type="button" aria-haspopup="menu" aria-expanded={open} aria-label={ariaLabel} onClick={() => setOpen(o => !o)} className={buttonClass}>
+        {label}
+      </button>
+      {open && (
+        <div role="menu" className="absolute left-0 top-full z-30 mt-1 min-w-[12rem] rounded-xl border border-gray-200 bg-white py-1 shadow-lg">
+          {children(() => setOpen(false))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const MenuItem: React.FC<{ icon: React.ElementType; onClick: () => void; danger?: boolean; disabled?: boolean; children: React.ReactNode }> = ({
+  icon: Icon,
+  onClick,
+  danger,
+  disabled,
+  children,
+}) => (
+  <button
+    type="button"
+    role="menuitem"
+    disabled={disabled}
+    onClick={onClick}
+    className={`flex w-full items-center gap-2 px-3 py-2 text-right text-sm disabled:opacity-50 ${
+      danger ? "text-red-600 hover:bg-red-50" : "text-gray-700 hover:bg-gray-50"
+    }`}
+  >
+    <Icon className="h-4 w-4" />
+    {children}
+  </button>
+);
+
+/** How a line's quantity reads: "2 كرتونة" with the pieces under it, or "3 متر" */
+function qtyText(item: QuoteItem) {
+  const unit = item.productId ? unitOf(item.product) : item.unit || "";
+  if (item.packId && item.packQty) {
+    return { main: formatQty(Number(item.packQty), item.packName || "عبوة"), sub: `${formatQty(Number(item.quantity), unit || "قطعة")}` };
+  }
+  return { main: formatQty(Number(item.quantity), unit), sub: "" };
+}
+const priceOf = (item: QuoteItem) => (item.packId && item.packQty ? Number(item.packPrice) : Number(item.unitPrice));
+function discountText(item: QuoteItem) {
+  if (Number(item.discountPercent) > 0) return `\u2066${Number(item.discountPercent)}%\u2069`;
+  if (Number(item.lineDiscount) > 0) return formatCurrency(Number(item.lineDiscount));
+  return "—";
+}
+
+/** "10%" kept left-to-right inside Arabic text (else it shows as "%10") */
+const Pct: React.FC<{ v: number }> = ({ v }) => <bdi dir="ltr">{v}%</bdi>;
+
+const isExpired = (q: Quote) => !!q.validUntil && !q.convertedToSaleId && new Date(String(q.validUntil).slice(0, 10) + "T23:59:59") < new Date();
+
+const StateMessage: React.FC<{ title: string; text: string; onBack: () => void; tone?: "error" }> = ({ title, text, onBack, tone }) => (
+  <div className="mx-auto max-w-md py-16 text-center">
+    <FileText className={`mx-auto mb-4 h-14 w-14 ${tone === "error" ? "text-red-300" : "text-gray-300"}`} />
+    <h2 className="mb-1 text-lg font-semibold text-gray-900">{title}</h2>
+    <p className="mb-5 text-sm text-gray-500">{text}</p>
+    <button type="button" onClick={onBack} className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700">
+      العودة إلى العروض
+    </button>
+  </div>
+);
 
 const QuoteView: React.FC = () => {
-  const { id } = useParams<{ id: string }>();
+  const { id = "" } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { company } = useSessionAuthStore();
-  const companyId = company?.companyId || company?.company?.id || 0;
-  const [convertingQuote, setConvertingQuote] = useState(false);
-  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const companyId = Number(company?.companyId || company?.company?.id) || 0;
 
-  const { data: quote, isLoading, error } = useQuote(id || "", companyId);
+  const { data: quote, isLoading, error } = useQuote(id, companyId);
   const deleteMutation = useDeleteQuote();
-  const convertToSaleMutation = useConvertQuoteToSale();
-  const [convertClientId, setConvertClientId] = useState("");
-  const { data: clientsData } = useClients({ companyId: companyId || 0, page: 1, limit: 100 });
-  const clients: any[] = (clientsData as any)?.data?.list || [];
+  const convertMutation = useConvertQuoteToSale();
   const emailMutation = useEmailQuote();
+  const updateMutation = useUpdateQuote();
+  const [showConvert, setShowConvert] = useState(false);
+  const [showDelete, setShowDelete] = useState(false);
+  const [params, setParams] = useSearchParams();
 
-  // Helper function to check if quote is expired
-  const isExpired = (validUntil?: string) => {
-    if (!validUntil) return false;
-    return new Date(validUntil) < new Date();
-  };
+  // "تحويل لفاتورة" from the quotes list lands here with ?convert=1
+  useEffect(() => {
+    if (params.get("convert") !== "1" || !quote) return;
+    if (!quote.convertedToSaleId) setShowConvert(true);
+    setParams({}, { replace: true });
+  }, [params, quote, setParams]);
 
-  const handleBack = () => {
-    navigate("/quotes");
-  };
+  const back = () => navigate("/quotes");
 
-  /** One runner for every print button: shows progress, then success or the reason it failed */
+  /** One runner for every print button: progress, then success or the reason it failed */
   const runPrint = async (job: () => Promise<void>, busy: string, done: string) => {
-    if (!quote) return;
     const toastId = "quote-print";
     toast.loading(busy, { id: toastId });
     try {
       await job();
       toast.success(done, { id: toastId });
-    } catch (error: any) {
-      console.error("Quote print error:", error);
-      toast.error(error?.message || "فشلت الطباعة", { id: toastId });
+    } catch (e: any) {
+      console.error("Quote print error:", e);
+      toast.error(e?.message || "فشلت الطباعة", { id: toastId });
     }
   };
 
-  const handlePrintA4 = () =>
-    runPrint(() => printQuoteA4(quote), "جاري تجهيز الطباعة...", "تم فتح نافذة الطباعة");
-
-  const handlePrintThermal = () =>
-    runPrint(() => printQuoteThermal(quote), "جاري الطباعة...", "تم إرسال العرض السعري للطابعة");
-
-  const handleEmailQuote = () => {
-    if (id && companyId) {
-      emailMutation.mutate({ id, companyId });
-    }
-  };
-
-  const handleEdit = () => {
-    navigate(`/quotes`);
-  };
-
-  const handleDelete = () => {
-    if (id && window.confirm("هل أنت متأكد من حذف هذا العرض السعري؟")) {
-      deleteMutation.mutate(id, {
-        onSuccess: () => {
-          navigate("/quotes");
-        },
-      });
-    }
-  };
-
-  const handleConvertToSale = () => {
-    // Pre-pick the customer the quote was written for (same phone, or else same name)
-    const contact = quote?.customerContact?.trim();
-    const name = quote?.customerName?.trim();
-    const match =
-      (contact && clients.find((c) => c.phone?.trim() === contact)) ||
-      (name && clients.find((c) => c.name?.trim() === name));
-    setConvertClientId(match ? String(match.id) : "");
-    setConvertingQuote(true);
-  };
-
-  const confirmConvertToSale = () => {
-    if (id && companyId) {
-      convertToSaleMutation.mutate(
-        { id, companyId, clientId: convertClientId ? Number(convertClientId) : undefined },
-        {
-          onSuccess: (data: any) => {
-            setConvertingQuote(false);
-            if (data?.data?.saleId) {
-              navigate(`/sales/${data.data.saleId}`);
-            }
-          },
-          onError: () => {
-            setConvertingQuote(false);
-          },
-        }
-      );
-    }
-  };
-
-  const handleDownloadPDF = async () => {
-    setIsGeneratingPDF(true);
-    await runPrint(() => downloadQuotePdf(quote), "جاري إنشاء ملف PDF...", "تم تحميل ملف PDF");
-    setIsGeneratingPDF(false);
-  };
-
-  // Loading state - skeleton like SalesDetails
   if (isLoading) {
     return (
       <Layout>
-        <div className="w-full space-y-6">
-          <Card padding="lg">
-            <div className="animate-pulse space-y-4">
-              <div className="h-8 bg-gray-200 rounded w-3/4"></div>
-              <div className="h-4 bg-gray-200 rounded w-1/2"></div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
-                <div className="h-48 bg-gray-200 rounded"></div>
-                <div className="h-48 bg-gray-200 rounded"></div>
-                <div className="h-48 bg-gray-200 rounded"></div>
-              </div>
-              <div className="h-32 bg-gray-200 rounded mt-6"></div>
-            </div>
-          </Card>
+        <div className="mx-auto w-full max-w-5xl animate-pulse space-y-4">
+          <div className="h-10 w-2/3 rounded-lg bg-gray-200" />
+          <div className="h-40 rounded-2xl bg-gray-200" />
+          <div className="h-72 rounded-2xl bg-gray-200" />
         </div>
       </Layout>
     );
   }
-
-  // Error state - no company ID
-  if (!companyId) {
-    return (
-      <Layout>
-        <div className="w-full space-y-6">
-          <div className="text-center py-12">
-            <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">خطأ في البيانات</h2>
-            <p className="text-gray-600 mb-4">لم يتم العثور على معرف الشركة</p>
-            <Button onClick={handleBack}>العودة إلى قائمة العروض السعرية</Button>
-          </div>
-        </div>
-      </Layout>
-    );
-  }
-
-  // Error state
   if (error) {
     return (
       <Layout>
-        <div className="w-full space-y-6">
-          <div className="text-center py-12">
-            <FileText className="w-16 h-16 text-red-400 mx-auto mb-4" />
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">خطأ في تحميل العرض السعري</h2>
-            <p className="text-gray-600 mb-4">{(error as any)?.message || "حدث خطأ أثناء تحميل بيانات العرض السعري"}</p>
-            <div className="text-sm text-gray-500 mb-4">
-              <p>معرف العرض: {id}</p>
-              <p>معرف الشركة: {companyId}</p>
-            </div>
-            <Button onClick={handleBack}>العودة إلى قائمة العروض السعرية</Button>
-          </div>
-        </div>
+        <StateMessage tone="error" title="تعذر تحميل العرض" text={(error as any)?.message || "حدث خطأ أثناء تحميل العرض السعري"} onBack={back} />
       </Layout>
     );
   }
-
-  // Not found state
   if (!quote) {
     return (
       <Layout>
-        <div className="w-full space-y-6">
-          <div className="text-center py-12">
-            <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">العرض السعري غير موجود</h2>
-            <p className="text-gray-600 mb-4">لم يتم العثور على العرض السعري المطلوب</p>
-            <Button onClick={handleBack}>العودة إلى قائمة العروض السعرية</Button>
-          </div>
-        </div>
+        <StateMessage title="العرض غير موجود" text="ربما حُذف هذا العرض السعري." onBack={back} />
       </Layout>
     );
   }
 
-  const expired = isExpired(quote.validUntil);
+  const status = STATUS[quote.status] || STATUS.DRAFT;
+  const expired = isExpired(quote);
+  const converted = !!quote.convertedToSaleId;
+  const items = [...(quote.items || [])].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+  const customCount = items.filter(i => !i.productId).length;
+  const discount = Number(quote.totalDiscount) || 0;
+  const fee = Number(quote.additionalFee) || 0;
+  const taxable = Number(quote.subtotal) - discount;
+  const profit = quote.totalProfit != null ? Number(quote.totalProfit) : null;
+  const margin = profit != null && taxable > 0 ? Math.round((profit / taxable) * 1000) / 10 : null;
+  const terms = quote.terms || [];
 
-  const statusMap: Record<string, { label: string; variant: "default" | "primary" | "success" | "warning" | "error" }> = {
-    DRAFT: { label: "مسودة", variant: "default" },
-    SENT: { label: "مرسل", variant: "primary" },
-    PRINTED: { label: "مطبوع", variant: "success" },
-    ACCEPTED: { label: "مقبول", variant: "success" },
-    REJECTED: { label: "مرفوض", variant: "error" },
-  };
-  const status = statusMap[quote.status] || statusMap.DRAFT;
+  const setStatus = (s: QuoteStatus) => updateMutation.mutate({ id: quote.id, data: { companyId, status: s } });
 
-  const statusColor: Record<string, string> = {
-    DRAFT: "text-gray-600 bg-gray-50",
-    SENT: "text-blue-600 bg-blue-50",
-    PRINTED: "text-green-600 bg-green-50",
-    ACCEPTED: "text-green-600 bg-green-50",
-    REJECTED: "text-red-600 bg-red-50",
-  };
+  const convert = (options: { clientId?: number; customLines: any[] }) =>
+    convertMutation.mutate(
+      { id: quote.id, companyId, ...options },
+      {
+        onSuccess: (res: any) => {
+          setShowConvert(false);
+          const saleId = res?.data?.saleId;
+          if (saleId) navigate(`/sales/${saleId}`);
+        },
+      }
+    );
+
+  const btn = "inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50";
 
   return (
     <Layout>
-      <div className="w-full space-y-6">
+      <div className="mx-auto w-full max-w-5xl space-y-4">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center space-x-4 space-x-reverse">
-            <Button
-              variant="ghost"
-              onClick={handleBack}
-              className="flex items-center space-x-2 space-x-reverse text-gray-600 hover:text-gray-900"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              <span>العودة</span>
-            </Button>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">عرض سعري رقم {quote.quoteNumber}</h1>
-              <p className="text-gray-500 text-sm">تفاصيل العرض السعري</p>
-            </div>
-          </div>
-          <div className="flex items-center space-x-2 space-x-reverse">
-            <Button onClick={handlePrintThermal} variant="outline" size="sm" className="text-green-600 border-green-200 hover:bg-green-50">
-              <Printer className="w-4 h-4 ml-1" />
-              طباعة حرارية
-            </Button>
-            <Button onClick={handlePrintA4} variant="outline" size="sm" className="text-blue-600 border-blue-200 hover:bg-blue-50">
-              <FileDown className="w-4 h-4 ml-1" />
-              طباعة A4
-            </Button>
-            <Button
-              onClick={handleDownloadPDF}
-              variant="outline"
-              size="sm"
-              disabled={isGeneratingPDF}
-              className="text-purple-600 border-purple-200 hover:bg-purple-50"
-            >
-              <Download className="w-4 h-4 ml-1" />
-              {isGeneratingPDF ? "جاري التحميل..." : "تحميل PDF"}
-            </Button>
-            {quote.customerEmail && quote.status === "DRAFT" && (
-              <Button
-                onClick={handleEmailQuote}
-                variant="outline"
-                size="sm"
-                disabled={emailMutation.isPending}
-                className="text-indigo-600 border-indigo-200 hover:bg-indigo-50"
-              >
-                <Mail className="w-4 h-4 ml-1" />
-                {emailMutation.isPending ? "جاري الإرسال..." : "إرسال بالبريد"}
-              </Button>
-            )}
-            {!quote.convertedToSaleId && quote.status !== "REJECTED" && (
-              <Button onClick={handleConvertToSale} size="sm" className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700">
-                <ShoppingCart className="w-4 h-4 ml-1" />
-                تحويل لفاتورة
-              </Button>
-            )}
-          </div>
-        </div>
-
-        {/* Quote Overview Section */}
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Quote Information Card */}
-            <Card padding="lg" className="lg:col-span-2">
-              <div className="space-y-6">
-                <div className="flex items-center mb-4">
-                  <div className="p-2 bg-blue-100 rounded-lg">
-                    <FileText className="w-5 h-5 text-blue-600" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-gray-900 mr-3">معلومات العرض السعري</h3>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">رقم العرض</label>
-                    <div className="bg-gray-50 rounded-lg p-3 border">
-                      <span className="text-gray-900 font-mono">{quote.quoteNumber}</span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">الحالة</label>
-                    <div className="bg-gray-50 rounded-lg p-3 border">
-                      <span
-                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          statusColor[quote.status] || "text-gray-600 bg-gray-50"
-                        }`}
-                      >
-                        {status.label}
-                      </span>
-                      {expired && quote.status !== "ACCEPTED" && (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-red-600 bg-red-50 mr-2">
-                          <AlertTriangle className="w-3 h-3 ml-1" />
-                          منتهي الصلاحية
-                        </span>
-                      )}
-                      {quote.convertedToSaleId && (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-green-600 bg-green-50 mr-2">
-                          تم التحويل
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">اسم العميل</label>
-                    <div className="bg-gray-50 rounded-lg p-3 border">
-                      <span className="text-gray-900">{quote.customerName || "غير محدد"}</span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">رقم الهاتف</label>
-                    <div className="bg-gray-50 rounded-lg p-3 border">
-                      <span className="text-gray-900">{quote.customerContact || "-"}</span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">البريد الإلكتروني</label>
-                    <div className="bg-gray-50 rounded-lg p-3 border">
-                      <span className="text-gray-900">{quote.customerEmail || "-"}</span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">العملة</label>
-                    <div className="bg-gray-50 rounded-lg p-3 border">
-                      <span className="text-gray-900">{quote.currency}</span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">تاريخ الإنشاء</label>
-                    <div className="bg-gray-50 rounded-lg p-3 border">
-                      <span className="text-gray-900">{quote.createdAt ? formatTableDate(quote.createdAt) : "غير محدد"}</span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">صالح حتى</label>
-                    <div className="bg-gray-50 rounded-lg p-3 border">
-                      <span className={expired ? "text-red-600 font-medium" : "text-gray-900"}>
-                        {quote.validUntil ? formatTableDate(quote.validUntil) : "غير محدد"}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Notes Section */}
-                {quote.notes && (
-                  <div className="mt-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">ملاحظات</label>
-                    <div className="bg-gray-50 rounded-lg p-3 border">
-                      <p className="text-gray-900 whitespace-pre-wrap">{quote.notes}</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </Card>
-
-            {/* Financial Summary Card */}
-            <Card padding="lg">
-              <div className="space-y-6">
-                <div className="flex items-center mb-4">
-                  <div className="p-2 bg-green-100 rounded-lg">
-                    <DollarSign className="w-5 h-5 text-green-600" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-gray-900 mr-3">الملخص المالي</h3>
-                </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">المجموع الفرعي</label>
-                    <div className="bg-gray-50 rounded-lg p-3 border">
-                      <span className="text-lg font-medium text-gray-900">
-                        {formatCurrency(quote.subtotal)} {quote.currency}
-                      </span>
-                    </div>
-                  </div>
-
-                  {quote.totalDiscount > 0 && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">إجمالي الخصومات</label>
-                      <div className="bg-green-50 rounded-lg p-3 border border-green-200">
-                        <span className="text-lg font-medium text-green-600">
-                          -{formatCurrency(quote.totalDiscount)} {quote.currency}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
-                  {quote.taxPercent > 0 && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">الضريبة ({quote.taxPercent}%)</label>
-                      <div className="bg-gray-50 rounded-lg p-3 border">
-                        <span className="text-lg font-medium text-gray-900">
-                          {formatCurrency(quote.taxAmount)} {quote.currency}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
-                  {(quote as any).additionalFee > 0 && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        {(quote as any).additionalFeeLabel || "رسوم إضافية"}
-                      </label>
-                      <div className="bg-gray-50 rounded-lg p-3 border">
-                        <span className="text-lg font-medium text-gray-900">
-                          {formatCurrency((quote as any).additionalFee)} {quote.currency}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">المجموع الكلي</label>
-                    <div className="bg-gray-50 rounded-lg p-3 border">
-                      <span className="text-2xl font-bold text-green-600">
-                        {formatCurrency(quote.total)} {quote.currency}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">عدد المنتجات</label>
-                    <div className="bg-gray-50 rounded-lg p-3 border">
-                      <span className="text-lg font-semibold text-gray-900">{quote.items?.length || 0}</span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">إجمالي الكمية</label>
-                    <div className="bg-gray-50 rounded-lg p-3 border">
-                      <span className="text-lg font-semibold text-gray-900">
-                        {quote.items?.reduce((sum, item) => sum + item.quantity, 0) || 0}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Quick Actions */}
-                {!quote.convertedToSaleId && (
-                  <div className="pt-4 border-t space-y-2">
-                    <Button variant="outline" onClick={handleEdit} className="w-full justify-center">
-                      <Edit className="w-4 h-4 ml-2" />
-                      تعديل العرض
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={handleDelete}
-                      loading={deleteMutation.isPending}
-                      className="w-full justify-center text-red-600 hover:bg-red-50 border-red-200"
-                    >
-                      <Trash2 className="w-4 h-4 ml-2" />
-                      حذف العرض
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </Card>
-          </div>
-
-          {/* Quote Items Section */}
-          <Card padding="lg">
-            <div className="space-y-6">
-              <div className="flex items-center">
-                <div className="p-2 bg-purple-100 rounded-lg">
-                  <Package className="w-5 h-5 text-purple-600" />
-                </div>
-                <h3 className="text-lg font-semibold text-gray-900 mr-3">منتجات العرض السعري</h3>
-              </div>
-
-              {quote.items && quote.items.length > 0 ? (
-                <div className="overflow-hidden border border-gray-200 rounded-lg">
-                  <table className="w-full">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">المنتج</th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">السعر</th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">الكمية</th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">الخصم</th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">المجموع</th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {quote.items.map((item, index) => (
-                        <tr key={index} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div>
-                              <div className="text-sm font-medium text-gray-900">{item.productName || "منتج غير محدد"}</div>
-                              {item.productSku && <div className="text-sm text-gray-500">SKU: {item.productSku}</div>}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {formatCurrency(item.unitPrice)} {quote.currency}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatQty(item.quantity, unitOf(item.product))}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {item.lineDiscount > 0 ? (
-                              <span className="text-green-600">
-                                -{formatCurrency(item.lineDiscount)} {quote.currency}
-                              </span>
-                            ) : (
-                              "-"
-                            )}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                            {formatCurrency(item.lineTotal)} {quote.currency}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot className="bg-gray-50">
-                      <tr>
-                        <td colSpan={4} className="px-6 py-2 text-right text-sm text-gray-600">
-                          المجموع الفرعي:
-                        </td>
-                        <td className="px-6 py-2 text-sm font-medium text-gray-900">
-                          {formatCurrency(quote.subtotal)} {quote.currency}
-                        </td>
-                      </tr>
-                      {quote.totalDiscount > 0 && (
-                        <tr>
-                          <td colSpan={4} className="px-6 py-2 text-right text-sm text-gray-600">
-                            إجمالي الخصومات:
-                          </td>
-                          <td className="px-6 py-2 text-sm font-medium text-green-600">
-                            -{formatCurrency(quote.totalDiscount)} {quote.currency}
-                          </td>
-                        </tr>
-                      )}
-                      {quote.taxPercent > 0 && (
-                        <tr>
-                          <td colSpan={4} className="px-6 py-2 text-right text-sm text-gray-600">
-                            الضريبة ({quote.taxPercent}%):
-                          </td>
-                          <td className="px-6 py-2 text-sm font-medium text-gray-900">
-                            {formatCurrency(quote.taxAmount)} {quote.currency}
-                          </td>
-                        </tr>
-                      )}
-                      {(quote as any).additionalFee > 0 && (
-                        <tr>
-                          <td colSpan={4} className="px-6 py-2 text-right text-sm text-gray-600">
-                            {(quote as any).additionalFeeLabel || "رسوم إضافية"}:
-                          </td>
-                          <td className="px-6 py-2 text-sm font-medium text-gray-900">
-                            {formatCurrency((quote as any).additionalFee)} {quote.currency}
-                          </td>
-                        </tr>
-                      )}
-                      <tr>
-                        <td colSpan={4} className="px-6 py-4 text-right text-sm font-medium text-gray-900">
-                          المجموع الكلي:
-                        </td>
-                        <td className="px-6 py-4 text-sm font-bold text-green-600">
-                          {formatCurrency(quote.total)} {quote.currency}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              ) : (
-                <div className="text-center py-8">
-                  <Package className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-500">لا توجد منتجات في هذا العرض السعري</p>
-                </div>
-              )}
-            </div>
-          </Card>
-        </div>
-
-        {/* Convert to Sale Confirmation Modal */}
-        <Modal isOpen={convertingQuote} onClose={() => setConvertingQuote(false)} title="تحويل العرض السعري إلى فاتورة بيع" size="md">
-          <div className="space-y-6">
-            {/* Quote Summary */}
-            <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl p-6 border border-indigo-100">
-              <div className="flex items-center gap-4 mb-4">
-                <div className="w-14 h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-500/30">
-                  <FileText className="w-7 h-7 text-white" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-gray-900">{quote.quoteNumber}</h3>
-                  <p className="text-gray-600">{quote.customerName || "عميل غير محدد"}</p>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">المجموع الفرعي:</span>
-                  <span className="text-gray-900">
-                    {formatCurrency(quote.subtotal)} {quote.currency}
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-2">
+            <button type="button" onClick={back} aria-label="رجوع" className="mt-0.5 rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-800">
+              <ArrowRight className="h-5 w-5" />
+            </button>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-xl font-bold text-gray-900">
+                  عرض سعر{" "}
+                  <span dir="ltr" className="whitespace-nowrap">
+                    {quote.quoteNumber}
                   </span>
-                </div>
-                {quote.totalDiscount > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">الخصم:</span>
-                    <span className="text-green-600">
-                      -{formatCurrency(quote.totalDiscount)} {quote.currency}
-                    </span>
-                  </div>
-                )}
-                {quote.taxAmount > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">الضريبة ({quote.taxPercent}%):</span>
-                    <span className="text-gray-900">
-                      {formatCurrency(quote.taxAmount)} {quote.currency}
-                    </span>
-                  </div>
-                )}
-                {Number(quote.additionalFee) > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">{quote.additionalFeeLabel || "رسوم إضافية"}:</span>
-                    <span className="text-gray-900">
-                      {formatCurrency(Number(quote.additionalFee))} {quote.currency}
-                    </span>
-                  </div>
-                )}
-                <div className="flex justify-between text-lg font-bold pt-2 border-t border-indigo-200">
-                  <span className="text-gray-900">المجموع الكلي:</span>
-                  <span className="text-indigo-600">
-                    {formatCurrency(quote.total)} {quote.currency}
-                  </span>
-                </div>
+                </h1>
+                <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${status.cls}`}>{status.label}</span>
+                {expired && <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">منتهي الصلاحية</span>}
+                {converted && <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700">محوّل لفاتورة</span>}
               </div>
-            </div>
-
-            {/* Customer account for the invoice */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">العميل (حساب الفاتورة)</label>
-              <select
-                value={convertClientId}
-                onChange={(e) => setConvertClientId(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              >
-                <option value="">بدون عميل</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                    {c.phone ? ` - ${c.phone}` : ""}
-                  </option>
-                ))}
-              </select>
-              <p className="mt-1 text-xs text-gray-500">
-                الفاتورة تُنشأ غير مدفوعة، لذلك يُفضّل ربطها بعميل حتى تظهر في كشف حسابه.
+              <p className="mt-0.5 text-sm text-gray-500">
+                <bdi>{quote.customerName || quote.client?.name || "بدون اسم"}</bdi> · <bdi>{formatTableDate(quote.createdAt)}</bdi>
               </p>
             </div>
-
-            {expired && (
-              <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">
-                انتهت صلاحية هذا العرض السعري. تأكد من الأسعار قبل التحويل.
-              </div>
-            )}
-
-            {/* Conversion Info */}
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
-                <div>
-                  <h4 className="font-medium text-amber-800 mb-1">ملاحظة مهمة</h4>
-                  <p className="text-sm text-amber-700">
-                    سيتم إنشاء فاتورة بيع جديدة بنفس تفاصيل العرض السعري. لن يمكن تعديل أو حذف العرض السعري بعد التحويل.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Items Preview */}
-            <div className="border rounded-xl overflow-hidden">
-              <div className="bg-gray-50 px-4 py-2 border-b">
-                <h4 className="font-medium text-gray-900">المنتجات ({quote.items?.length || 0})</h4>
-              </div>
-              <div className="max-h-40 overflow-y-auto">
-                {quote.items?.map((item, index) => (
-                  <div key={index} className="px-4 py-2 flex justify-between items-center border-b last:border-b-0 hover:bg-gray-50">
-                    <div>
-                      <span className="text-gray-900">{item.productName}</span>
-                      <span className="text-gray-500 text-sm mr-2">× {item.quantity}</span>
-                    </div>
-                    <span className="font-medium text-gray-900">
-                      {formatCurrency(item.lineTotal)} {quote.currency}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="flex justify-end gap-3 pt-4 border-t">
-              <Button variant="outline" onClick={() => setConvertingQuote(false)}>
-                إلغاء
-              </Button>
-              <Button
-                onClick={confirmConvertToSale}
-                loading={convertToSaleMutation.isPending}
-                className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
-              >
-                <ShoppingCart className="w-4 h-4 ml-2" />
-                تأكيد التحويل لفاتورة بيع
-              </Button>
-            </div>
           </div>
-        </Modal>
 
+          <div className="flex flex-wrap items-center gap-2">
+            {!converted && (
+              <button type="button" onClick={() => navigate(`/quotes/${quote.id}/edit`)} className={btn}>
+                <Edit className="h-4 w-4" />
+                تعديل
+              </button>
+            )}
+            <Menu
+              ariaLabel="طباعة وتحميل"
+              buttonClass={btn}
+              label={
+                <>
+                  <Printer className="h-4 w-4" />
+                  طباعة
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </>
+              }
+            >
+              {close => (
+                <>
+                  <MenuItem
+                    icon={FileText}
+                    onClick={() => {
+                      close();
+                      runPrint(() => printQuoteA4(quote), "جاري تجهيز الطباعة...", "تم فتح نافذة الطباعة");
+                    }}
+                  >
+                    طباعة A4
+                  </MenuItem>
+                  <MenuItem
+                    icon={Receipt}
+                    onClick={() => {
+                      close();
+                      runPrint(() => printQuoteThermal(quote), "جاري الطباعة...", "تم إرسال العرض للطابعة");
+                    }}
+                  >
+                    طباعة حرارية
+                  </MenuItem>
+                  <MenuItem
+                    icon={Download}
+                    onClick={() => {
+                      close();
+                      runPrint(() => downloadQuotePdf(quote), "جاري إنشاء ملف PDF...", "تم تحميل ملف PDF");
+                    }}
+                  >
+                    تحميل PDF
+                  </MenuItem>
+                </>
+              )}
+            </Menu>
+            {!converted && quote.status !== "REJECTED" && (
+              <button
+                type="button"
+                onClick={() => setShowConvert(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-700"
+              >
+                <ShoppingCart className="h-4 w-4" />
+                تحويل لفاتورة
+              </button>
+            )}
+            <Menu ariaLabel="إجراءات أخرى" buttonClass="rounded-lg border border-gray-300 bg-white p-2 text-gray-600 hover:bg-gray-50" label={<MoreVertical className="h-4 w-4" />}>
+              {close => (
+                <>
+                  {quote.customerEmail && (
+                    <MenuItem
+                      icon={Mail}
+                      disabled={emailMutation.isPending}
+                      onClick={() => {
+                        close();
+                        emailMutation.mutate({ id: quote.id, companyId });
+                      }}
+                    >
+                      إرسال بالبريد
+                    </MenuItem>
+                  )}
+                  {!converted && quote.status !== "ACCEPTED" && (
+                    <MenuItem
+                      icon={CheckCircle2}
+                      onClick={() => {
+                        close();
+                        setStatus("ACCEPTED");
+                      }}
+                    >
+                      تسجيل كمقبول
+                    </MenuItem>
+                  )}
+                  {!converted && quote.status !== "REJECTED" && (
+                    <MenuItem
+                      icon={XCircle}
+                      onClick={() => {
+                        close();
+                        setStatus("REJECTED");
+                      }}
+                    >
+                      تسجيل كمرفوض
+                    </MenuItem>
+                  )}
+                  {!converted && (
+                    <MenuItem
+                      icon={Trash2}
+                      danger
+                      onClick={() => {
+                        close();
+                        setShowDelete(true);
+                      }}
+                    >
+                      حذف العرض
+                    </MenuItem>
+                  )}
+                  {converted && !quote.customerEmail && <p className="px-3 py-2 text-xs text-gray-500">لا إجراءات أخرى لعرض محوّل</p>}
+                </>
+              )}
+            </Menu>
+          </div>
+        </div>
+
+        {/* State banners */}
+        {converted && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+            <span className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4" />
+              تم تحويل هذا العرض إلى فاتورة، ولا يمكن تعديله.
+            </span>
+            {quote.convertedToSale && (
+              <Link to={`/sales/${quote.convertedToSale.id}`} className="font-semibold underline-offset-2 hover:underline">
+                فتح الفاتورة <span dir="ltr">#{quote.convertedToSale.receiptNumber}</span>
+              </Link>
+            )}
+          </div>
+        )}
+        {expired && (
+          <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            انتهت صلاحية العرض في {formatTableDate(quote.validUntil!)}. راجع الأسعار قبل التحويل أو عدّل تاريخ الصلاحية.
+          </div>
+        )}
+
+        {/* Document */}
+        <article className={`${card} overflow-hidden`}>
+          <div className="grid gap-5 border-b border-gray-100 p-5 sm:grid-cols-2 sm:p-6">
+            <section>
+              <h2 className="mb-2 text-xs font-medium text-gray-500">مقدَّم إلى</h2>
+              <p className="flex items-center gap-2 text-base font-semibold text-gray-900">
+                {quote.customerName || quote.client?.name || "—"}
+                {quote.clientId && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-primary-50 px-2 py-0.5 text-[11px] font-medium text-primary-700">
+                    <User className="h-3 w-3" />
+                    عميل مسجل
+                  </span>
+                )}
+              </p>
+              {quote.customerContact && (
+                <p className="mt-1 text-sm text-gray-600" dir="ltr" style={{ textAlign: "right" }}>
+                  {quote.customerContact}
+                </p>
+              )}
+              {quote.customerEmail && (
+                <p className="mt-0.5 text-sm text-gray-600" dir="ltr" style={{ textAlign: "right" }}>
+                  {quote.customerEmail}
+                </p>
+              )}
+            </section>
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:justify-self-end">
+              <dt className="text-gray-500">رقم العرض</dt>
+              <dd className="font-medium text-gray-900" dir="ltr" style={{ textAlign: "right" }}>
+                {quote.quoteNumber}
+              </dd>
+              <dt className="text-gray-500">التاريخ</dt>
+              <dd className="text-gray-900">{formatTableDate(quote.createdAt)}</dd>
+              <dt className="text-gray-500">صالح حتى</dt>
+              <dd className={expired ? "font-medium text-amber-700" : "text-gray-900"}>{quote.validUntil ? formatTableDate(quote.validUntil) : "بدون مدة"}</dd>
+            </dl>
+          </div>
+
+          {/* Lines */}
+          <div>
+            <div className="hidden grid-cols-[2rem_minmax(0,1fr)_7rem_7rem_5rem_8rem] gap-3 bg-gray-50 px-6 py-2.5 text-xs font-medium text-gray-500 md:grid">
+              <span>#</span>
+              <span>البند</span>
+              <span className="text-center">الكمية</span>
+              <span className="text-center">السعر</span>
+              <span className="text-center">الخصم</span>
+              <span className="text-left">الإجمالي</span>
+            </div>
+            {items.length === 0 && <p className="px-6 py-8 text-center text-sm text-gray-500">لا توجد بنود في هذا العرض</p>}
+            {items.map((item, k) => {
+              const q = qtyText(item);
+              return (
+                <div
+                  key={item.id}
+                  className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 border-t border-gray-100 px-5 py-3 first:border-t-0 md:grid-cols-[2rem_minmax(0,1fr)_7rem_7rem_5rem_8rem] md:items-start md:px-6"
+                >
+                  <span className="hidden pt-0.5 text-xs text-gray-400 md:block">{k + 1}</span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-900">
+                      {item.productName}
+                      {!item.productId && (
+                        <span className="mr-2 rounded-full bg-violet-100 px-2 py-0.5 align-middle text-[11px] font-medium text-violet-700">غير مسجل</span>
+                      )}
+                    </p>
+                    {item.productSku && (
+                      <p className="text-xs text-gray-400" dir="ltr" style={{ textAlign: "right" }}>
+                        {item.productSku}
+                      </p>
+                    )}
+                    {item.description && <p className="mt-1 whitespace-pre-line text-xs leading-5 text-gray-600">{item.description}</p>}
+                    {/* phone: the numbers under the name */}
+                    <p className="mt-1 text-xs text-gray-500 md:hidden">
+                      {q.main} × {formatCurrency(priceOf(item))}
+                      {discountText(item) !== "—" && ` · خصم ${discountText(item)}`}
+                      {q.sub && ` · ${q.sub}`}
+                    </p>
+                  </div>
+                  <div className="hidden text-center text-sm text-gray-800 md:block">
+                    {q.main}
+                    {q.sub && <p className="text-xs text-gray-500">{q.sub}</p>}
+                  </div>
+                  <span className="hidden text-center text-sm text-gray-800 md:block">{formatCurrency(priceOf(item))}</span>
+                  <span className={`hidden text-center text-sm md:block ${discountText(item) === "—" ? "text-gray-400" : "text-emerald-700"}`}>{discountText(item)}</span>
+                  <span className="whitespace-nowrap text-left text-sm font-semibold text-gray-900">{formatCurrency(Number(item.lineTotal))}</span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Totals + terms */}
+          <div className="grid gap-6 border-t border-gray-200 bg-gray-50/60 p-5 sm:p-6 md:grid-cols-[minmax(0,1fr)_18rem]">
+            <div className="order-2 space-y-4 md:order-1">
+              {terms.length > 0 && (
+                <section>
+                  <h2 className="mb-2 text-sm font-semibold text-gray-900">الشروط</h2>
+                  <dl className="space-y-1.5 text-sm">
+                    {terms.map((t, i) => (
+                      <div key={i} className="grid grid-cols-[7rem_minmax(0,1fr)] gap-2">
+                        <dt className="text-gray-500">{t.label}</dt>
+                        <dd className="whitespace-pre-line text-gray-900">{t.value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </section>
+              )}
+              {quote.notes && (
+                <section>
+                  <h2 className="mb-1 text-sm font-semibold text-gray-900">ملاحظات</h2>
+                  <p className="whitespace-pre-line text-sm text-gray-700">{quote.notes}</p>
+                </section>
+              )}
+              {!terms.length && !quote.notes && <p className="text-sm text-gray-400">لا شروط أو ملاحظات على هذا العرض.</p>}
+            </div>
+
+            <dl className="order-1 space-y-2 text-sm md:order-2">
+              <div className="flex justify-between">
+                <dt className="text-gray-600">المجموع</dt>
+                <dd className="font-medium text-gray-900">{formatCurrency(Number(quote.subtotal))}</dd>
+              </div>
+              {discount > 0 && (
+                <div className="flex justify-between">
+                  <dt className="text-gray-600">
+                    خصم
+                    {quote.orderDiscountType === "PERCENT" && quote.orderDiscountValue ? (
+                      <>
+                        {" "}
+                        <Pct v={Number(quote.orderDiscountValue)} />
+                      </>
+                    ) : null}
+                  </dt>
+                  <dd className="font-medium text-emerald-700">−{formatCurrency(discount)}</dd>
+                </div>
+              )}
+              {Number(quote.taxAmount) > 0 && (
+                <div className="flex justify-between">
+                  <dt className="text-gray-600">
+                    الضريبة <Pct v={Number(quote.taxPercent)} />
+                  </dt>
+                  <dd className="font-medium text-gray-900">{formatCurrency(Number(quote.taxAmount))}</dd>
+                </div>
+              )}
+              {fee > 0 && (
+                <div className="flex justify-between">
+                  <dt className="text-gray-600">{quote.additionalFeeLabel || "رسوم إضافية"}</dt>
+                  <dd className="font-medium text-gray-900">{formatCurrency(fee)}</dd>
+                </div>
+              )}
+              <div className="flex items-baseline justify-between border-t border-gray-200 pt-2">
+                <dt className="font-semibold text-gray-900">الإجمالي</dt>
+                <dd className="text-xl font-bold text-gray-900">{formatCurrency(Number(quote.total))}</dd>
+              </div>
+            </dl>
+          </div>
+        </article>
+
+        {/* Internal: never printed */}
+        {profit != null && (
+          <div className={`${card} flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-3 text-sm`}>
+            <span className="text-xs font-medium text-gray-500">للإدارة فقط — لا يظهر للعميل</span>
+            <span className="text-gray-600">
+              التكلفة <b className="font-semibold text-gray-900">{formatCurrency(Number(quote.totalCost) || 0)}</b>
+            </span>
+            <span className="text-gray-600">
+              الربح{" "}
+              <b className={`font-semibold ${profit < 0 ? "text-red-600" : "text-emerald-700"}`}>
+                {formatCurrency(profit)}
+                {margin != null && (
+                  <span className="mr-1 font-normal text-gray-500">
+                    هامش <Pct v={margin} />
+                  </span>
+                )}
+              </b>
+            </span>
+            {customCount > 0 && <span className="text-xs text-gray-500">يشمل {customCount} بند غير مسجل بالتكلفة المكتوبة له</span>}
+          </div>
+        )}
       </div>
+
+      <ConvertQuoteModal
+        isOpen={showConvert}
+        onClose={() => setShowConvert(false)}
+        quote={quote}
+        companyId={companyId}
+        converting={convertMutation.isPending}
+        onConvert={convert}
+      />
+      <ConfirmDialog
+        isOpen={showDelete}
+        onClose={() => setShowDelete(false)}
+        onConfirm={() => deleteMutation.mutate(quote.id, { onSuccess: () => navigate("/quotes") })}
+        title="حذف العرض السعري"
+        message={`سيُحذف العرض ${quote.quoteNumber} نهائياً. لا يمكن التراجع عن ذلك.`}
+        confirmText="حذف"
+        isLoading={deleteMutation.isPending}
+      />
     </Layout>
   );
 };

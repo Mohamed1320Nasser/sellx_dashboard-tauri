@@ -207,6 +207,13 @@ const styles = StyleSheet.create({
     fontSize: 9.5,
     textAlign: "right",
   },
+  itemDesc: {
+    fontSize: 8,
+    color: COLOR.inkSoft,
+    marginTop: 2,
+    lineHeight: 1.5,
+    textAlign: "right",
+  },
   itemSku: {
     fontSize: 7.5,
     color: COLOR.inkFaint,
@@ -494,6 +501,7 @@ export const SaleInvoicePdf: React.FC<{ data: SaleInvoiceData }> = ({ data }) =>
                     {item.categoryName ? ` · ${item.categoryName}` : ""}
                   </Text>
                 ) : null}
+                {item.description ? <Text style={styles.itemDesc}>{item.description}</Text> : null}
               </View>
               <View style={[styles.td, styles.colQty]}>
                 <Text style={styles.numText}>{formatQty(item.quantity)}</Text>
@@ -561,7 +569,7 @@ export const SaleInvoicePdf: React.FC<{ data: SaleInvoiceData }> = ({ data }) =>
             </View>
             {hasDiscount ? (
               <View style={styles.tRow}>
-                <Text style={[styles.tRowLabel, styles.discountValue]}>الخصم</Text>
+                <Text style={[styles.tRowLabel, styles.discountValue]}>{data.discountLabel || "الخصم"}</Text>
                 <Text style={[styles.tRowValue, styles.discountValue]}>
                   {money(data.discountAmount, true)}
                 </Text>

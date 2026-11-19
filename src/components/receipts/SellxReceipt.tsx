@@ -229,6 +229,18 @@ export function SellxReceipt({ data }: Props) {
         </>
       )}
 
+      {data.isQuote && !!data.terms?.length && (
+        <>
+          <hr className="receipt__divider" />
+          {data.terms.map((t, i) => (
+            <div key={i} className="receipt__row" style={{ alignItems: "flex-start", gap: 6 }}>
+              <span className="receipt__label" style={{ whiteSpace: "nowrap" }}>{t.label}</span>
+              <span className="receipt__value" style={{ textAlign: "left", whiteSpace: "pre-line" }}>{t.value}</span>
+            </div>
+          ))}
+        </>
+      )}
+
       {/* QR Code */}
       {data.showQrCode && data.qrCodeData && (
         <>

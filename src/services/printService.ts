@@ -61,6 +61,7 @@ export interface SellxReceiptData {
   isPurchase?: boolean; // true = purchase receipt, false/undefined = sale receipt
   isQuote?: boolean; // price quote: "عرض سعر", no payment block, printed on the quote printer
   validUntil?: string; // quotes: last day the prices hold
+  terms?: { label: string; value: string }[]; // quotes: delivery, warranty, payment...
   /** Narrow paper (58mm): items as name line + "qty × price = total" line, set by printReceipt */
   compact?: boolean;
   supplierName?: string; // Purchase receipts: who the goods came from

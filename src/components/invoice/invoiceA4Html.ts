@@ -79,6 +79,7 @@ tfoot td { padding: 7px 8px; font-size: 11px; color: #475569; border-top: 2px so
 .c-num { width: 86px; text-align: center; font-weight: 700; }
 .c-total { width: 110px; text-align: center; font-weight: 700; }
 .sku { font-size: 10px; color: #94a3b8; margin-top: 2px; }
+.desc { font-size: 10.5px; color: #475569; margin-top: 3px; line-height: 1.6; white-space: pre-line; font-weight: 400; }
 .bottom { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; margin-top: 16px; page-break-inside: avoid; }
 .left-col { flex: 1; display: flex; flex-direction: column; gap: 10px; }
 .words { border: 1px dashed #94a3b8; border-radius: 6px; padding: 9px 12px; font-size: 12px; font-weight: 700; background: #f8fafc; }
@@ -164,7 +165,7 @@ tfoot td { padding: 7px 8px; font-size: 11px; color: #475569; border-top: 2px so
         <td class="c-idx">${it.index}</td>
         <td class="c-name"><div style="font-weight:700">${esc(it.productName)}</div>${
             it.sku ? `<div class="sku"><span class="num">${esc(it.sku)}</span>${it.categoryName ? ` · ${esc(it.categoryName)}` : ""}</div>` : ""
-          }</td>
+          }${it.description ? `<div class="desc">${esc(it.description)}</div>` : ""}</td>
         <td class="c-num num">${qty(it.quantity)}${it.unit ? `<div class="sku">${esc(it.unit)}</div>` : ""}</td>
         <td class="c-num num">${amount(it.unitPrice)}</td>
         ${d.showLineDiscount ? `<td class="c-num num t-red">${it.discount > 0 ? amount(it.discount) : "—"}</td>` : ""}
@@ -200,7 +201,7 @@ tfoot td { padding: 7px 8px; font-size: 11px; color: #475569; border-top: 2px so
     </div>
     <div class="totals">
       ${row("المجموع الفرعي", money(d.subtotal))}
-      ${d.discountAmount > 0 ? row("الخصم", money(d.discountAmount, true), "t-red") : ""}
+      ${d.discountAmount > 0 ? row(esc(d.discountLabel || "الخصم"), money(d.discountAmount, true), "t-red") : ""}
       ${d.taxAmount > 0 ? row(`ضريبة القيمة المضافة${d.taxRate ? ` (${d.taxRate}%)` : ""}`, money(d.taxAmount), "t-amber") : ""}
       ${d.additionalFee > 0 ? row(esc(d.additionalFeeLabel || "رسوم إضافية"), money(d.additionalFee)) : ""}
       ${row(isQuote ? "إجمالي العرض" : "الإجمالي", money(d.totalAmount), "t-grand")}

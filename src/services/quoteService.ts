@@ -5,6 +5,7 @@ import type {
   CalculateQuoteRequest,
   UpdateQuoteRequest,
   GetQuoteListRequest,
+  CustomLineResolution,
   BackendApiResponse,
   PaginatedResponse,
 } from "../types";
@@ -42,8 +43,17 @@ export const quoteService = {
 
   // Convert quote to sale
   // clientId: the customer whose account carries the invoice (it is unpaid at conversion)
-  convertToSale: (id: string, companyId: number, clientId?: number): Promise<{ success: boolean; saleId: number; sale: any }> =>
-    apiClient.post(`/quote/convert-to-sale/${id}`, { companyId, ...(clientId && { clientId }) }),
+  // customLines: what happens to each line that is not a product (create / link / leave out)
+  convertToSale: (
+    id: string,
+    companyId: number,
+    options: { clientId?: number; customLines?: CustomLineResolution[] } = {}
+  ): Promise<{ success: boolean; saleId: number; sale: any }> =>
+    apiClient.post(`/quote/convert-to-sale/${id}`, {
+      companyId,
+      ...(options.clientId && { clientId: options.clientId }),
+      ...(options.customLines?.length && { customLines: options.customLines }),
+    }),
 
   // Email quote to customer
   email: (id: string, companyId: number): Promise<{ success: boolean; message: string }> =>

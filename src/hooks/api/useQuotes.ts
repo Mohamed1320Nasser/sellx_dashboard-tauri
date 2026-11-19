@@ -8,6 +8,7 @@ import type {
   UpdateQuoteRequest,
   GetQuoteListRequest,
   Quote,
+  CustomLineResolution,
 } from "../../types";
 
 // Get quotes list
@@ -91,14 +92,6 @@ export const useCreateQuote = () => {
       }
 
       // Validate items
-      for (const item of data.items) {
-        if (!item.productId) {
-          throw new Error("معرف المنتج مطلوب");
-        }
-        if (!item.quantity || item.quantity <= 0) {
-          throw new Error("كمية المنتج يجب أن تكون أكبر من صفر");
-        }
-      }
 
       return await quoteService.create(data);
     },
@@ -184,8 +177,8 @@ export const useConvertQuoteToSale = () => {
   const { handleError } = useApiErrorHandler();
 
   return useMutation({
-    mutationFn: ({ id, companyId, clientId }: { id: string; companyId: number; clientId?: number }) =>
-      quoteService.convertToSale(id, companyId, clientId),
+    mutationFn: ({ id, companyId, clientId, customLines }: { id: string; companyId: number; clientId?: number; customLines?: CustomLineResolution[] }) =>
+      quoteService.convertToSale(id, companyId, { clientId, customLines }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["quotes"] });
       queryClient.invalidateQueries({ queryKey: ["sales"] });

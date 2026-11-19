@@ -492,111 +492,124 @@ export interface Payment {
 export interface QuoteItem {
   id: string;
   quoteId: string;
-  productId: string;
+  /** null for a custom line (not in the products) */
+  productId: string | null;
+  isCustom?: boolean;
   productName: string;
-  productSku?: string;
-  unitPrice: number;
-  costPrice?: number; // Cost at quote time
+  productSku?: string | null;
+  description?: string | null;
+  unit?: string | null;
+  sortOrder?: number;
+  /** pieces (or the custom line's quantity) */
   quantity: number;
+  /** per piece */
+  unitPrice: number;
+  costPrice?: number | null;
+  discountPercent?: number;
   lineDiscount: number;
-  discountPercent?: number; // Discount percentage
   packagingFee: number;
+  /** after the line discount */
   lineTotal: number;
-  lineProfit?: number;
+  lineProfit?: number | null;
+  packId?: string | null;
+  packName?: string | null;
+  packFactor?: number | null;
+  packQty?: number | null;
+  packPrice?: number | null;
   createdAt: string;
   updatedAt: string;
-  product?: Product;
+  product?: Product | null;
 }
+
+export interface QuoteTerm {
+  label: string;
+  value: string;
+}
+
+export type QuoteStatus = "DRAFT" | "SENT" | "PRINTED" | "ACCEPTED" | "REJECTED";
 
 export interface Quote {
   id: string;
   quoteNumber: string;
   companyId: number;
+  clientId?: number | null;
   customerName?: string;
   customerContact?: string;
   customerEmail?: string;
   currency: string;
+  priceListId?: string | null;
+  /** sum of the line totals */
   subtotal: number;
+  /** invoice discount amount */
   totalDiscount: number;
-  discountAmount?: number;
-  discountPercent?: number;
-  taxSettingId?: string;
+  discountPercent?: number | null;
+  orderDiscountType?: "PERCENT" | "AMOUNT" | null;
+  orderDiscountValue?: number | null;
+  taxSettingId?: string | null;
   taxPercent: number;
-  taxRate?: number;
   taxAmount: number;
-  totalAmount?: number; // Alias for total
   additionalFee?: number;
-  additionalFeeLabel?: string;
+  additionalFeeLabel?: string | null;
   total: number;
-  totalCost?: number;
-  totalProfit?: number;
-  status: "DRAFT" | "SENT" | "PRINTED" | "ACCEPTED" | "REJECTED";
-  notes?: string;
-  validUntil?: string;
-  quoteDate?: string; // Date the quote was created
-  convertedToSaleId?: number;
+  totalCost?: number | null;
+  totalProfit?: number | null;
+  status: QuoteStatus;
+  notes?: string | null;
+  validUntil?: string | null;
+  terms?: QuoteTerm[];
+  convertedToSaleId?: number | null;
+  convertedToSale?: { id: number; receiptNumber: string } | null;
   createdAt: string;
   updatedAt: string;
   items?: QuoteItem[];
-  taxSetting?: TaxSetting;
   company?: any;
-  client?: {
-    name?: string;
-    contact?: string;
-    phone?: string;
-    email?: string;
-    address?: string;
-  };
+  client?: { id: number; name: string; phone?: string; email?: string | null; priceListId?: string | null } | null;
 }
 
 // Quote Request/Response Types
-export interface CreateQuoteItemRequest {
-  productId: string;
+export interface QuoteLineRequest {
+  custom?: boolean;
+  productId?: string;
+  packId?: string;
+  name?: string;
+  description?: string;
+  unit?: string;
   quantity: number;
+  /** per pack for a pack line; left out = the price list's price */
   unitPrice?: number;
+  costPrice?: number;
+  discountPercent?: number;
 }
 
-export interface CreateQuoteRequest {
+export interface QuoteFormRequest {
   companyId: number;
+  clientId?: number;
   customerName?: string;
   customerContact?: string;
   customerEmail?: string;
   currency?: string;
+  priceListId?: string;
   taxSettingId?: string;
-  taxPercent?: number;
-  discountAmount?: number;
-  discountPercent?: number;
-  notes?: string;
-  validUntil?: string;
+  discountType?: "PERCENT" | "AMOUNT";
+  discountValue?: number;
   additionalFee?: number;
   additionalFeeLabel?: string;
-  items: CreateQuoteItemRequest[];
-}
-
-export interface CalculateQuoteRequest {
-  companyId: number;
-  customerName?: string;
-  customerContact?: string;
-  customerEmail?: string;
-  currency?: string;
-  taxPercent?: number;
-  items: CreateQuoteItemRequest[];
-}
-
-export interface UpdateQuoteRequest {
-  companyId?: number;
-  customerName?: string;
-  customerContact?: string;
-  customerEmail?: string;
-  currency?: string;
-  taxPercent?: number;
-  taxSettingId?: string;
-  discountAmount?: number;
-  discountPercent?: number;
   notes?: string;
   validUntil?: string;
-  status?: "DRAFT" | "SENT" | "PRINTED" | "ACCEPTED" | "REJECTED";
-  items?: CreateQuoteItemRequest[];
+  terms?: QuoteTerm[];
+  items: QuoteLineRequest[];
+}
+
+export type CreateQuoteRequest = QuoteFormRequest;
+export type CalculateQuoteRequest = QuoteFormRequest;
+export type UpdateQuoteRequest = Partial<QuoteFormRequest> & { status?: QuoteStatus };
+
+/** What happens to a custom line when the quote becomes an invoice */
+export interface CustomLineResolution {
+  itemId: string;
+  action: "CREATE" | "LINK" | "SKIP";
+  productId?: string;
+  categoryId?: string;
 }
 
 export interface GetQuoteListRequest {

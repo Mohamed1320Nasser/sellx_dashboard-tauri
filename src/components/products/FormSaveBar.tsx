@@ -9,12 +9,14 @@ interface Props {
   hint?: React.ReactNode;
   /** id of the form to submit when the bar sits outside it */
   formId?: string;
+  /** width of the bar's content (match the page) */
+  maxWidthClass?: string;
 }
 
 /** Save / cancel bar that stays at the bottom of a long form */
-const FormSaveBar: React.FC<Props> = ({ onCancel, saving, saveLabel, hint, formId }) => (
+const FormSaveBar: React.FC<Props> = ({ onCancel, saving, saveLabel, hint, formId, maxWidthClass = "max-w-4xl" }) => (
   <div className="sticky bottom-0 z-20 -mx-4 mt-6 border-t border-gray-200 bg-white/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
-    <div className="mx-auto flex max-w-4xl items-center justify-between gap-3">
+    <div className={`mx-auto flex ${maxWidthClass} items-center justify-between gap-3`}>
       <p className="hidden text-sm text-gray-500 sm:block">{hint}</p>
       <div className="flex flex-1 items-center justify-end gap-2 sm:flex-none">
         <button

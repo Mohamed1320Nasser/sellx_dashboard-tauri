@@ -30,6 +30,15 @@ const num = (v: unknown, fallback = 0) => {
   return Number.isFinite(n) ? n : fallback;
 };
 
+/** A quote's own terms ("مدة التسليم: 3 أيام"), one per line */
+export function quoteTermsText(raw: unknown): string {
+  if (!Array.isArray(raw)) return "";
+  return raw
+    .filter((t: any) => t?.label && t?.value)
+    .map((t: any) => `${String(t.label).trim()}: ${String(t.value).trim()}`)
+    .join("\n");
+}
+
 /**
  * Maps a sale, a purchase or a price quote (as the API returns it, or as built right after saving) into the
  * flat data the A4 invoice shows. The PDF download and the A4 print both use this, so they match.
@@ -66,6 +75,7 @@ export async function buildSaleInvoiceData(params: {
     const unitPrice = view ? view.unitPrice : num(item.unitPrice ?? item.price ?? item.unitCost);
     return {
       discount: num(item.lineDiscount),
+      description: String(item.description || "").trim() || undefined,
       index: i + 1,
       productName: view ? view.name : item.product?.name || item.productName || "منتج",
       sku: item.product?.sku || item.sku || undefined,
@@ -176,6 +186,10 @@ export async function buildSaleInvoiceData(params: {
 
     subtotal,
     discountAmount,
+    discountLabel:
+      isQuote && sale.orderDiscountType === "PERCENT" && num(sale.orderDiscountValue) > 0
+        ? `الخصم (${num(sale.orderDiscountValue)}%)`
+        : undefined,
     taxAmount,
     taxRate: num(sale.taxRate ?? sale.taxPercent) > 0 ? num(sale.taxRate ?? sale.taxPercent) : undefined,
     additionalFee,
@@ -201,7 +215,7 @@ export async function buildSaleInvoiceData(params: {
         })),
 
     footerText: footerText?.trim() || undefined,
-    terms: terms?.trim() || undefined,
+    terms: (isQuote ? quoteTermsText(sale.terms) : "") || terms?.trim() || undefined,
     printedAtLabel: new Date().toLocaleString("ar-EG-u-nu-latn", {
       year: "numeric",
       month: "2-digit",

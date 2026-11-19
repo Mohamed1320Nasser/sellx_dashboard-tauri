@@ -186,5 +186,6 @@ export function quoteToReceiptData(params: Parameters<typeof saleToReceiptData>[
       ? new Date(quote.validUntil).toLocaleDateString('ar-EG-u-nu-latn', { year: 'numeric', month: '2-digit', day: '2-digit' })
       : undefined,
     additionalFeeLabel: quote.additionalFeeLabel || base.additionalFeeLabel,
+    terms: Array.isArray(quote.terms) ? quote.terms.filter((t: any) => t?.label && t?.value) : undefined,
   };
 }

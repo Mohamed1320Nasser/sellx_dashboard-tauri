@@ -2,13 +2,12 @@ import React, { useState, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus, Edit, Trash2, FileText, Eye, Printer, Mail, CheckCircle, Clock, XCircle, Calendar, User, FileDown, ShoppingCart, TrendingUp, Package, AlertTriangle } from "lucide-react";
 import { Layout } from "../components/layout";
-import { Button, Card, Modal, DataTable, Badge } from "../components/ui";
+import { Button, Card, ConfirmDialog, DataTable, Badge } from "../components/ui";
 import type { Column, TableFilter } from "../components/ui/DataTable";
 import { useSessionAuthStore } from "../stores/sessionAuthStore";
 import {
   useQuotes,
   useDeleteQuote,
-  useConvertQuoteToSale,
   useEmailQuote,
 } from "../hooks/api/useQuotes";
 import { formatTableDate } from "../utils/dateUtils";
@@ -24,7 +23,7 @@ const Quotes: React.FC = () => {
   const [pageSize, setPageSize] = useState(10);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const [convertingQuote, setConvertingQuote] = useState<Quote | null>(null);
+  const [deleting, setDeleting] = useState<Quote | null>(null);
 
   // API hooks
   const { data: quotesData, isLoading } = useQuotes({
@@ -36,7 +35,6 @@ const Quotes: React.FC = () => {
   });
 
   const deleteMutation = useDeleteQuote();
-  const convertToSaleMutation = useConvertQuoteToSale();
   const emailMutation = useEmailQuote();
 
   // Helper function to check if quote is expired
@@ -152,11 +150,7 @@ const Quotes: React.FC = () => {
     },
   ];
 
-  const handleDelete = (id: string) => {
-    if (window.confirm("هل أنت متأكد من حذف هذا العرض السعري؟")) {
-      deleteMutation.mutate(id);
-    }
-  };
+
 
   /** One runner for every print button: shows progress, then success or the reason it failed */
   const runPrint = async (job: () => Promise<void>, busy: string, done: string) => {
@@ -177,29 +171,8 @@ const Quotes: React.FC = () => {
   const handleDownloadPdf = (quote: Quote) =>
     runPrint(() => downloadQuotePdf(quote), "جاري إنشاء ملف PDF...", "تم تحميل ملف PDF");
 
-  const handleConvertToSale = (quote: Quote) => {
-    setConvertingQuote(quote);
-  };
-
-  const confirmConvertToSale = () => {
-    if (convertingQuote) {
-      const companyId = company?.companyId || 0;
-      convertToSaleMutation.mutate({ id: convertingQuote.id, companyId }, {
-        onSuccess: (data: any) => {
-          setConvertingQuote(null);
-          // Success toast is handled by useConvertQuoteToSale hook
-          // Navigate to the new sale
-          if (data?.data?.saleId) {
-            navigate(`/sales/${data.data.saleId}`);
-          }
-        },
-        onError: () => {
-          // Error toast is handled by useConvertQuoteToSale hook via useApiErrorHandler
-          setConvertingQuote(null);
-        }
-      });
-    }
-  };
+  /** Converting happens on the quote page: the customer and any unregistered items are settled there */
+  const handleConvertToSale = (quote: Quote) => navigate(`/quotes/${quote.id}?convert=1`);
 
   const handleEmailQuote = (id: string) => {
     const companyId = company?.companyId || 0;
@@ -403,7 +376,7 @@ const Quotes: React.FC = () => {
             {
               icon: Trash2,
               label: "حذف",
-              onClick: (quote) => handleDelete(quote.id),
+              onClick: (quote) => setDeleting(quote),
               variant: "danger",
               show: (quote) => !quote.convertedToSaleId,
             },
@@ -419,103 +392,15 @@ const Quotes: React.FC = () => {
           emptyMessage="لا توجد عروض أسعار حتى الآن. قم بإضافة عرض سعري جديد للبدء!"
         />
 
-        {/* Convert to Sale Confirmation Modal */}
-        <Modal
-          isOpen={!!convertingQuote}
-          onClose={() => setConvertingQuote(null)}
-          title="تحويل العرض السعري إلى فاتورة بيع"
-          size="md"
-        >
-          {convertingQuote && (
-            <div className="space-y-6">
-              {/* Quote Summary */}
-              <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl p-6 border border-indigo-100">
-                <div className="flex items-center gap-4 mb-4">
-                  <div className="w-14 h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-500/30">
-                    <FileText className="w-7 h-7 text-white" />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-bold text-gray-900">{convertingQuote.quoteNumber}</h3>
-                    <p className="text-gray-600">{convertingQuote.customerName || "عميل غير محدد"}</p>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">المجموع الفرعي:</span>
-                    <span className="text-gray-900">{convertingQuote.subtotal?.toFixed(2)} {convertingQuote.currency}</span>
-                  </div>
-                  {convertingQuote.totalDiscount > 0 && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">الخصم:</span>
-                      <span className="text-green-600">-{convertingQuote.totalDiscount?.toFixed(2)} {convertingQuote.currency}</span>
-                    </div>
-                  )}
-                  {convertingQuote.taxAmount > 0 && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">الضريبة ({convertingQuote.taxPercent}%):</span>
-                      <span className="text-gray-900">{convertingQuote.taxAmount?.toFixed(2)} {convertingQuote.currency}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between text-lg font-bold pt-2 border-t border-indigo-200">
-                    <span className="text-gray-900">المجموع الكلي:</span>
-                    <span className="text-indigo-600">{convertingQuote.total?.toFixed(2)} {convertingQuote.currency}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Conversion Info */}
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                <div className="flex items-start gap-3">
-                  <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <h4 className="font-medium text-amber-800 mb-1">ملاحظة مهمة</h4>
-                    <p className="text-sm text-amber-700">
-                      سيتم إنشاء فاتورة بيع جديدة بنفس تفاصيل العرض السعري.
-                      لن يمكن تعديل أو حذف العرض السعري بعد التحويل.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Items Preview */}
-              <div className="border rounded-xl overflow-hidden">
-                <div className="bg-gray-50 px-4 py-2 border-b">
-                  <h4 className="font-medium text-gray-900">المنتجات ({convertingQuote.items?.length || 0})</h4>
-                </div>
-                <div className="max-h-40 overflow-y-auto">
-                  {convertingQuote.items?.map((item, index) => (
-                    <div key={index} className="px-4 py-2 flex justify-between items-center border-b last:border-b-0 hover:bg-gray-50">
-                      <div>
-                        <span className="text-gray-900">{item.productName}</span>
-                        <span className="text-gray-500 text-sm mr-2">× {item.quantity}</span>
-                      </div>
-                      <span className="font-medium text-gray-900">{item.lineTotal?.toFixed(2)} {convertingQuote.currency}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Actions */}
-              <div className="flex justify-end gap-3 pt-4 border-t">
-                <Button
-                  variant="outline"
-                  onClick={() => setConvertingQuote(null)}
-                >
-                  إلغاء
-                </Button>
-                <Button
-                  onClick={confirmConvertToSale}
-                  loading={convertToSaleMutation.isPending}
-                  className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
-                >
-                  <ShoppingCart className="w-4 h-4 ml-2" />
-                  تأكيد التحويل لفاتورة بيع
-                </Button>
-              </div>
-            </div>
-          )}
-        </Modal>
+        <ConfirmDialog
+          isOpen={!!deleting}
+          onClose={() => setDeleting(null)}
+          onConfirm={() => deleting && deleteMutation.mutate(deleting.id, { onSettled: () => setDeleting(null) })}
+          title="حذف العرض السعري"
+          message={`سيُحذف العرض ${deleting?.quoteNumber || ""} نهائياً. لا يمكن التراجع عن ذلك.`}
+          confirmText="حذف"
+          isLoading={deleteMutation.isPending}
+        />
       </div>
     </Layout>
   );
