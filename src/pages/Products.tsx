@@ -42,6 +42,7 @@ const Products: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
   const [showLowStock, setShowLowStock] = useState(false);
+  const [showNoPrice, setShowNoPrice] = useState(false);
   // Removed showCreateModal state - now using navigation
   // Removed editingProduct state - now using navigation to edit page
   const [deleteConfirm, setDeleteConfirm] = useState<{
@@ -68,6 +69,7 @@ const Products: React.FC = () => {
     search: searchTerm,
     categoryId: selectedCategory || undefined,
     lowStock: showLowStock,
+    noPrice: showNoPrice || undefined,
   });
 
   const { data: categoriesData } = useCategories({
@@ -135,7 +137,11 @@ const Products: React.FC = () => {
       key: "sellingPrice",
       label: "سعر البيع",
       render: (product: Product) => (
-        <span className="text-gray-900 text-lg">{product.sellingPrice} ج.م</span>
+        Number(product.sellingPrice) > 0 ? (
+          <span className="text-gray-900 text-lg">{product.sellingPrice} ج.م</span>
+        ) : (
+          <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">بدون سعر</span>
+        )
       ),
     },
   ];
@@ -201,11 +207,22 @@ const Products: React.FC = () => {
         setCurrentPage(1);
       },
     },
-  ], [categoryOptions, selectedCategory, showLowStock, handleCategoryFilter]);
+    {
+      key: 'noPrice',
+      label: 'بدون سعر',
+      type: 'checkbox',
+      value: showNoPrice,
+      onChange: (value) => {
+        setShowNoPrice(value as boolean);
+        setCurrentPage(1);
+      },
+    },
+  ], [categoryOptions, selectedCategory, showLowStock, showNoPrice, handleCategoryFilter]);
 
   const handleClearFilters = useCallback(() => {
     setSelectedCategory("");
     setShowLowStock(false);
+    setShowNoPrice(false);
     setCurrentPage(1);
   }, []);
 
@@ -255,7 +272,7 @@ const Products: React.FC = () => {
   // Clear selection whenever the page/filters change (current-page scope)
   useEffect(() => {
     setSelectedIds([]);
-  }, [currentPage, pageSize, searchTerm, selectedCategory, showLowStock]);
+  }, [currentPage, pageSize, searchTerm, selectedCategory, showLowStock, showNoPrice]);
 
   const handleBulkDelete = async () => {
     if (!resolvedCompanyId || selectedIds.length === 0) return;

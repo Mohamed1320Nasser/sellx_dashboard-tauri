@@ -21,7 +21,7 @@ export const usePriceListPrices = (companyId: number, priceListId?: string | nul
     staleTime: 60 * 1000,
   });
 
-export const usePriceGrid = (params: { companyId: number; page?: number; limit?: number; search?: string; categoryId?: string; productId?: string }) =>
+export const usePriceGrid = (params: { companyId: number; page?: number; limit?: number; search?: string; categoryId?: string; productId?: string; noPrice?: boolean }) =>
   useQuery({
     queryKey: ["price-grid", params],
     queryFn: async () => (await priceListService.getGrid(params))?.data,

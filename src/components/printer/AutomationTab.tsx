@@ -1,38 +1,51 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Zap, Scissors, Copy } from 'lucide-react';
 import { Card, Input, Toggle } from '../ui';
 import { usePrinterConfigStore } from '../../stores/printerConfigStore';
+import { AFTER_SALE_OPTIONS, getAfterSaleMode, setAfterSaleMode, type AfterSaleMode } from '../../utils/afterSalePrint';
 
 export const AutomationTab: React.FC = () => {
   const config = usePrinterConfigStore();
+  const [afterSale, setAfterSale] = useState<AfterSaleMode>(() => getAfterSaleMode(config.autoPrintOnPayment));
 
   return (
     <div className="space-y-6 max-w-4xl">
-      {/* Auto Print */}
+      {/* After a sale (per device) */}
       <Card className="p-6">
-        <div className="flex items-start gap-4">
-          <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-green-600 rounded-lg flex items-center justify-center flex-shrink-0">
-            <Zap className="w-6 h-6 text-white" />
+        <div className="mb-4 flex items-start gap-4">
+          <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-green-500 to-green-600">
+            <Zap className="h-6 w-6 text-white" />
           </div>
-          <div className="flex-1">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-lg font-semibold text-gray-900">
-                طباعة تلقائية بعد الدفع
-              </h3>
-              <Toggle
-                enabled={config.autoPrintOnPayment}
-                onChange={(enabled) => config.updateConfig({ autoPrintOnPayment: enabled })}
-              />
-            </div>
-            <p className="text-sm text-gray-600 mb-3">
-              طباعة الفاتورة تلقائياً بعد إتمام عملية البيع دون الحاجة للتأكيد
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">بعد إتمام البيع</h3>
+            <p className="text-sm text-gray-600">
+              ماذا يحدث بعد حفظ الفاتورة على <span className="font-semibold">هذا الجهاز</span>. كل جهاز يختار لنفسه: جهاز الكاشير بطابعة يطبع مباشرة،
+              وجهاز بدون طابعة لا يطبع. يمكن تغييره أيضاً من زر الطابعة في شاشة البيع.
             </p>
-            <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-              <p className="text-xs text-green-800">
-                <span className="font-semibold">💡 نصيحة:</span> عند التفعيل، سيتم طباعة الفاتورة مباشرة بعد إتمام البيع. إذا كان معطلاً، ستظهر نافذة معاينة مع خيارات متعددة.
-              </p>
-            </div>
           </div>
+        </div>
+        <div role="radiogroup" aria-label="بعد إتمام البيع" className="grid gap-3 sm:grid-cols-3">
+          {AFTER_SALE_OPTIONS.map(o => {
+            const selected = afterSale === o.value;
+            return (
+              <button
+                key={o.value}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                onClick={() => {
+                  setAfterSaleMode(o.value);
+                  setAfterSale(o.value);
+                }}
+                className={`rounded-xl border-2 p-4 text-right transition-colors ${
+                  selected ? "border-primary-500 bg-primary-50" : "border-gray-200 bg-white hover:border-gray-300"
+                }`}
+              >
+                <span className={`block text-sm font-semibold ${selected ? "text-primary-700" : "text-gray-900"}`}>{o.label}</span>
+                <span className="mt-1 block text-xs text-gray-500">{o.description}</span>
+              </button>
+            );
+          })}
         </div>
       </Card>
 
@@ -130,9 +143,9 @@ export const AutomationTab: React.FC = () => {
         <h3 className="text-sm font-semibold text-gray-700 mb-3">ملخص الإعدادات</h3>
         <div className="space-y-2 text-sm">
           <div className="flex justify-between items-center">
-            <span className="text-gray-600">الطباعة التلقائية:</span>
-            <span className={`font-semibold ${config.autoPrintOnPayment ? 'text-green-600' : 'text-gray-400'}`}>
-              {config.autoPrintOnPayment ? '✓ مفعّلة' : '✗ معطلة'}
+            <span className="text-gray-600">بعد البيع (هذا الجهاز):</span>
+            <span className="font-semibold text-gray-800">
+              {AFTER_SALE_OPTIONS.find(o => o.value === afterSale)!.label}
             </span>
           </div>
           <div className="flex justify-between items-center">

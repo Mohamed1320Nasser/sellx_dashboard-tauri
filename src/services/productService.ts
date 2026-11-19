@@ -33,6 +33,7 @@ export const productService = {
     search?: string;
     categoryId?: string;
     lowStock?: boolean;
+    noPrice?: boolean;
   }): Promise<BackendApiResponse<PaginatedResponse<Product>>> =>
     apiClient.get("/product/list", { params }),
 

@@ -12,6 +12,7 @@ type ProductListParams = {
   search?: string;
   categoryId?: string;
   lowStock?: boolean;
+  noPrice?: boolean;
 };
 
 // List products

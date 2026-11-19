@@ -32,7 +32,9 @@ export const PriceCell: React.FC<{
 }> = ({ product, list, saving, onSave }) => {
   const resolved = product.prices[list.id];
   const own = list.isDefault || resolved?.source === "OVERRIDE";
-  const initial = own && resolved ? String(resolved.price) : "";
+  // a base price of 0 means "no price yet": shown empty and marked
+  const unpriced = list.isDefault && !(Number(resolved?.price) > 0);
+  const initial = own && resolved && !unpriced ? String(resolved.price) : "";
   const [value, setValue] = useState(initial);
   useEffect(() => setValue(initial), [initial]);
 
@@ -70,9 +72,12 @@ export const PriceCell: React.FC<{
             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
             if (e.key === "Escape") setValue(initial);
           }}
-          placeholder={resolved ? String(resolved.price) : ""}
+          placeholder={unpriced ? "بدون سعر" : resolved ? String(resolved.price) : ""}
+          title={unpriced ? "بدون سعر: لا يُباع حتى تكتب سعره" : undefined}
           className={`w-24 rounded-lg border px-2 py-1 text-center text-sm focus:border-indigo-500 focus:ring-indigo-500 ${
-            own ? "border-gray-300 font-semibold text-gray-900" : "border-dashed border-gray-300 placeholder:text-gray-500"
+            unpriced
+              ? "border-amber-400 bg-amber-50 placeholder:text-xs placeholder:text-amber-700"
+              : own ? "border-gray-300 font-semibold text-gray-900" : "border-dashed border-gray-300 placeholder:text-gray-500"
           }`}
         />
       </div>
@@ -144,6 +149,7 @@ const PriceLists: React.FC = () => {
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
   const [categoryId, setCategoryId] = useState("");
+  const [noPriceOnly, setNoPriceOnly] = useState(false);
   const [page, setPage] = useState(1);
   useEffect(() => {
     const t = setTimeout(() => {
@@ -158,6 +164,7 @@ const PriceLists: React.FC = () => {
     limit: 25,
     ...(debounced && { search: debounced }),
     ...(categoryId && { categoryId }),
+    ...(noPriceOnly && { noPrice: true }),
   });
   const { data: categoriesData } = useCategories({ companyId, page: 1, limit: 100 });
   const categories: { id: string; name: string }[] = categoriesData?.data?.list || [];
@@ -296,6 +303,19 @@ const PriceLists: React.FC = () => {
                   </option>
                 ))}
               </select>
+              <button
+                type="button"
+                aria-pressed={noPriceOnly}
+                onClick={() => {
+                  setNoPriceOnly((v) => !v);
+                  setPage(1);
+                }}
+                className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                  noPriceOnly ? "border-amber-400 bg-amber-50 text-amber-800" : "border-gray-300 text-gray-600 hover:bg-gray-50"
+                }`}
+              >
+                بدون سعر
+              </button>
               {isManager && (
                 <Button
                   variant="outline"

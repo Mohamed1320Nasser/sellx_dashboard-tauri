@@ -19,6 +19,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import toast from "react-hot-toast";
 import { printReceipt } from "../services/printService";
+import AfterSalePrintMenu from "../components/printer/AfterSalePrintMenu";
+import { AFTER_SALE_OPTIONS, getAfterSaleMode, setAfterSaleMode, type AfterSaleMode } from "../utils/afterSalePrint";
 import { saleToReceiptData } from "../services/receiptHtmlTemplate";
 import { PrintReceiptPreview } from "../components/printer/PrintReceiptPreview";
 import { usePrinterConfigStore } from "../stores/printerConfigStore";
@@ -164,6 +166,13 @@ const SalesCreate: React.FC = () => {
       return false;
     }
   });
+  // What this device does after a sale (first time: the shop's old auto-print switch)
+  const [afterSaleMode, setAfterSaleModeState] = useState<AfterSaleMode>(() => getAfterSaleMode(usePrinterConfigStore.getState().autoPrintOnPayment));
+  const changeAfterSaleMode = (mode: AfterSaleMode) => {
+    setAfterSaleMode(mode);
+    setAfterSaleModeState(mode);
+    toast.success(`بعد البيع: ${AFTER_SALE_OPTIONS.find(o => o.value === mode)!.label}`, { id: "after-sale-mode", duration: 1500 });
+  };
   const toggleSkipConfirm = (value: boolean) => {
     setSkipConfirm(value);
     try {
@@ -173,6 +182,8 @@ const SalesCreate: React.FC = () => {
     }
   };
   const [showPrintModal, setShowPrintModal] = useState(false);
+  // Closing the preview starts the next sale, unless it was opened later from the "تم البيع" message
+  const previewResetsRef = useRef(true);
   const [printableSale, setPrintableSale] = useState<any>(null);
   const [clientType, setClientType] = useState<"cash" | "existing" | "new">("cash");
   const [productSearch, setProductSearch] = useState("");
@@ -463,6 +474,12 @@ const SalesCreate: React.FC = () => {
     const fits = (qty: number) => addQty(otherPieces, piecesFor(qty)) <= stock;
     const notEnough = () =>
       toast.error(`لا يكفي المخزون - المتاح: ${formatQty(Math.max(0, stock - otherPieces), unitOf(product))}`, { id: "pos-scan" });
+
+    // A product without a selling price can't be sold until it is priced
+    if (!pack && !(priceFor(product.id, product.sellingPrice) > 0)) {
+      toast.error(`"${product.name}" بدون سعر بيع. حدّد سعره من قوائم الأسعار أولاً`, { id: "pos-scan" });
+      return false;
+    }
 
     // Scale label: the packet's weight
     if (labelQty && labelQty > 0 && !pack) {
@@ -845,8 +862,6 @@ const SalesCreate: React.FC = () => {
       // Note: Success toast is shown in useSales hook
 
 
-      // Get printer config to check auto-print setting
-      const printerConfig = usePrinterConfigStore.getState();
 
       // Extract the actual sale data from the response
       const saleData_fromAPI = (createdSale as any)?.data || {};
@@ -876,8 +891,31 @@ const SalesCreate: React.FC = () => {
       };
 
 
-      // Auto-print if enabled
-      if (printerConfig.autoPrintOnPayment) {
+      // After the sale: as chosen on this device (preview / print directly / no print)
+      if (afterSaleMode === "none") {
+        resetForNextSale();
+        toast.custom(
+          (t) => (
+            <div className={`flex items-center gap-3 rounded-xl bg-gray-900 px-4 py-3 text-sm text-white shadow-lg transition-opacity duration-200 ${t.visible ? "opacity-100" : "opacity-0"}`}>
+              <span>تم البيع {saleWithItems.receiptNumber ? `(${saleWithItems.receiptNumber})` : ""}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  toast.dismiss(t.id);
+                  // the cart is already the next customer's: closing this preview must not clear it
+                  previewResetsRef.current = false;
+                  setPrintableSale(saleWithItems);
+                  setShowPrintModal(true);
+                }}
+                className="rounded-md bg-white/15 px-2.5 py-1 font-medium hover:bg-white/25"
+              >
+                طباعة
+              </button>
+            </div>
+          ),
+          { id: "sale-done", duration: 8000, position: "bottom-center" }
+        );
+      } else if (afterSaleMode === "print") {
         try {
           // Fetch full company profile with logo
           const companyId = company?.companyId || company?.id;
@@ -900,6 +938,7 @@ const SalesCreate: React.FC = () => {
         resetForNextSale();
       } else {
         // Show print preview modal
+        previewResetsRef.current = true;
         setPrintableSale(saleWithItems);
         setShowPrintModal(true);
       }
@@ -1204,6 +1243,7 @@ const SalesCreate: React.FC = () => {
               </ul>
             </div>
           </details>
+          <AfterSalePrintMenu value={afterSaleMode} onChange={changeAfterSaleMode} />
           <label
             className="hidden flex-shrink-0 cursor-pointer select-none items-center gap-1 text-xs text-gray-500 lg:flex"
             title="عند الإيقاف يُحفظ البيع مباشرة بدون نافذة التأكيد (Ctrl+Enter للحفظ)"
@@ -1317,6 +1357,9 @@ const SalesCreate: React.FC = () => {
                       const stock = option.product.currentStock || option.product.stockQuantity;
                       const isOutOfStock = stock <= 0;
                       const isMaxReached = selectedQuantity >= stock;
+                      // no selling price yet: shown, but can't be added (and says why)
+                      const cardPrice = priceFor(option.product.id, option.product.sellingPrice);
+                      const noPrice = !(cardPrice > 0);
 
                       return (
                         <button
@@ -1327,8 +1370,12 @@ const SalesCreate: React.FC = () => {
                             focusScan();
                           }}
                           disabled={isOutOfStock}
+                          aria-disabled={noPrice}
+                          title={noPrice ? "بدون سعر: حدّد سعره من قوائم الأسعار" : undefined}
                           className={`relative p-3 rounded-lg border text-right transition-all duration-200 ${
-                            isSelected
+                            noPrice
+                              ? "border-dashed border-gray-300 bg-gray-50 cursor-not-allowed"
+                              : isSelected
                               ? isMaxReached
                                 ? "border-amber-400 bg-gradient-to-br from-amber-50 to-orange-50 shadow-md shadow-amber-100"
                                 : "border-primary-400 bg-gradient-to-br from-primary-50 to-green-50 shadow-md shadow-primary-100"
@@ -1379,9 +1426,13 @@ const SalesCreate: React.FC = () => {
                             }`}>
                               {formatQty(stock, unitOf(option.product))} متاح
                             </span>
-                            <span className={`font-bold text-sm ${isSelected ? "text-primary-700" : "text-primary-600"}`}>
-                              {formatCurrency(priceFor(option.product.id, option.product.sellingPrice))}
-                            </span>
+                            {noPrice ? (
+                              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">بدون سعر</span>
+                            ) : (
+                              <span className={`font-bold text-sm ${isSelected ? "text-primary-700" : "text-primary-600"}`}>
+                                {formatCurrency(cardPrice)}
+                              </span>
+                            )}
                           </div>
                         </button>
                       );
@@ -1441,29 +1492,36 @@ const SalesCreate: React.FC = () => {
                             {/* name keeps at least ~9rem; on a narrow cart the controls drop to a second line */}
                             <div className="min-w-[9rem] flex-1">
                               <p className="truncate text-sm font-medium text-gray-900" title={item.productName}>{item.productName}</p>
-                              <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-gray-500">
-                                {item.packs && item.packs.length > 0 ? (
-                                  <select
-                                    aria-label="البيع بالقطعة أو بالعبوة"
-                                    value={item.packId || ""}
-                                    onChange={(e) => {
-                                      changeLinePack(key, e.target.value);
-                                      focusScan();
-                                    }}
-                                    className="h-6 rounded border border-primary-200 bg-primary-50 py-0 pl-6 pr-1.5 text-xs font-medium text-primary-700 focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
-                                  >
-                                    <option value="">{item.piece?.allowDecimalQty ? item.unit || "وحدة" : "قطعة"}</option>
-                                    {item.packs.map((p) => (
-                                      <option key={p.id} value={p.id}>
-                                        {p.name} ({formatQty(p.factor)})
-                                      </option>
-                                    ))}
-                                  </select>
-                                ) : null}
+                              {item.packs && item.packs.length > 0 && (
+                                <div role="radiogroup" aria-label="البيع بالقطعة أو بالعبوة" className="mt-1 inline-flex overflow-hidden rounded-md border border-gray-200 text-xs">
+                                  {[{ id: "", label: item.piece?.allowDecimalQty ? item.unit || "وحدة" : "قطعة" }, ...item.packs.map((p) => ({ id: p.id, label: `${p.name} ${formatQty(p.factor)}` }))].map((opt, k) => {
+                                    const selected = (item.packId || "") === opt.id;
+                                    return (
+                                      <button
+                                        key={opt.id || "piece"}
+                                        type="button"
+                                        role="radio"
+                                        aria-checked={selected}
+                                        onClick={() => {
+                                          changeLinePack(key, opt.id);
+                                          focusScan();
+                                        }}
+                                        className={`px-2 py-1 font-medium transition-colors ${k > 0 ? "border-r border-gray-200" : ""} ${
+                                          selected ? "bg-primary-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"
+                                        }`}
+                                      >
+                                        {opt.label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                              <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-gray-500">
                                 <span className="whitespace-nowrap">
                                   {formatCurrency(item.unitPrice)}
                                   {item.packName ? ` / ${item.packName}` : item.allowDecimalQty && item.unit ? ` / ${item.unit}` : ""}
                                 </span>
+                                {item.packFactor ? <span className="whitespace-nowrap text-gray-400">= {formatQty(piecesOf(item), item.piece?.allowDecimalQty ? item.unit : "قطعة")}</span> : null}
                                 {isMaxReached && <span className="whitespace-nowrap text-amber-600">· آخر الكمية</span>}
                               </p>
                             </div>
@@ -2140,7 +2198,8 @@ const SalesCreate: React.FC = () => {
             onClose={() => {
               setShowPrintModal(false);
               setPrintableSale(null);
-              resetForNextSale();
+              if (previewResetsRef.current) resetForNextSale();
+              else setTimeout(() => barcodeInputRef.current?.focus(), 50);
             }}
           />
         )}

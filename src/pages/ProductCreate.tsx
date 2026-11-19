@@ -1,17 +1,16 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Save, Package } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { Layout } from '../components/layout';
-import { Button, Input, Textarea, Select, Card, Modal } from '../components/ui';
+import { Input, Textarea, Select } from '../components/ui';
+import ProductFormSection from '../components/products/ProductFormSection';
+import FormSaveBar from '../components/products/FormSaveBar';
 import { useSessionAuthStore } from '../stores/sessionAuthStore';
 import { useCreateProduct, useProducts } from '../hooks/api/useProducts';
 import { useCategories } from '../hooks/api/useCategories';
 import { productService } from '../services/productService';
 import toast from 'react-hot-toast';
 import { validateBarcodeFormat } from '../services/barcodeService';
-import type { Product } from '../types';
-import { BarcodePreview } from '../components/barcode/BarcodePreview';
-import { usePrinterConfigStore } from '../stores/printerConfigStore';
 import ProductUnitFields from '../components/products/ProductUnitFields';
 import ProductPacksEditor, { packsProblem, rowsToPacks, type PackRow } from '../components/products/ProductPacksEditor';
 import { normalizeDigits, parseQty, toQty } from '../utils/quantity';
@@ -20,7 +19,6 @@ const ProductCreate: React.FC = () => {
   const navigate = useNavigate();
   const { company } = useSessionAuthStore();
   const companyId = company?.companyId || company?.company?.id;
-  const printerConfig = usePrinterConfigStore();
 
   // Form state
   const [packRows, setPackRows] = useState<PackRow[]>([]);
@@ -121,7 +119,7 @@ const ProductCreate: React.FC = () => {
         setErrors(prev => ({ ...prev, barcode: '' }));
         toast.success('تم توليد الباركود');
       }
-    } catch (error) {
+    } catch {
       toast.error('فشل توليد الباركود');
     } finally {
       setIsGenerating(false);
@@ -150,12 +148,10 @@ const ProductCreate: React.FC = () => {
       else if (existing) newErrors.barcode = `الباركود موجود مسبقاً: ${existing.name}`;
     }
     if (!formData.categoryId) newErrors.categoryId = 'الفئة مطلوبة';
-    if (!formData.purchasePrice || parseFloat(formData.purchasePrice) <= 0) {
-      newErrors.purchasePrice = 'سعر الشراء مطلوب';
-    }
-    if (!formData.sellingPrice || parseFloat(formData.sellingPrice) <= 0) {
-      newErrors.sellingPrice = 'سعر البيع مطلوب';
-    }
+    // Both prices are optional: no selling price = the product can't be sold until it is priced
+    const money = (v: string) => Number(normalizeDigits(v));
+    if (formData.sellingPrice.trim() && !(money(formData.sellingPrice) >= 0)) newErrors.sellingPrice = 'سعر غير صحيح';
+    if (formData.purchasePrice.trim() && !(money(formData.purchasePrice) >= 0)) newErrors.purchasePrice = 'تكلفة غير صحيحة';
     const qtyRule = { allowDecimalQty: formData.allowDecimalQty };
     const qty = parseQty(formData.stockQuantity, qtyRule);
     if (qty === null || qty < 0) {
@@ -197,8 +193,8 @@ const ProductCreate: React.FC = () => {
         localBarcode: barcodeSource === 'generated' ? formData.barcode : undefined,
         barcodeFormat: formData.barcodeFormat || undefined,
         description: formData.description.trim(),
-        purchasePrice: parseFloat(formData.purchasePrice),
-        sellingPrice: parseFloat(formData.sellingPrice),
+        purchasePrice: Number(normalizeDigits(formData.purchasePrice)) || 0,
+        sellingPrice: Number(normalizeDigits(formData.sellingPrice)) || 0,
         stockQuantity: toQty(normalizeDigits(formData.stockQuantity)),
         minStockLevel: toQty(normalizeDigits(formData.minStockLevel)),
         unit: formData.unit.trim() || null,
@@ -214,12 +210,13 @@ const ProductCreate: React.FC = () => {
     } catch {
       // error message already shown by useCreateProduct
     }
-  }, [formData, barcodeSource, barcodeInputValue, validateForm, createMutation, companyId, navigate]);
+  }, [formData, packRows, barcodeSource, barcodeInputValue, validateForm, createMutation, companyId, navigate]);
 
-  const costValue = parseFloat(formData.purchasePrice);
-  const sellingValue = parseFloat(formData.sellingPrice);
+  const costValue = Number(normalizeDigits(formData.purchasePrice));
+  const sellingValue = Number(normalizeDigits(formData.sellingPrice));
   const margin =
     costValue > 0 && sellingValue > 0 ? Math.round(((sellingValue - costValue) / sellingValue) * 1000) / 10 : null;
+  const unitLabel = formData.unit.trim() || (formData.allowDecimalQty ? 'وحدة' : 'قطعة');
 
   // Category options
   const categoryOptions = [
@@ -232,121 +229,108 @@ const ProductCreate: React.FC = () => {
 
   return (
     <Layout>
-      <div className="w-full max-w-4xl mx-auto space-y-6">
+      <form onSubmit={handleSubmit} className="mx-auto w-full max-w-4xl space-y-5">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              onClick={() => navigate('/products')}
-              className="text-gray-600"
-            >
-              <ArrowRight className="w-4 h-4" />
-            </Button>
-            <div>
-              <h1 className="text-xl font-bold text-gray-900">إضافة منتج جديد</h1>
-            </div>
-          </div>
-          <Button
-            onClick={handleSubmit}
-            disabled={createMutation.isPending}
-            className="bg-blue-600 hover:bg-blue-700 text-white"
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => navigate('/products')}
+            aria-label="العودة للمنتجات"
+            className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
           >
-            <Save className="w-4 h-4 ml-2" />
-            {createMutation.isPending ? 'جاري الحفظ...' : 'حفظ'}
-          </Button>
+            <ArrowRight className="h-5 w-5" />
+          </button>
+          <div>
+            <h1 className="text-xl font-bold text-gray-900">إضافة منتج جديد</h1>
+            <p className="text-sm text-gray-500">البيانات الأساسية للمنتج. الأسعار والكميات لاحقاً من قوائم الأسعار وحركة المخزون.</p>
+          </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Product Info */}
-          <Card padding="lg">
-            <div className="space-y-4">
-              <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-                <Package className="w-4 h-4" />
-                معلومات المنتج
-              </h3>
-
+        <ProductFormSection step={1} title="المعلومات الأساسية">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="sm:col-span-2">
               <Input
                 label="اسم المنتج"
                 value={formData.name}
                 onChange={(e) => handleInputChange('name', e.target.value)}
                 error={errors.name}
-                placeholder="أدخل اسم المنتج"
+                placeholder="مثل: شاي العروسة 250 جم"
                 required
               />
+            </div>
 
-              {/* Barcode: one row. Scan / type + Enter, or generate, or leave empty (generated on save) */}
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">الباركود</label>
-                {formData.barcode ? (
-                  <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-                    <span className="font-mono text-base font-semibold text-gray-900">{formData.barcode}</span>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs ${
-                        barcodeSource === 'scanned' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'
-                      }`}
-                    >
-                      {barcodeSource === 'scanned' ? 'باركود المصنع' : 'باركود محلي'}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setFormData(prev => ({ ...prev, barcode: '', sku: '' }));
-                        setBarcodeSource(null);
-                        setBarcodeInputValue('');
-                      }}
-                      className="mr-auto text-xs text-blue-600 hover:underline"
-                    >
-                      تغيير
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={barcodeInputValue}
-                      onChange={(e) => {
-                        setBarcodeInputValue(e.target.value);
-                        if (errors.barcode) setErrors(prev => ({ ...prev, barcode: '' }));
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          // Scanners end with Enter: take the code, don't submit the form
-                          e.preventDefault();
-                          if (barcodeInputValue.trim()) {
-                            handleBarcodeScan(barcodeInputValue.trim());
-                            setBarcodeInputValue('');
-                          }
+            {/* Barcode: scan / type + Enter, or generate, or leave empty (generated on save) */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">الباركود</label>
+              {formData.barcode ? (
+                <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                  <span className="font-mono text-base font-semibold text-gray-900">{formData.barcode}</span>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-xs ${
+                      barcodeSource === 'scanned' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'
+                    }`}
+                  >
+                    {barcodeSource === 'scanned' ? 'باركود المصنع' : 'باركود محلي'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormData(prev => ({ ...prev, barcode: '', sku: '' }));
+                      setBarcodeSource(null);
+                      setBarcodeInputValue('');
+                    }}
+                    className="mr-auto text-xs text-primary-600 hover:underline"
+                  >
+                    تغيير
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={barcodeInputValue}
+                    onChange={(e) => {
+                      setBarcodeInputValue(e.target.value);
+                      if (errors.barcode) setErrors(prev => ({ ...prev, barcode: '' }));
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        // Scanners end with Enter: take the code, don't submit the form
+                        e.preventDefault();
+                        if (barcodeInputValue.trim()) {
+                          handleBarcodeScan(barcodeInputValue.trim());
+                          setBarcodeInputValue('');
                         }
-                      }}
-                      placeholder="امسح أو اكتب الباركود (فارغ = يُولَّد تلقائياً)"
-                      className={`flex-1 rounded-lg border px-3 py-2 text-right font-mono placeholder:font-sans focus:border-primary-500 focus:ring-2 focus:ring-primary-500 ${
-                        errors.barcode ? 'border-red-400' : 'border-gray-300'
-                      }`}
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={generateBarcode}
-                      disabled={isGenerating}
-                      className="whitespace-nowrap"
-                    >
-                      {isGenerating ? 'جاري...' : '✨ توليد'}
-                    </Button>
-                  </div>
-                )}
-                {errors.barcode && <p className="mt-1 text-sm text-red-600">{errors.barcode}</p>}
-              </div>
+                      }
+                    }}
+                    placeholder="امسح أو اكتب (فارغ = يُولَّد تلقائياً)"
+                    className={`min-w-0 flex-1 rounded-lg border px-3 py-2 text-right font-mono placeholder:font-sans focus:border-primary-500 focus:ring-2 focus:ring-primary-500 ${
+                      errors.barcode ? 'border-red-400' : 'border-gray-300'
+                    }`}
+                  />
+                  <button
+                    type="button"
+                    onClick={generateBarcode}
+                    disabled={isGenerating}
+                    className="flex-shrink-0 rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                  >
+                    {isGenerating ? 'جاري...' : 'توليد'}
+                  </button>
+                </div>
+              )}
+              {errors.barcode && <p className="mt-1 text-sm text-red-600">{errors.barcode}</p>}
+            </div>
 
-              <Select
-                label="الفئة"
-                options={categoryOptions}
-                value={formData.categoryId}
-                onChange={(value) => handleInputChange('categoryId', value)}
-                error={errors.categoryId}
-                required
-              />
+            <Select
+              label="الفئة"
+              options={categoryOptions}
+              value={formData.categoryId}
+              onChange={(value) => handleInputChange('categoryId', value)}
+              error={errors.categoryId}
+              required
+            />
 
+            <div className="sm:col-span-2">
               <Textarea
                 label="الوصف (اختياري)"
                 value={formData.description}
@@ -355,85 +339,100 @@ const ProductCreate: React.FC = () => {
                 rows={2}
               />
             </div>
-          </Card>
+          </div>
+        </ProductFormSection>
 
-          {/* Pricing & Stock */}
-          <Card padding="lg">
-            <div className="space-y-4">
-              <h3 className="font-semibold text-gray-900">التسعير والمخزون</h3>
+        <ProductFormSection step={2} title="طريقة البيع" description="كيف يُباع المنتج ووحدته، وهل يُباع بالعبوة أيضاً.">
+          <div className="space-y-5">
+            <ProductUnitFields
+              allowDecimalQty={formData.allowDecimalQty}
+              unit={formData.unit}
+              onChange={next => setFormData(prev => ({ ...prev, ...next }))}
+              scaleCode={formData.scaleCode}
+              onScaleCodeChange={code => setFormData(prev => ({ ...prev, scaleCode: code }))}
+            />
+            <ProductPacksEditor
+              packs={packRows}
+              onChange={setPackRows}
+              piecePrice={sellingValue || 0}
+              unit={formData.unit.trim()}
+              allowDecimalQty={formData.allowDecimalQty}
+              showErrors={showPackErrors}
+            />
+          </div>
+        </ProductFormSection>
 
-              <div className="grid grid-cols-2 gap-4">
-                <Input
-                  label="سعر الشراء"
-                  type="number"
-                  step="0.01"
-                  value={formData.purchasePrice}
-                  onChange={(e) => handleInputChange('purchasePrice', e.target.value)}
-                  error={errors.purchasePrice}
-                  placeholder="0.00"
-                  required
-                />
-
-                <Input
-                  label="سعر البيع"
-                  type="number"
-                  step="0.01"
-                  value={formData.sellingPrice}
-                  onChange={(e) => handleInputChange('sellingPrice', e.target.value)}
-                  error={errors.sellingPrice}
-                  placeholder="0.00"
-                  required
-                />
-
-                {margin !== null && (
-                  <p className={`col-span-2 -mt-2 text-xs ${margin < 0 ? 'text-red-600' : 'text-gray-500'}`}>
-                    هامش الربح: {margin}%{margin < 0 ? ' (سعر البيع أقل من سعر الشراء)' : ''}
-                  </p>
-                )}
-
-                <ProductUnitFields
-                  allowDecimalQty={formData.allowDecimalQty}
-                  unit={formData.unit}
-                  onChange={next => setFormData(prev => ({ ...prev, ...next }))}
-                  scaleCode={formData.scaleCode}
-                  onScaleCodeChange={code => setFormData(prev => ({ ...prev, scaleCode: code }))}
-                />
-
-                <ProductPacksEditor
-                  packs={packRows}
-                  onChange={setPackRows}
-                  piecePrice={parseFloat(formData.sellingPrice) || 0}
-                  unit={formData.unit.trim()}
-                  allowDecimalQty={formData.allowDecimalQty}
-                  showErrors={showPackErrors}
-                />
-
-                <Input
-                  label={`الكمية الافتتاحية${formData.unit.trim() ? ` (${formData.unit.trim()})` : ''}`}
-                  type="text"
-                  inputMode={formData.allowDecimalQty ? 'decimal' : 'numeric'}
-                  value={formData.stockQuantity}
-                  onChange={(e) => handleInputChange('stockQuantity', e.target.value)}
-                  error={errors.stockQuantity}
-                  placeholder="0"
-                  required
-                />
-
-                <Input
-                  label="الحد الأدنى"
-                  type="text"
-                  inputMode={formData.allowDecimalQty ? 'decimal' : 'numeric'}
-                  value={formData.minStockLevel}
-                  onChange={(e) => handleInputChange('minStockLevel', e.target.value)}
-                  error={errors.minStockLevel}
-                  placeholder="0"
-                  required
-                />
-              </div>
+        <ProductFormSection
+          step={3}
+          title="سعر البيع"
+          description="اختياري. بدون سعر يُحفظ المنتج ولا يُباع حتى تحدد سعره من قوائم الأسعار."
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <Input
+                label={`سعر ${unitLabel}`}
+                type="text"
+                inputMode="decimal"
+                value={formData.sellingPrice}
+                onChange={(e) => handleInputChange('sellingPrice', e.target.value)}
+                error={errors.sellingPrice}
+                placeholder="بدون سعر"
+              />
+              {margin !== null && (
+                <p className={`mt-1 text-xs ${margin < 0 ? 'text-red-600' : 'text-gray-500'}`}>
+                  هامش الربح: {margin}%{margin < 0 ? ' (أقل من التكلفة)' : ''}
+                </p>
+              )}
             </div>
-          </Card>
-        </form>
-      </div>
+            <p className="self-center text-xs text-gray-500 sm:pt-5">
+              يُحفظ كسعر القائمة الأساسية. القوائم الأخرى (جملة، عملاء...) تحسب منه أو تُضبط من قوائم الأسعار.
+            </p>
+          </div>
+        </ProductFormSection>
+
+        <ProductFormSection
+          step={4}
+          title="المخزون الافتتاحي"
+          description="اختياري. الكمية الموجودة الآن تُسجَّل كرصيد افتتاحي في حركة المخزون، وبعدها تتغير بالمشتريات والمبيعات والتعديلات."
+        >
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Input
+              label={`الكمية الموجودة (${unitLabel})`}
+              type="text"
+              inputMode={formData.allowDecimalQty ? 'decimal' : 'numeric'}
+              value={formData.stockQuantity}
+              onChange={(e) => handleInputChange('stockQuantity', e.target.value)}
+              error={errors.stockQuantity}
+              placeholder="0"
+            />
+            <Input
+              label={`تكلفة ${unitLabel}`}
+              type="text"
+              inputMode="decimal"
+              value={formData.purchasePrice}
+              onChange={(e) => handleInputChange('purchasePrice', e.target.value)}
+              error={errors.purchasePrice}
+              placeholder="0.00"
+            />
+            <Input
+              label="تنبيه عند وصول الكمية إلى"
+              type="text"
+              inputMode={formData.allowDecimalQty ? 'decimal' : 'numeric'}
+              value={formData.minStockLevel}
+              onChange={(e) => handleInputChange('minStockLevel', e.target.value)}
+              error={errors.minStockLevel}
+              placeholder="0"
+            />
+          </div>
+        </ProductFormSection>
+
+        <FormSaveBar
+          onCancel={() => navigate('/products')}
+          saving={createMutation.isPending}
+          saveLabel="حفظ المنتج"
+          hint={!formData.sellingPrice.trim() ? 'سيُحفظ بدون سعر بيع' : undefined}
+        />
+      </form>
     </Layout>
   );
 };
