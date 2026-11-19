@@ -78,6 +78,8 @@ tfoot td { padding: 7px 8px; font-size: 11px; color: #475569; border-top: 2px so
 .c-name { text-align: right; }
 .c-num { width: 86px; text-align: center; font-weight: 700; }
 .c-total { width: 110px; text-align: center; font-weight: 700; }
+.subject { margin: 10px 0 12px; font-size: 13px; color: #0f172a; }
+.subject b { color: #475569; font-weight: 700; }
 .sku { font-size: 10px; color: #94a3b8; margin-top: 2px; }
 .desc { font-size: 10.5px; color: #475569; margin-top: 3px; line-height: 1.6; white-space: pre-line; font-weight: 400; }
 .bottom { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; margin-top: 16px; page-break-inside: avoid; }
@@ -146,6 +148,7 @@ tfoot td { padding: 7px 8px; font-size: 11px; color: #475569; border-top: 2px so
       <div class="value">${esc(d.cashierName || "—")}</div>
     </div>
   </div>
+  ${d.subject ? `<div class="subject"><b>الموضوع:</b> ${esc(d.subject)}</div>` : ""}
 
   <table>
     <thead>
@@ -201,7 +204,7 @@ tfoot td { padding: 7px 8px; font-size: 11px; color: #475569; border-top: 2px so
     </div>
     <div class="totals">
       ${row("المجموع الفرعي", money(d.subtotal))}
-      ${d.discountAmount > 0 ? row(esc(d.discountLabel || "الخصم"), money(d.discountAmount, true), "t-red") : ""}
+      ${d.discountAmount > 0 ? row(esc(d.discountLabel || "الخصم").replace(/(\d+(?:\.\d+)?%)/, '<bdi dir="ltr">$1</bdi>'), money(d.discountAmount, true), "t-red") : ""}
       ${d.taxAmount > 0 ? row(`ضريبة القيمة المضافة${d.taxRate ? ` (${d.taxRate}%)` : ""}`, money(d.taxAmount), "t-amber") : ""}
       ${d.additionalFee > 0 ? row(esc(d.additionalFeeLabel || "رسوم إضافية"), money(d.additionalFee)) : ""}
       ${row(isQuote ? "إجمالي العرض" : "الإجمالي", money(d.totalAmount), "t-grand")}

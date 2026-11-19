@@ -166,6 +166,7 @@ export async function buildSaleInvoiceData(params: {
     cashierName: sale.user?.fullname || cashier?.fullname || cashier?.name || cashier?.username,
     staffLabel: isPurchase ? "المستخدم" : isQuote ? "أعدّه" : "الكاشير",
     notes: sale.notes || undefined,
+    subject: isQuote ? String(sale.subject || "").trim() || undefined : undefined,
 
     middleLabel: isQuote ? "صالح حتى" : "طريقة الدفع",
     middleValue: isQuote

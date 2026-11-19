@@ -536,6 +536,8 @@ export interface Quote {
   customerName?: string;
   customerContact?: string;
   customerEmail?: string;
+  /** what the quote is for, printed under the title */
+  subject?: string | null;
   currency: string;
   priceListId?: string | null;
   /** sum of the line totals */
@@ -587,6 +589,8 @@ export interface QuoteFormRequest {
   customerName?: string;
   customerContact?: string;
   customerEmail?: string;
+  /** what the quote is for, printed under the title */
+  subject?: string | null;
   currency?: string;
   priceListId?: string;
   taxSettingId?: string;
@@ -617,9 +621,24 @@ export interface GetQuoteListRequest {
   page?: number;
   limit?: number;
   search?: string;
+  /** a status, or "EXPIRED" (past its date, no answer yet) */
   status?: string;
   startDate?: string;
   endDate?: string;
+}
+
+/** The cards above the quotes list: the whole company, not the page shown */
+export interface QuoteListSummary {
+  total: number;
+  draft: number;
+  sent: number;
+  accepted: number;
+  rejected: number;
+  converted: number;
+  expired: number;
+  /** still valid and waiting for the customer */
+  openCount: number;
+  openValue: number;
 }
 
 // Financial Report Types

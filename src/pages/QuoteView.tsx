@@ -8,7 +8,9 @@ import {
   Download,
   Edit,
   FileText,
+  Copy,
   Mail,
+  MessageCircle,
   MoreVertical,
   Printer,
   Receipt,
@@ -18,6 +20,9 @@ import {
   XCircle,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import { useQueryClient } from "@tanstack/react-query";
+import { whatsappNumber } from "../utils/whatsapp";
+import { sendQuoteWhatsApp } from "../components/quotes/sendQuoteWhatsApp";
 import { Layout } from "../components/layout";
 import { ConfirmDialog } from "../components/ui";
 import ConvertQuoteModal from "../components/quotes/ConvertQuoteModal";
@@ -149,6 +154,7 @@ const QuoteView: React.FC = () => {
     setParams({}, { replace: true });
   }, [params, quote, setParams]);
 
+  const queryClient = useQueryClient();
   const back = () => navigate("/quotes");
 
   /** One runner for every print button: progress, then success or the reason it failed */
@@ -215,6 +221,9 @@ const QuoteView: React.FC = () => {
         },
       }
     );
+
+  const sendWhatsApp = () =>
+    sendQuoteWhatsApp(quote, { companyId, companyName: (company as any)?.company?.name || (company as any)?.name || "", queryClient });
 
   const btn = "inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50";
 
@@ -295,6 +304,15 @@ const QuoteView: React.FC = () => {
                 </>
               )}
             </Menu>
+            <button
+              type="button"
+              onClick={sendWhatsApp}
+              title={whatsappNumber(quote.customerContact || quote.client?.phone) ? `إرسال إلى ${quote.customerContact || quote.client?.phone}` : "إرسال على واتساب"}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50"
+            >
+              <MessageCircle className="h-4 w-4" />
+              واتساب
+            </button>
             {!converted && quote.status !== "REJECTED" && (
               <button
                 type="button"
@@ -308,6 +326,15 @@ const QuoteView: React.FC = () => {
             <Menu ariaLabel="إجراءات أخرى" buttonClass="rounded-lg border border-gray-300 bg-white p-2 text-gray-600 hover:bg-gray-50" label={<MoreVertical className="h-4 w-4" />}>
               {close => (
                 <>
+                  <MenuItem
+                    icon={Copy}
+                    onClick={() => {
+                      close();
+                      navigate(`/quotes/create?from=${quote.id}`);
+                    }}
+                  >
+                    نسخ إلى عرض جديد
+                  </MenuItem>
                   {quote.customerEmail && (
                     <MenuItem
                       icon={Mail}
@@ -354,7 +381,6 @@ const QuoteView: React.FC = () => {
                       حذف العرض
                     </MenuItem>
                   )}
-                  {converted && !quote.customerEmail && <p className="px-3 py-2 text-xs text-gray-500">لا إجراءات أخرى لعرض محوّل</p>}
                 </>
               )}
             </Menu>
@@ -418,6 +444,13 @@ const QuoteView: React.FC = () => {
               <dd className={expired ? "font-medium text-amber-700" : "text-gray-900"}>{quote.validUntil ? formatTableDate(quote.validUntil) : "بدون مدة"}</dd>
             </dl>
           </div>
+
+          {quote.subject && (
+            <p className="border-b border-gray-100 px-5 py-3 text-sm sm:px-6">
+              <span className="text-gray-500">الموضوع: </span>
+              <span className="font-semibold text-gray-900">{quote.subject}</span>
+            </p>
+          )}
 
           {/* Lines */}
           <div>

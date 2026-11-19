@@ -48,6 +48,7 @@ export interface QuoteFormState {
   customerName: string;
   customerContact: string;
   customerEmail: string;
+  subject: string;
   priceListId: string;
   validUntil: string;
   taxSettingId: string;
@@ -97,6 +98,7 @@ export function emptyForm(): QuoteFormState {
     customerName: "",
     customerContact: "",
     customerEmail: "",
+    subject: "",
     priceListId: "",
     validUntil: isoDateIn(14),
     taxSettingId: "",
@@ -259,6 +261,7 @@ export function toRequest(form: QuoteFormState, companyId: number): QuoteFormReq
     customerName: form.customerName.trim() || undefined,
     customerContact: form.customerContact.trim() || undefined,
     customerEmail: form.customerEmail.trim() || undefined,
+    subject: form.subject.trim() || undefined,
     ...(form.priceListId && { priceListId: form.priceListId }),
     ...(form.taxSettingId && { taxSettingId: form.taxSettingId }),
     ...(form.discountType && num(form.discountValue) > 0 && { discountType: form.discountType, discountValue: num(form.discountValue) }),
@@ -288,6 +291,10 @@ export function fromQuote(q: Quote): QuoteFormState {
     }
     const p: any = item.product || {};
     const base = productLine({ ...p, id: item.productId, name: p.name || item.productName, sku: p.sku || item.productSku });
+    // a pack removed from the product since: keep the line as it was quoted
+    if (item.packId && item.packFactor && !base.packs.some(pk => pk.id === item.packId)) {
+      base.packs.push({ id: item.packId, name: item.packName || "عبوة", factor: Number(item.packFactor), sellingPrice: Number(item.packPrice) || 0 });
+    }
     const isPack = !!item.packId && base.packs.some(pk => pk.id === item.packId);
     return {
       ...base,
@@ -308,6 +315,7 @@ export function fromQuote(q: Quote): QuoteFormState {
     customerName: q.customerName || "",
     customerContact: q.customerContact || "",
     customerEmail: q.customerEmail || "",
+    subject: q.subject || "",
     priceListId: q.priceListId || "",
     validUntil: q.validUntil ? String(q.validUntil).slice(0, 10) : "",
     taxSettingId: q.taxSettingId || "",

@@ -335,6 +335,7 @@ const styles = StyleSheet.create({
   },
   termsTitle: { fontSize: 9, fontWeight: "bold", marginBottom: 3, textAlign: "right" },
   termsBody: { fontSize: 8.5, color: COLOR.inkSoft, lineHeight: 1.6, textAlign: "right" },
+  subject: { fontSize: 10, marginBottom: 8, textAlign: "right", fontWeight: "bold" },
   notes: { fontSize: 8.5, color: COLOR.inkSoft, marginTop: 8, textAlign: "right", lineHeight: 1.5 },
 
   signatures: {
@@ -473,6 +474,8 @@ export const SaleInvoicePdf: React.FC<{ data: SaleInvoiceData }> = ({ data }) =>
             <Text style={styles.infoValue}>{data.cashierName || "—"}</Text>
           </View>
         </View>
+
+        {data.subject ? <Text style={styles.subject}>الموضوع: {data.subject}</Text> : null}
 
         {/* Items table */}
         <View style={styles.items}>

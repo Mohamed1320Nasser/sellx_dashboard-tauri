@@ -55,6 +55,8 @@ export interface SaleInvoiceData {
   /** "الكاشير" / "المستخدم" / "أعدّه" */
   staffLabel: string;
   notes?: string;
+  /** quotes: what the quote is for, shown above the items */
+  subject?: string;
 
   /** Middle info cell: payment method for sales/purchases, validity for quotes */
   middleLabel: string;

@@ -12,6 +12,7 @@ import { initializeAppApi } from './shared/api/init';
 import { getBaseURL, resetApiConfig } from './shared/api/config';
 import { useNetworkStatus } from './hooks/useNetworkStatus';
 import ErrorBoundary from './components/ErrorBoundary';
+import ScrollToTop from './components/common/ScrollToTop';
 import { isTauri } from './services/tauriBridge';
 import './utils/clearOldAuth'; // Clear old localStorage auth
 import Login from './pages/Login';
@@ -237,6 +238,7 @@ const App: React.FC = () => {
         <ErrorBoundary>
             <QueryClientProvider client={queryClient}>
                 <Router>
+                    <ScrollToTop />
                     <div className="App w-full h-full">
                     <Routes>
                         <Route 

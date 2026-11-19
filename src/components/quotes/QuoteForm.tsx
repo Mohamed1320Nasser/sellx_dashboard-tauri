@@ -43,7 +43,7 @@ const TERM_SUGGESTIONS = [
 
 interface Props {
   title: React.ReactNode;
-  subtitle?: string;
+  subtitle?: React.ReactNode;
   companyId: number;
   initial: QuoteFormState;
   /** create: choose the default tax / price list once they load */
@@ -73,6 +73,8 @@ const QuoteForm: React.FC<Props> = ({
   const [form, setForm] = useState<QuoteFormState>(initial);
   /** a term just added from a chip focuses its text; "شرط آخر" focuses its title */
   const [showProfit, toggleProfit] = useReveal();
+  /** the discount box takes the focus when the type is picked, not when an edit / copy opens */
+  const [discountPicked, setDiscountPicked] = useState(false);
   const [addedTerm, setAddedTerm] = useState<"label" | "value" | null>(null);
   const [tried, setTried] = useState(false);
   const set = (patch: Partial<QuoteFormState>) =>
@@ -385,6 +387,22 @@ const QuoteForm: React.FC<Props> = ({
               {check.errors.customer}
             </p>
           )}
+
+          <label className="mt-4 block border-t border-gray-100 pt-4">
+            <span className="mb-1 block text-sm font-medium text-gray-700">
+              موضوع العرض{" "}
+              <span className="font-normal text-gray-400">
+                (اختياري، يُطبع تحت العنوان)
+              </span>
+            </span>
+            <input
+              value={form.subject}
+              onChange={(e) => set({ subject: e.target.value })}
+              placeholder="مثل: توريد وتركيب رفوف المخزن"
+              maxLength={191}
+              className={input}
+            />
+          </label>
         </section>
 
         {/* Items */}
@@ -552,12 +570,13 @@ const QuoteForm: React.FC<Props> = ({
                         type="button"
                         role="radio"
                         aria-checked={form.discountType === o.v}
-                        onClick={() =>
+                        onClick={() => {
+                          setDiscountPicked(true);
                           set({
                             discountType: o.v as any,
                             ...(o.v === "" && { discountValue: "" }),
-                          })
-                        }
+                          });
+                        }}
                         className={`px-3 py-2 font-medium ${k > 0 ? "border-r border-gray-300" : ""} ${form.discountType === o.v ? "bg-primary-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}
                       >
                         {o.label}
@@ -574,7 +593,7 @@ const QuoteForm: React.FC<Props> = ({
                       }
                       aria-label="قيمة الخصم"
                       dir="ltr"
-                      autoFocus
+                      autoFocus={discountPicked}
                       className={`${input} text-center ${tried && check.errors.discount ? "border-red-400" : ""}`}
                     />
                   )}

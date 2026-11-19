@@ -207,7 +207,33 @@ function ActionsDropdown<T>({ actions, item, loading }: ActionsDropdownProps<T>)
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
+    // Fixed position goes stale when the page scrolls or resizes: close instead of drifting
+    useEffect(() => {
+        if (!isOpen) return;
+        const close = () => setIsOpen(false);
+        window.addEventListener('scroll', close, true);
+        window.addEventListener('resize', close);
+        return () => {
+            window.removeEventListener('scroll', close, true);
+            window.removeEventListener('resize', close);
+        };
+    }, [isOpen]);
+
     if (visibleActions.length === 0) return null;
+
+    /** Below the button, or above it when there is no room below; scrolls when taller than the room */
+    const menuStyle = (): React.CSSProperties => {
+        const r = dropdownRef.current?.getBoundingClientRect();
+        if (!r) return { top: 0, left: 0 };
+        const gap = 8;
+        const margin = 8;
+        const needed = visibleActions.length * 41 + 2;
+        const below = window.innerHeight - r.bottom - gap - margin;
+        const above = r.top - gap - margin;
+        const left = Math.max(margin, Math.min(r.left, window.innerWidth - 192 - margin));
+        if (needed <= below || below >= above) return { top: r.bottom + gap, left, maxHeight: Math.max(below, 120) };
+        return { bottom: window.innerHeight - r.top + gap, left, maxHeight: above };
+    };
 
     const getVariantClasses = (variant?: string) => {
         switch (variant) {
@@ -246,11 +272,9 @@ function ActionsDropdown<T>({ actions, item, loading }: ActionsDropdownProps<T>)
                     <div className="fixed inset-0 z-[100]" onClick={() => setIsOpen(false)} />
                     {/* Dropdown menu with fixed positioning */}
                     <div
-                        className="fixed z-[101] w-48 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden"
-                        style={{
-                            top: dropdownRef.current ? dropdownRef.current.getBoundingClientRect().bottom + 8 : 0,
-                            left: dropdownRef.current ? dropdownRef.current.getBoundingClientRect().left : 0,
-                        }}
+                        role="menu"
+                        className="fixed z-[101] w-48 bg-white border border-gray-200 rounded-xl shadow-xl overflow-y-auto"
+                        style={menuStyle()}
                     >
                         {visibleActions.map((action, index) => {
                             const Icon = action.icon;
