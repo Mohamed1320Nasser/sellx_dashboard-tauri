@@ -29,6 +29,7 @@ const ProductEdit: React.FC = () => {
     categoryId: '',
     unit: '',
     allowDecimalQty: false,
+    scaleCode: '',
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -64,6 +65,7 @@ const ProductEdit: React.FC = () => {
         categoryId: (product as any).categoryId || '',
         unit: (product as any).unit || '',
         allowDecimalQty: !!(product as any).allowDecimalQty,
+        scaleCode: (product as any).scaleCode || '',
       });
     }
   }, [product, id]);
@@ -151,6 +153,7 @@ const ProductEdit: React.FC = () => {
           minStockLevel: toQty(normalizeDigits(formData.minStockLevel)),
           unit: formData.unit.trim() || null,
           allowDecimalQty: formData.allowDecimalQty,
+          scaleCode: formData.allowDecimalQty ? formData.scaleCode.trim() || null : null,
           categoryId: formData.categoryId,
           companyId: companyId!,
         },
@@ -343,6 +346,8 @@ const ProductEdit: React.FC = () => {
                       allowDecimalQty={formData.allowDecimalQty}
                       unit={formData.unit}
                       onChange={next => setFormData(prev => ({ ...prev, ...next }))}
+                      scaleCode={formData.scaleCode}
+                      onScaleCodeChange={code => setFormData(prev => ({ ...prev, scaleCode: code }))}
                     />
                   </div>
 

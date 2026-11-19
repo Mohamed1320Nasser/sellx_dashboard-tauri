@@ -21,10 +21,13 @@ import {
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { PriceManagementSettings } from "@/components/settings/PriceManagementSettings";
+import { ScaleBarcodeSettings } from "@/components/settings/ScaleBarcodeSettings";
+import { usePermissionStore } from "@/stores/permissionStore";
 
 export default function CompanySettings() {
   const { company } = useSessionAuthStore();
   const companyId = company?.companyId || company?.id || 0;
+  const role = usePermissionStore(s => s.role);
 
   // Fetch company profile
   const {
@@ -393,6 +396,11 @@ export default function CompanySettings() {
             companyId={companyId}
             currentRoundingRule={companyProfile?.priceRoundingRule || '0.50'}
           />
+        </div>
+
+        {/* Scale barcode labels */}
+        <div className="mt-6">
+          <ScaleBarcodeSettings companyId={companyId} canEdit={role === "ADMIN"} />
         </div>
       </div>
     </Layout>

@@ -339,7 +339,15 @@ const SalesCreate: React.FC = () => {
       const inner = result?.data;
       const product = inner?.success ? inner.data : null;
 
-      if (product) {
+      if (product?.scale) {
+        // Scale label: the packet's weight is on the label
+        setBarcodeInput("");
+        const qty = Number(product.scale.quantity);
+        if (addItem(product, qty)) {
+          toast.success(`تمت الإضافة: ${product.name} - ${formatQty(qty, unitOf(product))}`, { id: "pos-scan", duration: 1800 });
+        }
+        setTimeout(() => barcodeInputRef.current?.focus(), 100);
+      } else if (product) {
         addItem(product);
         setBarcodeInput(""); // Clear input
         // one short message that the next scan replaces (they used to pile up)
@@ -356,7 +364,7 @@ const SalesCreate: React.FC = () => {
     } catch (error: any) {
       console.error('Error scanning barcode:', error);
       const errorMsg = error?.response?.data?.msg || error?.message || 'حدث خطأ أثناء البحث عن المنتج';
-      toast.error(errorMsg);
+      toast.error(errorMsg, { id: "pos-scan" });
       setBarcodeInput(""); // Clear input
     }
   };
@@ -414,12 +422,42 @@ const SalesCreate: React.FC = () => {
   };
 
   // Add item to sale
-  const addItem = (product: any) => {
+  // labelQty: the weight read from a scale label (the whole packet is added at once)
+  const addItem = (product: any, labelQty?: number) => {
     const stock = toQty(product.currentStock || product.stockQuantity || 0);
     const current = itemsRef.current;
     const existingItem = current.find(item => item.productId === product.id);
     const currentQuantity = existingItem?.quantity || 0;
     const weighed = allowsDecimal(product);
+
+    if (labelQty && labelQty > 0) {
+      const newQuantity = addQty(currentQuantity, labelQty);
+      if (newQuantity > stock) {
+        toast.error(`لا يكفي المخزون - المتاح: ${formatQty(stock, unitOf(product))}`, { id: "pos-scan" });
+        return false;
+      }
+      if (existingItem) {
+        setItems(current.map(item =>
+          item.productId === product.id
+            ? { ...item, quantity: newQuantity, total: qtyTimes(newQuantity, item.unitPrice), stock }
+            : item
+        ));
+      } else {
+        const unitPrice = priceFor(product.id, product.sellingPrice);
+        setItems([...current, {
+          productId: product.id,
+          productName: product.name,
+          quantity: labelQty,
+          unitPrice,
+          basePrice: Number(product.sellingPrice) || 0,
+          total: qtyTimes(labelQty, unitPrice),
+          stock,
+          allowDecimalQty: weighed,
+          unit: unitOf(product) || null,
+        }]);
+      }
+      return true;
+    }
 
     // Weighed goods: scanning again doesn't add "one more kilo", it opens the weight to edit
     if (existingItem && weighed) {

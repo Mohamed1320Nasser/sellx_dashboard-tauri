@@ -7,10 +7,13 @@ interface Props {
   unit: string;
   onChange: (next: { allowDecimalQty: boolean; unit: string }) => void;
   disabled?: boolean;
+  /** Item code programmed on the shop scale (shown for weighed goods when a handler is given) */
+  scaleCode?: string;
+  onScaleCodeChange?: (code: string) => void;
 }
 
 /** "Sold by weight / length" switch and the unit label, shared by the product forms. */
-const ProductUnitFields: React.FC<Props> = ({ allowDecimalQty, unit, onChange, disabled }) => (
+const ProductUnitFields: React.FC<Props> = ({ allowDecimalQty, unit, onChange, disabled, scaleCode, onScaleCodeChange }) => (
   <div className="col-span-2 space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
     <Toggle
       enabled={allowDecimalQty}
@@ -44,6 +47,27 @@ const ProductUnitFields: React.FC<Props> = ({ allowDecimalQty, unit, onChange, d
       </datalist>
       <p className="mt-1 text-xs text-gray-500">تظهر بجانب الكمية في الفاتورة والإيصال والتقارير.</p>
     </div>
+    {allowDecimalQty && onScaleCodeChange && (
+      <div>
+        <label htmlFor="product-scale-code" className="mb-1 block text-sm font-medium text-gray-700">
+          كود الميزان (اختياري)
+        </label>
+        <input
+          id="product-scale-code"
+          value={scaleCode ?? ""}
+          inputMode="numeric"
+          maxLength={6}
+          disabled={disabled}
+          onChange={e => onScaleCodeChange(e.target.value.replace(/[٠-٩]/g, d => String("٠١٢٣٤٥٦٧٨٩".indexOf(d))).replace(/\D/g, ""))}
+          placeholder="مثل 123"
+          dir="ltr"
+          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-right focus:border-primary-500 focus:ring-2 focus:ring-primary-500"
+        />
+        <p className="mt-1 text-xs text-gray-500">
+          نفس رقم الصنف المبرمج على الميزان. عند مسح ملصق الميزان يُضاف المنتج بالوزن المطبوع عليه.
+        </p>
+      </div>
+    )}
   </div>
 );
 
