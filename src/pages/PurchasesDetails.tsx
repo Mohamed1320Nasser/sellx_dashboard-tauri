@@ -5,6 +5,7 @@ import { Layout } from '../components/layout';
 import { Button, Card, ConfirmDialog } from '../components/ui';
 import { PurchaseBarcodeModal } from '../components/modals/PurchaseBarcodeModal';
 import { SupplierReturnModal } from '../components/modals/SupplierReturnModal';
+import { HeaderAction, HeaderDivider } from '../components/common/HeaderAction';
 import { useDeletePurchase, useDeleteSupplierReturn } from '../hooks/api/usePurchases';
 import { useSessionAuthStore } from '../stores/sessionAuthStore';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -296,78 +297,32 @@ const PurchasesDetails: React.FC = () => {
     <Layout>
       <div className="w-full space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center space-x-4 space-x-reverse">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-3">
             <Button
               variant="ghost"
               onClick={handleBack}
-              className="flex items-center space-x-2 space-x-reverse text-gray-600 hover:text-gray-900"
+              className="flex shrink-0 items-center gap-2 text-gray-600 hover:text-gray-900"
             >
               <ArrowLeft className="w-4 h-4" />
               <span>العودة</span>
             </Button>
-            <div>
+            <div className="min-w-0">
               <h1 className="text-2xl font-bold text-gray-900">
-                فاتورة شراء رقم {purchase.invoiceNumber}
+                فاتورة شراء{" "}
+                <span className="whitespace-nowrap font-mono" dir="ltr">{purchase.invoiceNumber}</span>
               </h1>
               <p className="text-gray-500 text-sm">تفاصيل عملية الشراء</p>
             </div>
           </div>
-          <div className="flex items-center space-x-2 space-x-reverse">
-            <Button
-              onClick={handleReprintReceipt}
-              variant="outline"
-              size="sm"
-              disabled={isPrinting}
-              className="text-green-600 border-green-200 hover:bg-green-50"
-              title="إعادة طباعة الفاتورة"
-            >
-              <Printer className="w-4 h-4 ml-1" />
-              {isPrinting ? 'جاري الطباعة...' : 'إعادة الطباعة'}
-            </Button>
-            <Button
-              onClick={handleDownloadInvoice}
-              variant="outline"
-              size="sm"
-              className="text-blue-600 border-blue-200 hover:bg-blue-50"
-            >
-              <Download className="w-4 h-4 ml-1" />
-              تحميل PDF
-            </Button>
-            <Button
-              onClick={() => setShowLabels(true)}
-              variant="outline"
-              size="sm"
-              className="text-purple-600 border-purple-200 hover:bg-purple-50"
-            >
-              <Tag className="w-4 h-4 ml-1" />
-              طباعة باركود
-            </Button>
-            <Button
-              onClick={() => setShowReturn(true)}
-              variant="outline"
-              size="sm"
-              className="text-amber-600 border-amber-200 hover:bg-amber-50"
-            >
-              <RotateCcw className="w-4 h-4 ml-1" />
-              مرتجع للمورد
-            </Button>
-            <Button
-              onClick={handleEdit}
-              size="sm"
-            >
-              <Edit className="w-4 h-4 ml-1" />
-              تعديل
-            </Button>
-            <Button
-              onClick={() => setConfirmDelete(true)}
-              variant="outline"
-              size="sm"
-              className="text-red-600 border-red-200 hover:bg-red-50"
-            >
-              <Trash2 className="w-4 h-4 ml-1" />
-              حذف
-            </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <HeaderAction icon={Printer} label="طباعة" onClick={handleReprintReceipt} busy={isPrinting} />
+            <HeaderAction icon={Download} label="PDF" onClick={handleDownloadInvoice} />
+            <HeaderAction icon={Tag} label="طباعة باركود" onClick={() => setShowLabels(true)} />
+            <HeaderDivider />
+            <HeaderAction icon={RotateCcw} label="مرتجع للمورد" onClick={() => setShowReturn(true)} />
+            <HeaderAction icon={Edit} label="تعديل" onClick={handleEdit} tone="primary" />
+            <HeaderAction icon={Trash2} label="حذف الفاتورة" onClick={() => setConfirmDelete(true)} tone="danger" iconOnly />
           </div>
         </div>
 

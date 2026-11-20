@@ -13,6 +13,7 @@ import { companyService } from '../services/companyService';
 import { PrintReceiptPreview } from '../components/printer/PrintReceiptPreview';
 import { generateSaleInvoicePdf } from '../components/invoice/generateSaleInvoicePdf';
 import { PermissionGuard } from '../components/common/PermissionGuard';
+import { HeaderAction, HeaderDivider } from '../components/common/HeaderAction';
 import { useClients } from '../hooks/api/useClients';
 import { useUpdateSale } from '../hooks/api/useSales';
 import { formatQty, packView, unitOf } from '../utils/quantity';
@@ -203,62 +204,37 @@ const SalesDetails: React.FC = () => {
     <Layout>
       <div className="w-full space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center space-x-4 space-x-reverse">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-3">
             <Button
               variant="ghost"
               onClick={handleBack}
-              className="flex items-center space-x-2 space-x-reverse text-gray-600 hover:text-gray-900"
+              className="flex shrink-0 items-center gap-2 text-gray-600 hover:text-gray-900"
             >
               <ArrowLeft className="w-4 h-4" />
               <span>العودة</span>
             </Button>
-            <div>
+            <div className="min-w-0">
               <h1 className="text-2xl font-bold text-gray-900">
-                فاتورة رقم {sale.receiptNumber}
+                فاتورة{" "}
+                <span className="whitespace-nowrap font-mono" dir="ltr">{sale.receiptNumber}</span>
               </h1>
               <p className="text-gray-500 text-sm">تفاصيل عملية البيع</p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <HeaderAction icon={Printer} label="طباعة" onClick={handlePrintReceipt} />
+            <HeaderAction icon={Download} label="PDF" onClick={handleDownloadPDF} busy={isGeneratingPDF} />
+            <HeaderDivider />
+            <HeaderAction icon={RotateCcw} label="إرجاع" onClick={() => navigate(`/returns/create?saleId=${sale.id}`)} />
             {(sale.remainingAmount ?? 0) > 0.01 && (
-              <Button
+              <HeaderAction
+                icon={CreditCard}
+                label={`تسجيل دفعة (${formatCurrency(sale.remainingAmount)})`}
                 onClick={() => navigate(`/payments/create?saleId=${sale.id}`)}
-                size="sm"
-                className="bg-green-600 hover:bg-green-700 text-white"
-              >
-                <CreditCard className="w-4 h-4 ml-1" />
-                تسجيل دفعة ({formatCurrency(sale.remainingAmount)})
-              </Button>
+                tone="primary"
+              />
             )}
-            <Button
-              onClick={() => navigate(`/returns/create?saleId=${sale.id}`)}
-              variant="outline"
-              size="sm"
-              className="text-amber-700 border-amber-200 hover:bg-amber-50"
-            >
-              <RotateCcw className="w-4 h-4 ml-1" />
-              إرجاع
-            </Button>
-            <Button
-              onClick={handlePrintReceipt}
-              variant="outline"
-              size="sm"
-              className="text-blue-600 border-blue-200 hover:bg-blue-50"
-            >
-              <Printer className="w-4 h-4 ml-1" />
-              طباعة الفاتورة
-            </Button>
-            <Button
-              onClick={handleDownloadPDF}
-              variant="outline"
-              size="sm"
-              disabled={isGeneratingPDF}
-              className="text-purple-600 border-purple-200 hover:bg-purple-50"
-            >
-              <Download className="w-4 h-4 ml-1" />
-              {isGeneratingPDF ? "جاري التحميل..." : "تحميل PDF"}
-            </Button>
           </div>
         </div>
 
