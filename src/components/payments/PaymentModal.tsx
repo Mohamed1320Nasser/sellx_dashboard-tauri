@@ -4,6 +4,10 @@ import { Modal, Button, Input, Select } from '../ui';
 import { formatCurrency } from '../../utils/currencyUtils';
 import type { CreatePaymentRequest } from '../../services/paymentService';
 import { PaymentMethod } from '../../services/paymentService';
+import { Link } from 'react-router-dom';
+import { AlertTriangle } from 'lucide-react';
+import { useCurrentShift } from '../../hooks/api/useShifts';
+import { METHOD_OPTIONS } from './paymentLabels';
 
 interface PaymentModalProps {
   isOpen: boolean;
@@ -35,11 +39,9 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const paymentMethodOptions = [
-    { value: PaymentMethod.CASH, label: 'نقدي' },
-    { value: PaymentMethod.MOBILE_WALLET, label: 'محفظة إلكترونية' },
-    { value: PaymentMethod.BANK_TRANSFER, label: 'تحويل بنكي' },
-  ];
+  const paymentMethodOptions = METHOD_OPTIONS;
+  const shift = useCurrentShift(companyId);
+  const noShiftForCash = formData.paymentMethod === PaymentMethod.CASH && !shift.isLoading && !shift.data?.hasOpenShift;
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -165,6 +167,15 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               error={errors.paymentMethod}
               disabled={isLoading}
             />
+            {noShiftForCash && (
+              <p className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>
+                  لا توجد وردية مفتوحة لك، والدفع النقدي {purchaseId ? 'يخرج من' : 'يدخل'} درج الوردية.{' '}
+                  <Link to="/shifts" className="font-semibold underline">افتح وردية</Link> أو اختر طريقة أخرى.
+                </span>
+              </p>
+            )}
           </div>
 
           <div>

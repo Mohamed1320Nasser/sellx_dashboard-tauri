@@ -149,6 +149,8 @@ const PurchasesDetails: React.FC = () => {
       toast.success('تم إضافة الدفعة بنجاح');
       queryClient.invalidateQueries({ queryKey: ['purchase', id, companyId] });
       queryClient.invalidateQueries({ queryKey: ['purchases'] });
+      queryClient.invalidateQueries({ queryKey: ['payments'] });
+      queryClient.invalidateQueries({ queryKey: ['current-shift'] });
       setShowPaymentModal(false);
     },
     onError: (error: any) => {

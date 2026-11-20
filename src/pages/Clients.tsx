@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Edit, Trash2, Users, User, Phone, Mail, Calendar, ShoppingBag, FileText } from "lucide-react";
+import { Plus, Edit, Trash2, Users, User, Phone, Mail, Calendar, ShoppingBag, FileText, HandCoins } from "lucide-react";
+import CollectFromClientModal from "../components/payments/CollectFromClientModal";
 import { Layout } from "../components/layout";
 import { Button, Card, Modal, Input, ConfirmDialog, DataTable, Badge } from "../components/ui";
 import type { Column } from "../components/ui/DataTable";
@@ -183,6 +184,7 @@ const Clients: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
+  const [collecting, setCollecting] = useState<Client | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{
     isOpen: boolean;
     client: Client | null;
@@ -364,6 +366,12 @@ const Clients: React.FC = () => {
           onSearch={handleSearch}
           actions={[
             {
+              icon: HandCoins,
+              label: "تحصيل من الحساب",
+              onClick: (client) => setCollecting(client),
+              variant: "success",
+            },
+            {
               icon: FileText,
               label: "كشف حساب",
               onClick: (client) => navigate(`/clients/${client.id}/statement`),
@@ -437,6 +445,7 @@ const Clients: React.FC = () => {
           isLoading={deleteMutation.isPending}
         />
       </div>
+      <CollectFromClientModal client={collecting} onClose={() => setCollecting(null)} companyId={Number(company?.companyId || company?.company?.id) || 0} />
     </Layout>
   );
 };

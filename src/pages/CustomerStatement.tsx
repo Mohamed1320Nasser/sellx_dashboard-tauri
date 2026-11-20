@@ -1,4 +1,6 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useState } from 'react';
+import { HandCoins } from 'lucide-react';
+import CollectFromClientModal from '../components/payments/CollectFromClientModal';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -44,6 +46,7 @@ const CustomerStatement: React.FC = () => {
   const { company } = useSessionAuthStore();
   const companyId = company?.companyId || company?.company?.id;
   const companyName = company?.name || company?.company?.name || company?.companyName || '';
+  const [collecting, setCollecting] = useState(false);
 
   const { data: statementData, isLoading, refetch } = useQuery({
     queryKey: ['client-statement', id, companyId],
@@ -162,6 +165,11 @@ const CustomerStatement: React.FC = () => {
             </div>
           </div>
           <div className="flex space-x-3 space-x-reverse">
+            {summary && summary.outstandingBalance > 0.005 && (
+              <Button onClick={() => setCollecting(true)} className="flex items-center">
+                <HandCoins className="w-4 h-4 ml-1" /> تحصيل من الحساب
+              </Button>
+            )}
             <Button variant="outline" onClick={handleExportPdf} className="flex items-center">
               <FileText className="w-4 h-4 ml-1" /> PDF
             </Button>
@@ -244,6 +252,14 @@ const CustomerStatement: React.FC = () => {
           emptyMessage="لا توجد حركات على هذا الحساب"
         />
       </div>
+      <CollectFromClientModal
+        client={collecting && client ? { id: Number(id), name: client.name, phone: client.phone } : null}
+        onClose={() => {
+          setCollecting(false);
+          refetch();
+        }}
+        companyId={Number(companyId) || 0}
+      />
     </Layout>
   );
 };
