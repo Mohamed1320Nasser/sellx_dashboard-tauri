@@ -13,7 +13,7 @@ import {
   Package,
 } from 'lucide-react';
 import { Layout } from '../components/layout';
-import { Button, DataTable } from '../components/ui';
+import { DataTable } from '../components/ui';
 import type { Column, TableFilter } from '../components/ui/DataTable';
 import { DateRange } from '../components/filters';
 import { useSessionAuthStore } from '../stores/sessionAuthStore';
@@ -23,6 +23,7 @@ import { formatTableDate } from '../utils/dateUtils';
 import StockMovementForm from '../components/forms/StockMovementForm';
 import StockMovementDetailsModal from '../components/forms/StockMovementDetailsModal';
 import StockMovementAnalytics from '../components/stockMovements/StockMovementAnalytics';
+import { HeaderAction, HeaderDivider } from '../components/common/HeaderAction';
 
 const StockMovements: React.FC = () => {
   const { company } = useSessionAuthStore();
@@ -270,31 +271,11 @@ const StockMovements: React.FC = () => {
             <h1 className="text-3xl font-bold text-gray-900">حركات المخزون</h1>
             <p className="mt-2 text-gray-600">إدارة وتتبع حركات المخزون والمنتجات</p>
           </div>
-          <div className="mt-4 sm:mt-0 flex space-x-3 space-x-reverse">
-            <Button
-              onClick={() => setShowAnalytics(!showAnalytics)}
-              variant="outline"
-              size="sm"
-            >
-              {showAnalytics ? <BarChart3 className="h-4 w-4 ml-2" /> : <PieChart className="h-4 w-4 ml-2" />}
-              {showAnalytics ? 'إخفاء التحليلات' : 'عرض التحليلات'}
-            </Button>
-            <Button
-              onClick={() => refetch()}
-              variant="outline"
-              size="sm"
-            >
-              <RefreshCw className="h-4 w-4 ml-2" />
-              تحديث
-            </Button>
-            <Button
-              onClick={() => setShowCreateModal(true)}
-              variant="primary"
-              size="sm"
-            >
-              <Plus className="h-4 w-4 ml-2" />
-              تعديل مخزون
-            </Button>
+          <div className="mt-4 flex flex-wrap items-center gap-2 sm:mt-0">
+            <HeaderAction icon={showAnalytics ? BarChart3 : PieChart} label={showAnalytics ? 'إخفاء التحليلات' : 'عرض التحليلات'} onClick={() => setShowAnalytics(!showAnalytics)} />
+            <HeaderAction icon={RefreshCw} label="تحديث" onClick={() => refetch()} iconOnly />
+            <HeaderDivider />
+            <HeaderAction icon={Plus} label="تعديل مخزون" onClick={() => setShowCreateModal(true)} tone="primary" />
           </div>
         </div>
 

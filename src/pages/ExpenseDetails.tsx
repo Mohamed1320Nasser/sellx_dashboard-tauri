@@ -10,6 +10,7 @@ import { formatCurrency } from '../utils/currencyUtils';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
 import type { Expense } from '../types';
+import { HeaderAction } from '../components/common/HeaderAction';
 
 const ExpenseDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -91,8 +92,8 @@ const ExpenseDetails: React.FC = () => {
     <Layout>
       <div className="w-full max-w-4xl mx-auto space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-4">
             <Button
               variant="ghost"
               onClick={() => navigate('/expenses')}
@@ -107,24 +108,10 @@ const ExpenseDetails: React.FC = () => {
               </p>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <PermissionGuard permission="canManageExpenses">
-              <Button
-                variant="warning"
-                onClick={handleEdit}
-              >
-                <Edit className="w-4 h-4 ml-2" />
-                تعديل
-              </Button>
-            </PermissionGuard>
-            <PermissionGuard permission="canManageExpenses">
-              <Button
-                variant="destructive"
-                onClick={handleDelete}
-              >
-                <Trash2 className="w-4 h-4 ml-2" />
-                حذف
-              </Button>
+              <HeaderAction icon={Edit} label="تعديل" onClick={handleEdit} tone="primary" />
+              <HeaderAction icon={Trash2} label="حذف المصروف" onClick={handleDelete} tone="danger" iconOnly />
             </PermissionGuard>
           </div>
         </div>

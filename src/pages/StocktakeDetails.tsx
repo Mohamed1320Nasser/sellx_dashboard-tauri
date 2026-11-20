@@ -12,6 +12,7 @@ import { formatDateTime } from "../utils/dateUtils";
 import { handleApiError } from "../utils/errorHandler";
 import { STOCKTAKE_STATUS } from "./Stocktakes";
 import { formatQty, normalizeDigits, parseQty, toQty, unitOf } from "../utils/quantity";
+import { HeaderAction, HeaderDivider } from '../components/common/HeaderAction';
 
 /** Rows drawn at once; search narrows a big count */
 const MAX_ROWS = 400;
@@ -276,25 +277,14 @@ const StocktakeDetails: React.FC = () => {
             </p>
             {stocktake.notes && <p className="text-gray-500 text-sm mt-1">{stocktake.notes}</p>}
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={printSheet}>
-              <Printer className="w-4 h-4 ml-2" />
-              ورقة العد
-            </Button>
-            <Button variant="outline" onClick={printDifferences}>
-              <Printer className="w-4 h-4 ml-2" />
-              تقرير الفروقات
-            </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <HeaderAction icon={Printer} label="ورقة العد" onClick={printSheet} />
+            <HeaderAction icon={Printer} label="تقرير الفروقات" onClick={printDifferences} />
             {open && isManager && (
               <>
-                <Button variant="success" onClick={() => setConfirm("complete")} disabled={summary.counted === 0}>
-                  <CheckCircle2 className="w-4 h-4 ml-2" />
-                  اعتماد الجرد
-                </Button>
-                <Button variant="destructive" onClick={() => setConfirm("cancel")}>
-                  <XCircle className="w-4 h-4 ml-2" />
-                  إلغاء
-                </Button>
+                <HeaderDivider />
+                <HeaderAction icon={XCircle} label="إلغاء الجرد" onClick={() => setConfirm("cancel")} tone="danger" />
+                <HeaderAction icon={CheckCircle2} label="اعتماد الجرد" onClick={() => setConfirm("complete")} disabled={summary.counted === 0} tone="primary" />
               </>
             )}
           </div>

@@ -11,6 +11,7 @@ import { printReceipt } from "../services/printService";
 import { apiError, methodOf } from "../components/payments/paymentLabels";
 import { formatCurrency } from "../utils/currencyUtils";
 import { formatDateTime, formatTableDate } from "../utils/dateUtils";
+import { HeaderAction, HeaderDivider } from '../components/common/HeaderAction';
 
 const Row: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
   <div className="flex items-start justify-between gap-4 border-b border-gray-100 py-2.5 last:border-0">
@@ -122,7 +123,6 @@ const PaymentDetails: React.FC = () => {
     }
   };
 
-  const btn = "inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50";
 
   return (
     <Layout>
@@ -139,21 +139,13 @@ const PaymentDetails: React.FC = () => {
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={print} disabled={printing} className={btn}>
-              <Printer className="h-4 w-4" />
-              {printing ? "جاري الطباعة..." : "طباعة إيصال"}
-            </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <HeaderAction icon={Printer} label="طباعة إيصال" onClick={print} busy={printing} />
             {p.canManage && (
               <>
-                <button type="button" onClick={() => navigate(`/payments/${p.id}/edit`)} className={btn}>
-                  <Edit className="h-4 w-4" />
-                  تعديل
-                </button>
-                <button type="button" onClick={() => setConfirm(true)} className={`${btn} border-red-200 text-red-600 hover:bg-red-50`}>
-                  <Trash2 className="h-4 w-4" />
-                  حذف
-                </button>
+                <HeaderDivider />
+                <HeaderAction icon={Edit} label="تعديل" onClick={() => navigate(`/payments/${p.id}/edit`)} tone="primary" />
+                <HeaderAction icon={Trash2} label="حذف الدفعة" onClick={() => setConfirm(true)} tone="danger" iconOnly />
               </>
             )}
           </div>

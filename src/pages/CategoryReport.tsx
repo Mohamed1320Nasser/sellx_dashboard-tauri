@@ -9,7 +9,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { Layout } from '../components/layout';
-import { Button, Card, DataTable, Badge, Select, StatsCard } from '../components/ui';
+import { Card, DataTable, Badge, Select, StatsCard } from '../components/ui';
 import type { Column } from '../components/ui/DataTable';
 import { useSessionAuthStore } from '../stores/sessionAuthStore';
 import { useQuery } from '@tanstack/react-query';
@@ -24,6 +24,7 @@ import {
 } from '../utils/reportExport';
 import toast from 'react-hot-toast';
 import { formatQty, unitOf } from '../utils/quantity';
+import { HeaderAction } from '../components/common/HeaderAction';
 
 interface FlatRow extends CategoryReportProduct {
   categoryName: string;
@@ -174,16 +175,10 @@ const CategoryReport: React.FC = () => {
             <h1 className="text-2xl font-bold text-gray-900">تقرير الفئات</h1>
             <p className="text-gray-600 mt-1">المنتجات والمخزون والأسعار حسب الفئة</p>
           </div>
-          <div className="flex space-x-3 space-x-reverse">
-            <Button variant="outline" onClick={handleExportPdf} className="flex items-center">
-              <FileText className="w-4 h-4 ml-1" /> PDF
-            </Button>
-            <Button variant="outline" onClick={handleExportExcel} className="flex items-center">
-              <FileSpreadsheet className="w-4 h-4 ml-1" /> Excel
-            </Button>
-            <Button variant="outline" onClick={() => refetch()} className="flex items-center">
-              <RefreshCw className="w-4 h-4 ml-1" /> تحديث
-            </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <HeaderAction icon={FileText} label="PDF" onClick={handleExportPdf} />
+            <HeaderAction icon={FileSpreadsheet} label="Excel" onClick={handleExportExcel} />
+            <HeaderAction icon={RefreshCw} label="تحديث" onClick={() => refetch()} iconOnly />
           </div>
         </div>
 

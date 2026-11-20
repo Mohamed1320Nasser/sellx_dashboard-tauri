@@ -17,6 +17,7 @@ import { METHOD, methodOf } from "../components/payments/paymentLabels";
 import type { PaymentMethodCode } from "../services/paymentService";
 import { RETURN_STATUS, conditionLabel, defaultRefundMethod, isUnsellable } from "../components/returns/returnLabels";
 import { downloadReturnPdf, printReturnA4 } from "../components/returns/returnDoc";
+import { HeaderAction } from '../components/common/HeaderAction';
 
 const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
   <div>
@@ -112,15 +113,9 @@ const ReturnsDetails: React.FC = () => {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => run("print")} disabled={!!busy}>
-              {busy === "print" ? <Loader2 className="ml-1 h-4 w-4 animate-spin" /> : <Printer className="ml-1 h-4 w-4" />}
-              طباعة A4
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => run("pdf")} disabled={!!busy}>
-              {busy === "pdf" ? <Loader2 className="ml-1 h-4 w-4 animate-spin" /> : <Download className="ml-1 h-4 w-4" />}
-              PDF
-            </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <HeaderAction icon={Printer} label="طباعة A4" onClick={() => run("print")} busy={busy === "print"} disabled={!!busy} />
+            <HeaderAction icon={Download} label="PDF" onClick={() => run("pdf")} busy={busy === "pdf"} disabled={!!busy} />
           </div>
         </div>
 

@@ -1,9 +1,9 @@
 import React, { useState, useCallback, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Plus, Trash2, RotateCcw, Eye, CheckCircle, XCircle, Clock, DollarSign, Download, Loader2 } from "lucide-react";
+import { Plus, Trash2, RotateCcw, Eye, CheckCircle, XCircle, Clock, DollarSign, Download } from "lucide-react";
 import toast from "react-hot-toast";
 import { Layout } from "../components/layout";
-import { Button, StatisticsCard, DataTable, Badge } from "../components/ui";
+import { StatisticsCard, DataTable, Badge } from "../components/ui";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
 import type { Column, TableFilter } from "../components/ui/DataTable";
 import { DateRangeFilter, type DateRange } from "../components/filters";
@@ -17,6 +17,7 @@ import { methodOf } from "../components/payments/paymentLabels";
 import { RETURN_STATUS } from "../components/returns/returnLabels";
 import type { Return } from "../types";
 import { ReturnStatus } from "../types";
+import { HeaderAction } from '../components/common/HeaderAction';
 
 const STATUS_OPTIONS = [
   { value: "", label: "جميع الحالات" },
@@ -207,14 +208,8 @@ const Returns: React.FC = () => {
               }}
               size="sm"
             />
-            <Button variant="outline" onClick={handleExport} disabled={exporting} className="flex items-center gap-2">
-              {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-              Excel
-            </Button>
-            <Button onClick={() => navigate("/returns/create")} className="flex items-center gap-2">
-              <Plus className="h-4 w-4" />
-              إرجاع جديد
-            </Button>
+            <HeaderAction icon={Download} label="Excel" onClick={handleExport} busy={exporting} />
+            <HeaderAction icon={Plus} label="إرجاع جديد" onClick={() => navigate("/returns/create")} tone="primary" />
           </div>
         </div>
 

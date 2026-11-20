@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Package, DollarSign, AlertTriangle, Edit, Trash2, Printer } from 'lucide-react';
+import { ArrowLeft, Package, DollarSign, AlertTriangle, Edit, Trash2, Tag } from 'lucide-react';
 import { Layout } from '../components/layout';
 import { Button, Card, ConfirmDialog } from '../components/ui';
 import { PermissionGuard } from '../components/common/PermissionGuard';
@@ -13,6 +13,7 @@ import { printBarcode } from '../services/smartPrintService';
 import toast from 'react-hot-toast';
 import { PrintBarcodeModal } from '../components/modals/PrintBarcodeModal';
 import { formatQty, unitOf } from '../utils/quantity';
+import { HeaderAction } from '../components/common/HeaderAction';
 
 const ProductDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -164,8 +165,8 @@ const ProductDetails: React.FC = () => {
     <Layout>
       <div className="w-full space-y-6">
         {/* Clean Header Section */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center space-x-4 space-x-reverse">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-3">
             <Button
               variant="ghost"
               onClick={() => navigate('/products')}
@@ -181,32 +182,13 @@ const ProductDetails: React.FC = () => {
               <p className="text-gray-500 text-sm">تفاصيل المنتج</p>
             </div>
           </div>
-          <div className="flex items-center space-x-2 space-x-reverse">
-            <Button
-              onClick={handlePrintBarcode}
-              variant="outline"
-              size="sm"
-              className="text-purple-600 border-purple-200 hover:bg-purple-50"
-            >
-              <Printer className="w-4 h-4 ml-1" />
-              طباعة الباركود
-            </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <HeaderAction icon={Tag} label="طباعة الباركود" onClick={handlePrintBarcode} />
             <PermissionGuard permission="canEditProducts">
-              <Button onClick={handleEdit} size="sm" className="bg-blue-600 hover:bg-blue-700 text-white">
-                <Edit className="w-4 h-4 ml-1" />
-                تعديل
-              </Button>
+              <HeaderAction icon={Edit} label="تعديل" onClick={handleEdit} tone="primary" />
             </PermissionGuard>
             <PermissionGuard permission="canDeleteProducts">
-              <Button
-                onClick={handleDelete}
-                variant="outline"
-                size="sm"
-                className="border-red-200 text-red-600 hover:bg-red-50"
-              >
-                <Trash2 className="w-4 h-4 ml-1" />
-                حذف
-              </Button>
+              <HeaderAction icon={Trash2} label="حذف المنتج" onClick={handleDelete} tone="danger" iconOnly />
             </PermissionGuard>
           </div>
         </div>

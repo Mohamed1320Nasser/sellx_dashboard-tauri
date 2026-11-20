@@ -30,6 +30,7 @@ import type { Shift, CashMovement } from "../services/shiftService";
 import { useNavigate } from "react-router-dom";
 import { printShiftReport } from "../services/printService";
 import toast from "react-hot-toast";
+import { HeaderAction } from '../components/common/HeaderAction';
 
 const METHOD_LABELS: Record<string, string> = {
   CASH: "نقدي",
@@ -381,24 +382,9 @@ const Shifts: React.FC = () => {
                     </p>
                   </div>
                 </div>
-                <div className="flex space-x-2 space-x-reverse">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowCashMovementModal(true)}
-                  >
-                    <ArrowRightLeft className="w-4 h-4 ml-1" />
-                    حركة نقدية
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowCloseModal(true)}
-                    className="text-red-600 border-red-300 hover:bg-red-50"
-                  >
-                    <LogOut className="w-4 h-4 ml-1" />
-                    إغلاق الوردية
-                  </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <HeaderAction icon={ArrowRightLeft} label="حركة نقدية" onClick={() => setShowCashMovementModal(true)} />
+                  <HeaderAction icon={LogOut} label="إغلاق الوردية" onClick={() => setShowCloseModal(true)} tone="danger" />
                 </div>
               </div>
 

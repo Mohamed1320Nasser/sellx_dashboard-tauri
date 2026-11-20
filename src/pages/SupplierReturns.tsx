@@ -1,10 +1,10 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Download, Eye, Hash, Loader2, PackageMinus, RotateCcw, Trash2, Wallet } from "lucide-react";
+import { Download, Eye, Hash, PackageMinus, RotateCcw, Trash2, Wallet } from "lucide-react";
 import toast from "react-hot-toast";
 import { Layout } from "../components/layout";
-import { Button, StatisticsCard, DataTable } from "../components/ui";
+import { StatisticsCard, DataTable } from "../components/ui";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
 import type { Column } from "../components/ui/DataTable";
 import { DateRangeFilter, type DateRange } from "../components/filters";
@@ -15,6 +15,7 @@ import { supplierReturnService } from "../services/supplierReturnService";
 import { useDeleteSupplierReturn } from "../hooks/api/usePurchases";
 import { methodOf } from "../components/payments/paymentLabels";
 import { exportReportToExcel, type ReportColumn } from "../utils/reportExport";
+import { HeaderAction } from '../components/common/HeaderAction';
 
 type Row = any;
 
@@ -167,10 +168,7 @@ const SupplierReturns: React.FC = () => {
               }}
               size="sm"
             />
-            <Button variant="outline" onClick={handleExport} disabled={exporting} className="flex items-center gap-2">
-              {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-              Excel
-            </Button>
+            <HeaderAction icon={Download} label="Excel" onClick={handleExport} busy={exporting} />
           </div>
         </div>
 

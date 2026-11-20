@@ -24,6 +24,7 @@ import { formatCurrency } from "../utils";
 import { SALE_METHOD_LABELS } from "../utils/paymentMethods";
 import { formatDateTime } from "../utils/dateUtils";
 import { exportReportToExcel, exportReportToPdf, type ReportColumn } from "../utils/reportExport";
+import { HeaderAction } from '../components/common/HeaderAction';
 
 const isChange = (v: unknown): v is { before: unknown; after: unknown } =>
   !!v && typeof v === "object" && !Array.isArray(v) && "before" in (v as object) && "after" in (v as object);
@@ -246,13 +247,9 @@ const AuditLog: React.FC = () => {
               من فعل ماذا ومتى. لا يمكن تعديل السجل أو حذفه، ويُحفظ لمدة سنتين.
             </p>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => exportAs("excel")} disabled={exporting} className="flex items-center gap-2">
-              <FileSpreadsheet className="h-4 w-4" /> Excel
-            </Button>
-            <Button variant="outline" onClick={() => exportAs("pdf")} disabled={exporting} className="flex items-center gap-2">
-              <FileText className="h-4 w-4" /> PDF
-            </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <HeaderAction icon={FileSpreadsheet} label="Excel" onClick={() => exportAs("excel")} busy={exporting} />
+            <HeaderAction icon={FileText} label="PDF" onClick={() => exportAs("pdf")} disabled={exporting} />
           </div>
         </div>
 

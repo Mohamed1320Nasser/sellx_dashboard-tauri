@@ -20,7 +20,6 @@ import {
   HandCoins,
   History,
   ChevronLeft,
-  Loader2,
 } from 'lucide-react';
 import { Layout } from '../layout';
 import { Button, Card, DataTable, Badge, StatsCard } from '../ui';
@@ -41,6 +40,7 @@ import {
 } from './statementData';
 import { downloadStatementPdf, printStatementA4 } from './statementExport';
 import { formatTableDate } from '../../utils/dateUtils';
+import { HeaderAction, HeaderDivider } from '../common/HeaderAction';
 
 const BADGE: Record<string, 'default' | 'primary' | 'success' | 'warning' | 'error'> = {
   OPENING: 'default',
@@ -192,9 +192,6 @@ const StatementView: React.FC<{ kind: StatementKind; id: number }> = ({ kind, id
     [statement, rows, range, party, closing, companyName]
   );
 
-  const ActionIcon = ({ what, icon: Icon }: { what: 'pdf' | 'print' | 'excel'; icon: React.ComponentType<any> }) =>
-    busy === what ? <Loader2 className="w-4 h-4 ml-1 animate-spin" /> : <Icon className="w-4 h-4 ml-1" />;
-
   return (
     <Layout>
       <div className="space-y-5">
@@ -214,24 +211,17 @@ const StatementView: React.FC<{ kind: StatementKind; id: number }> = ({ kind, id
               <p className="text-gray-600 mt-0.5 truncate">{party?.name || '...'}</p>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <HeaderAction icon={Printer} label="طباعة A4" onClick={() => run('print')} busy={busy === 'print'} disabled={!statement || !!busy} />
+            <HeaderAction icon={FileText} label="PDF" onClick={() => run('pdf')} busy={busy === 'pdf'} disabled={!statement || !!busy} />
+            <HeaderAction icon={FileSpreadsheet} label="Excel" onClick={() => run('excel')} busy={busy === 'excel'} disabled={!statement || !!busy} />
+            <HeaderAction icon={RefreshCw} label="تحديث" onClick={() => refetch()} busy={isFetching} iconOnly />
             {isClient && closing > 0.005 && (
-              <Button onClick={() => setCollecting(true)} className="flex items-center">
-                <HandCoins className="w-4 h-4 ml-1" /> تحصيل من الحساب
-              </Button>
+              <>
+                <HeaderDivider />
+                <HeaderAction icon={HandCoins} label="تحصيل من الحساب" onClick={() => setCollecting(true)} tone="primary" />
+              </>
             )}
-            <Button variant="outline" onClick={() => run('print')} disabled={!statement || !!busy} className="flex items-center">
-              <ActionIcon what="print" icon={Printer} /> طباعة A4
-            </Button>
-            <Button variant="outline" onClick={() => run('pdf')} disabled={!statement || !!busy} className="flex items-center">
-              <ActionIcon what="pdf" icon={FileText} /> PDF
-            </Button>
-            <Button variant="outline" onClick={() => run('excel')} disabled={!statement || !!busy} className="flex items-center">
-              <ActionIcon what="excel" icon={FileSpreadsheet} /> Excel
-            </Button>
-            <Button variant="outline" onClick={() => refetch()} disabled={isFetching} className="flex items-center" aria-label="تحديث">
-              <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
-            </Button>
           </div>
         </div>
 
