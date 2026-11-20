@@ -290,7 +290,8 @@ const Sales: React.FC = () => {
   const paidSales = summary?.paidCount ?? 0;
   const partialSales = summary?.partialCount ?? 0;
   const unpaidSales = summary?.unpaidCount ?? 0;
-  const outstanding = Math.max(0, (summary?.totalAmount ?? 0) - (summary?.paidAmount ?? 0));
+  // the server counts returns taken back on these invoices
+  const outstanding = (summary as any)?.remainingAmount ?? Math.max(0, (summary?.totalAmount ?? 0) - (summary?.paidAmount ?? 0));
 
   return (
     <Layout>

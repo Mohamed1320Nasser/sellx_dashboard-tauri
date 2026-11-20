@@ -1,31 +1,27 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Save, X, RotateCcw, Plus, Minus, Search, Package } from "lucide-react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import {
+  AlertTriangle, ArrowLeft, Save, X, RotateCcw, Plus, Minus, Search, Package, Loader2, FileText, Info,
+} from "lucide-react";
 import { Layout } from "../components/layout";
-import { Button, Input, Select, Card } from "../components/ui";
+import { Button, Input, Card, Badge } from "../components/ui";
 import { useSessionAuthStore } from "../stores/sessionAuthStore";
 import { useCreateReturn } from "../hooks/api/useReturns";
 import { useSales } from "../hooks/api/useSales";
-import { useForm } from "react-hook-form";
-import { formatCurrency, formatNumber } from "../utils/currencyUtils";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
+import { useCurrentShift } from "../hooks/api/useShifts";
+import { formatCurrency } from "../utils/currencyUtils";
 import toast from "react-hot-toast";
 import { useQuery } from "@tanstack/react-query";
 import { saleService } from "../services/saleService";
-import QtyInput from '../components/ui/QtyInput';
-import { addQty, allowsDecimal, cartCountLabel, formatQty, qtyTimes, subQty, sumQty, toQty, unitOf } from '../utils/quantity';
+import QtyInput from "../components/ui/QtyInput";
+import { addQty, allowsDecimal, cartCountLabel, formatQty, qtyTimes, subQty, sumQty, toQty, unitOf } from "../utils/quantity";
+import { METHOD } from "../components/payments/paymentLabels";
+import type { PaymentMethodCode } from "../services/paymentService";
+import { salePaymentLabel } from "../utils/paymentMethods";
+import { CONDITIONS, defaultRefundMethod, isUnsellable, type ItemCondition } from "../components/returns/returnLabels";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
-
-const returnSchema = z.object({
-  originalSaleId: z.number().min(1, "رقم البيع الأصلي مطلوب"),
-  reason: z.string().optional(),
-  notes: z.string().optional(),
-  refundAmount: z.number().min(0, "مبلغ الاسترداد يجب أن يكون موجب").optional(),
-});
-
-type ReturnFormData = z.infer<typeof returnSchema>;
+const dateOf = (d?: string) => (d ? new Date(d).toLocaleDateString("en-GB") : "");
 
 interface ReturnItem {
   productId: number;
@@ -34,49 +30,127 @@ interface ReturnItem {
   unitPrice: number;
   total: number;
   reason?: string;
+  condition: ItemCondition;
   allowDecimalQty?: boolean;
   unit?: string | null;
 }
 
+const PAY_STATUS: Record<string, { label: string; variant: "success" | "warning" | "error" }> = {
+  PAID: { label: "مدفوعة", variant: "success" },
+  PARTIAL: { label: "مدفوعة جزئياً", variant: "warning" },
+  UNPAID: { label: "غير مدفوعة", variant: "error" },
+};
+
+/** Finds the invoice to return from: by number, customer name or phone, any date */
+const SalePicker: React.FC<{ companyId: number; onPick: (id: number) => void }> = ({ companyId, onPick }) => {
+  const [text, setText] = useState("");
+  const [search, setSearch] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(text.trim()), 300);
+    return () => clearTimeout(t);
+  }, [text]);
+  const { data, isFetching } = useSales({ companyId, page: 1, limit: 8, ...(search && { search }) });
+  const list: any[] = (data as any)?.data?.list || [];
+
+  return (
+    <div>
+      <label className="mb-1 block text-sm font-medium text-gray-700">
+        الفاتورة الأصلية <span className="text-red-500">*</span>
+      </label>
+      <div className="relative">
+        <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+        <input
+          autoFocus
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="ابحث برقم الفاتورة أو اسم العميل أو رقم هاتفه"
+          className="w-full rounded-lg border border-gray-300 py-2.5 pl-9 pr-9 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+        />
+        {isFetching && <Loader2 className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-gray-400" />}
+      </div>
+      <p className="mt-1 text-xs text-gray-500">{search ? "نتائج البحث" : "أحدث الفواتير"}</p>
+      <div className="mt-2 divide-y divide-gray-100 overflow-hidden rounded-lg border border-gray-200">
+        {list.length === 0 && !isFetching ? (
+          <div className="px-4 py-6 text-center text-sm text-gray-500">لا توجد فواتير مطابقة</div>
+        ) : (
+          list.map((sale) => {
+            const st = PAY_STATUS[sale.paymentStatus] || PAY_STATUS.PAID;
+            return (
+              <button
+                key={sale.id}
+                type="button"
+                onClick={() => onPick(sale.id)}
+                className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5 text-right transition hover:bg-primary-50"
+              >
+                <span className="font-mono text-sm font-semibold text-gray-900" dir="ltr">{sale.receiptNumber}</span>
+                <span className="min-w-0 flex-1 truncate text-sm text-gray-700">
+                  {sale.client?.name || sale.clientName || "عميل نقدي"}
+                  {sale.client?.phone && <span className="mr-2 text-xs text-gray-400" dir="ltr">{sale.client.phone}</span>}
+                </span>
+                <span className="text-xs text-gray-500" dir="ltr">{dateOf(sale.saleDate || sale.createdAt)}</span>
+                <span className="text-sm font-semibold text-gray-900">{formatCurrency(Number(sale.totalAmount))}</span>
+                <Badge variant={st.variant}>{st.label}</Badge>
+              </button>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+};
+
 const ReturnsCreate: React.FC = () => {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const { company, user } = useSessionAuthStore();
   const companyId = company?.companyId || company?.company?.id;
 
-  // Form state
-  const [items, setItems] = useState<ReturnItem[]>([]);
-  const [selectedSale, setSelectedSale] = useState<any>(null);
   // Managers can approve right away; a cashier's return waits for a manager
   const canApprove = user?.role === "MANAGER" || user?.role === "ADMIN";
   const [completeNow, setCompleteNow] = useState(true);
-  const productsRef = React.useRef<HTMLDivElement>(null);
+  const [saleId, setSaleId] = useState<number | null>(Number(params.get("saleId")) || null);
+  const [items, setItems] = useState<ReturnItem[]>([]);
+  const [reason, setReason] = useState("");
+  const [notes, setNotes] = useState("");
+  const [refundText, setRefundText] = useState<string | null>(null); // null = the suggested full refund
+  const [refundMethod, setRefundMethod] = useState("CASH");
   const [productSearch, setProductSearch] = useState("");
+  const productsRef = React.useRef<HTMLDivElement>(null);
 
-  // Fetch data
-  const { data: salesData } = useSales({
-    companyId: companyId!,
-    page: 1,
-    limit: 100,
-  });
-
-  // Full invoice: what was already returned and what the client still owes on it
-  const { data: saleDetails } = useQuery({
-    queryKey: ["sale", selectedSale?.id, companyId],
-    queryFn: () => saleService.getById(String(selectedSale.id), companyId!),
-    enabled: !!selectedSale?.id && !!companyId,
+  // The full invoice: lines, what was already returned and what the client still owes on it
+  const { data: sale, isLoading: saleLoading } = useQuery({
+    queryKey: ["sale", saleId, companyId],
+    queryFn: () => saleService.getById(String(saleId), companyId!),
+    enabled: !!saleId && !!companyId,
     select: (data: any) => data?.data || data,
   });
+  const shift = useCurrentShift(companyId || 0);
+  const hasShift = !!(shift.data as any)?.hasOpenShift;
+
+  useEffect(() => {
+    if (sale?.id) setRefundMethod(defaultRefundMethod(sale));
+  }, [sale?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const pickSale = (id: number) => {
+    setSaleId(id);
+    setItems([]);
+    setRefundText(null);
+    setTimeout(() => productsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 300);
+  };
+  const clearSale = () => {
+    setSaleId(null);
+    setItems([]);
+    setRefundText(null);
+  };
 
   // Price the customer actually paid per unit: line price with the invoice discount and tax spread over it
   const priceFactor = useMemo(() => {
-    const sale = saleDetails || selectedSale;
     const subtotal = Number(sale?.subtotal) || 0;
     if (subtotal <= 0) return 1;
     return (subtotal - (Number(sale?.discountAmount) || 0) + (Number(sale?.taxAmount) || 0)) / subtotal;
-  }, [saleDetails, selectedSale]);
+  }, [sale]);
 
-  const saleLines = (productId: any) =>
-    (selectedSale?.items || []).filter((item: any) => item.product.id === productId);
+  const saleLines = (productId: any) => (sale?.items || []).filter((item: any) => item.product.id === productId);
   const soldQtyOf = (productId: any) => sumQty(saleLines(productId).map((l: any) => l.quantity));
   const unitPriceOf = (productId: any) => {
     const lines = saleLines(productId);
@@ -85,581 +159,461 @@ const ReturnsCreate: React.FC = () => {
     return qty ? round2((value / qty) * priceFactor) : 0;
   };
   const maxQtyOf = (productId: any) =>
-    Math.max(0, subQty(soldQtyOf(productId), saleDetails?.returnedQuantities?.[productId] || 0));
+    Math.max(0, subQty(soldQtyOf(productId), sale?.returnedQuantities?.[productId] || 0));
 
-  // Mutations
   const createReturnMutation = useCreateReturn();
 
-  // Main form
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-    setValue,
-    watch,
-  } = useForm<ReturnFormData>({
-    resolver: zodResolver(returnSchema),
-  });
-
-
-  // Add item to return
   const addItem = (product: any) => {
-    const existingItem = items.find(item => item.productId === product.id);
-    let newItems;
-    
+    const existing = items.find((item) => item.productId === product.id);
     const maxQuantity = maxQtyOf(product.id);
     if (maxQuantity <= 0) {
       toast.error("تم إرجاع كل الكمية المباعة من هذا المنتج");
       return;
     }
-
-    if (existingItem) {
-      // Check if we can increment the quantity
-      if (existingItem.quantity >= maxQuantity || existingItem.allowDecimalQty) {
-        return; // Can't add more than the original sale quantity; weighed goods are typed
-      }
-      const next = Math.min(maxQuantity, addQty(existingItem.quantity, 1));
-      newItems = items.map(item =>
-        item.productId === product.id
-          ? { ...item, quantity: next, total: qtyTimes(next, item.unitPrice) }
-          : item
-      );
-    } else {
-      const price = unitPriceOf(product.id);
-      const weighed = allowsDecimal(product);
-      // Weighed goods start with all that is left to return; the cashier can type less
-      const quantity = weighed ? maxQuantity : 1;
-      newItems = [...items, {
-        productId: product.id,
-        productName: product.name,
-        quantity,
-        unitPrice: price,
-        total: qtyTimes(quantity, price),
-        allowDecimalQty: weighed,
-        unit: unitOf(product) || null,
-      }];
+    if (existing) {
+      // weighed goods are typed; whole pieces go up by one
+      if (existing.quantity >= maxQuantity || existing.allowDecimalQty) return;
+      const next = Math.min(maxQuantity, addQty(existing.quantity, 1));
+      setItems(items.map((item) => (item.productId === product.id ? { ...item, quantity: next, total: qtyTimes(next, item.unitPrice) } : item)));
+      return;
     }
-    
-    setItems(newItems);
+    const price = unitPriceOf(product.id);
+    const weighed = allowsDecimal(product);
+    // Weighed goods start with all that is left to return; the cashier can type less
+    const quantity = weighed ? maxQuantity : 1;
+    setItems([
+      ...items,
+      {
+        productId: product.id, productName: product.name, quantity, unitPrice: price, total: qtyTimes(quantity, price),
+        condition: "NEW", allowDecimalQty: weighed, unit: unitOf(product) || null,
+      },
+    ]);
   };
 
-  // Remove item from return
-  const removeItem = (productId: number) => {
-    const newItems = items.filter(item => item.productId !== productId);
-    setItems(newItems);
-  };
+  const removeItem = (productId: number) => setItems(items.filter((item) => item.productId !== productId));
 
-  // Update item quantity
   const updateQuantity = (productId: number, quantity: number) => {
     if (quantity <= 0) {
       removeItem(productId);
       return;
     }
-    
-    // Limit quantity to what is still returnable on the invoice
-    const maxQuantity = maxQtyOf(productId);
-    if (quantity > maxQuantity) {
-      quantity = maxQuantity;
-    }
-    
-    const newItems = items.map(item =>
-      item.productId === productId
-        ? { ...item, quantity, total: qtyTimes(quantity, item.unitPrice) }
-        : item
-    );
-    
-    setItems(newItems);
+    const q = Math.min(quantity, maxQtyOf(productId));
+    setItems(items.map((item) => (item.productId === productId ? { ...item, quantity: q, total: qtyTimes(q, item.unitPrice) } : item)));
   };
+  const setCondition = (productId: number, condition: ItemCondition) =>
+    setItems(items.map((item) => (item.productId === productId ? { ...item, condition } : item)));
 
-  // Check if product is selected
-  const isProductSelected = (productId: number) => {
-    return items.some(item => item.productId === productId);
-  };
-
-  // Get selected quantity
-  const getSelectedQuantity = (productId: number) => {
-    const item = items.find(item => item.productId === productId);
-    return item ? item.quantity : 0;
-  };
-
-  // Handle return submission
-  const handleReturnSubmit = async (data: ReturnFormData) => {
-    if (items.length === 0) {
-      toast.error("يجب إضافة منتجات للإرجاع");
-      return;
-    }
-
-    if (!selectedSale) {
-      toast.error("يجب اختيار البيع الأصلي");
-      return;
-    }
-
-    try {
-      const returnData = {
-        originalSaleId: data.originalSaleId,
-        clientId: selectedSale.clientId,
-        reason: data.reason,
-        notes: data.notes,
-        refundAmount: data.refundAmount,
-        completeNow: canApprove && completeNow,
-        items: items.map(item => ({
-          productId: String(item.productId),
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          reason: item.reason,
-        })),
-        companyId: companyId!,
-      };
-
-      await createReturnMutation.mutateAsync(returnData);
-      navigate('/returns');
-    } catch {
-      // the mutation already showed the server's message
-    }
-  };
-
-
-  // Handle sale selection
-  const handleSaleSelection = (saleId: string) => {
-    const sales = salesData?.data?.list || [];
-    const sale = sales.find((s: any) => s.id.toString() === saleId);
-    setSelectedSale(sale);
-    setValue("originalSaleId", parseInt(saleId));
-    setItems([]); // Clear existing items when sale changes
-    // the products to return are further down: bring them into view
-    if (sale) setTimeout(() => productsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
-  };
-
-  // Return all items from the sale
   const returnAllItems = () => {
-    if (!selectedSale || !selectedSale.items) return;
-    
-    const productIds = [...new Set(selectedSale.items.map((item: any) => item.product.id))];
-    const allItems = productIds
+    if (!sale?.items) return;
+    const productIds = [...new Set(sale.items.map((item: any) => item.product.id))];
+    const all = productIds
       .map((productId: any) => {
         const line = saleLines(productId)[0];
         const quantity = maxQtyOf(productId);
         const price = unitPriceOf(productId);
         return {
-          productId,
-          productName: line.product.name,
-          quantity,
-          unitPrice: price,
-          total: qtyTimes(quantity, price),
-          reason: "إرجاع كامل للفاتورة",
-          allowDecimalQty: allowsDecimal(line.product),
-          unit: unitOf(line.product) || null,
+          productId, productName: line.product.name, quantity, unitPrice: price, total: qtyTimes(quantity, price),
+          reason: "إرجاع كامل للفاتورة", condition: "NEW" as ItemCondition,
+          allowDecimalQty: allowsDecimal(line.product), unit: unitOf(line.product) || null,
         };
       })
       .filter((item: any) => item.quantity > 0);
-
-    if (allItems.length === 0) {
+    if (all.length === 0) {
       toast.error("تم إرجاع كل أصناف هذه الفاتورة من قبل");
       return;
     }
-    setItems(allItems);
+    setItems(all);
   };
 
-  // Clear all selected items
-  const clearAllItems = () => {
-    setItems([]);
-    setValue("refundAmount", 0);
-  };
-
-  // Handle cancel
-  const handleCancel = () => {
-    navigate('/returns');
-  };
-
-
-  // Sales options
-  const salesOptions = ((salesData as any)?.data?.list || []).map((sale: any) => ({
-    value: sale.id.toString(),
-    label: `${sale.receiptNumber} - ${sale.client?.name || 'عميل نقدي'} - ${formatCurrency(sale.totalAmount)}`,
-  }));
-
-  // Filter products based on search (only from selected sale)
   const filteredProducts = useMemo(() => {
-    if (!selectedSale) {
-      return [];
-    }
-    
-    const saleItems = selectedSale.items || [];
-    
-    return saleItems.filter((item: any) => {
-      const matchesSearch = item.product.name.toLowerCase().includes(productSearch.toLowerCase()) ||
-                           item.product.sku?.toLowerCase().includes(productSearch.toLowerCase());
-      
-      return matchesSearch;
-    });
-  }, [selectedSale, productSearch]);
+    const q = productSearch.trim().toLowerCase();
+    return (sale?.items || []).filter(
+      (item: any) => !q || item.product.name.toLowerCase().includes(q) || item.product.sku?.toLowerCase().includes(q)
+    );
+  }, [sale, productSearch]);
+  // one card per product even when the invoice has it on several lines
+  const productCards = useMemo(() => {
+    const seen = new Set();
+    return filteredProducts.filter((item: any) => (seen.has(item.product.id) ? false : (seen.add(item.product.id), true)));
+  }, [filteredProducts]);
 
-  // Product options for display
-  const productOptions = filteredProducts.map((item: any) => ({
-    value: item.product.id,
-    label: `${item.product.name} - ${formatCurrency(unitPriceOf(item.product.id))} (باع: ${formatQty(item.quantity, unitOf(item.product))})`,
-    product: item.product,
-  }));
-
-  // Calculate totals
+  // Money: cash can only go back for the part the customer paid; the rest comes off his debt
   const subtotal = round2(items.reduce((sum, item) => sum + item.total, 0));
-  // Cash can only be given back for the part the customer paid; the rest reduces his debt
-  const stillOwed = Number(saleDetails?.remainingAmount) || 0;
+  const stillOwed = Number(sale?.remainingAmount) || 0;
   const maxRefund = round2(Math.max(0, subtotal - stillOwed));
-  const refundAmount = watch("refundAmount") ?? maxRefund;
+  const refundAmount = refundText === null ? maxRefund : Math.max(0, Number(refundText) || 0);
+  const debtCut = round2(Math.max(0, subtotal - refundAmount));
+  const refundTooHigh = refundAmount > maxRefund + 0.001;
+  const writtenOff = items.filter((i) => isUnsellable(i.condition));
 
-  // Suggest the full allowed refund whenever the items change
-  useEffect(() => {
-    setValue("refundAmount", maxRefund);
-  }, [maxRefund, setValue]);
+  const approveNow = canApprove && completeNow;
+  const needsShift = approveNow && refundAmount > 0 && refundMethod === "CASH";
+  const blockedByShift = needsShift && !hasShift && !shift.isLoading;
+  const canSubmit = !!sale && items.length > 0 && !refundTooHigh && !blockedByShift && !createReturnMutation.isPending;
+
+  const submit = async () => {
+    if (!sale) return toast.error("اختر الفاتورة الأصلية أولاً");
+    if (items.length === 0) return toast.error("اختر المنتجات المرتجعة");
+    if (refundTooHigh) return toast.error(`أقصى مبلغ يمكن رده ${formatCurrency(maxRefund)}`);
+    try {
+      const created: any = await createReturnMutation.mutateAsync({
+        originalSaleId: sale.id,
+        clientId: sale.clientId || undefined,
+        reason: reason.trim() || undefined,
+        notes: notes.trim() || undefined,
+        refundAmount,
+        ...(refundAmount > 0 && { refundMethod }),
+        completeNow: approveNow,
+        items: items.map((item) => ({
+          productId: String(item.productId),
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          reason: item.reason,
+          condition: item.condition,
+        })),
+        companyId: companyId!,
+      });
+      const id = created?.data?.id || created?.id;
+      navigate(id ? `/returns/${id}` : "/returns");
+    } catch {
+      // the mutation already showed the server's message
+    }
+  };
 
   return (
     <Layout>
       <div className="w-full space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4 space-x-reverse">
-            <Button
-              variant="ghost"
-              onClick={() => navigate('/returns')}
-              className="flex items-center space-x-2 space-x-reverse text-gray-600 hover:text-gray-900"
-            >
-              <ArrowLeft className="w-4 h-4" />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" onClick={() => navigate(-1)} className="flex items-center gap-2 text-gray-600 hover:text-gray-900">
+              <ArrowLeft className="h-4 w-4" />
               <span>العودة</span>
             </Button>
             <div>
               <h1 className="text-2xl font-bold text-gray-900">إرجاع جديد</h1>
-              <p className="text-gray-500 text-sm">إنشاء إرجاع جديد في النظام</p>
+              <p className="text-sm text-gray-500">إرجاع أصناف من فاتورة بيع</p>
             </div>
           </div>
-          <div className="flex items-center space-x-2 space-x-reverse">
-            <Button
-              onClick={handleCancel}
-              variant="outline"
-              className="text-gray-600 hover:text-gray-900"
-            >
-              <X className="w-4 h-4 ml-1" />
+          <div className="flex items-center gap-2">
+            <Button onClick={() => navigate("/returns")} variant="outline" className="text-gray-600 hover:text-gray-900">
+              <X className="ml-1 h-4 w-4" />
               إلغاء
             </Button>
-            <Button
-              onClick={handleSubmit(handleReturnSubmit)}
-              disabled={createReturnMutation.isPending || items.length === 0}
-              className="bg-blue-600 hover:bg-blue-700 text-white"
-            >
-              <Save className="w-4 h-4 ml-1" />
-              {createReturnMutation.isPending ? 'جاري الإنشاء...' : 'إنشاء الإرجاع'}
+            <Button onClick={submit} disabled={!canSubmit}>
+              {createReturnMutation.isPending ? <Loader2 className="ml-1 h-4 w-4 animate-spin" /> : <Save className="ml-1 h-4 w-4" />}
+              {approveNow ? "حفظ واعتماد" : "حفظ المرتجع"}
             </Button>
           </div>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit(handleReturnSubmit)} className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Return Information Card */}
-            <Card padding="lg" className="lg:col-span-2">
-              <div className="space-y-6">
-                <div className="flex items-center mb-4">
-                  <div className="p-2 bg-blue-100 rounded-lg">
-                    <RotateCcw className="w-5 h-5 text-blue-600" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-gray-900 mr-3">معلومات الإرجاع</h3>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          {/* Invoice and details */}
+          <Card padding="lg" className="lg:col-span-2">
+            <div className="space-y-5">
+              <div className="flex items-center gap-3">
+                <div className="rounded-lg bg-primary-100 p-2">
+                  <RotateCcw className="h-5 w-5 text-primary-600" />
                 </div>
+                <h3 className="text-lg font-semibold text-gray-900">معلومات الإرجاع</h3>
+              </div>
 
-                <div className="space-y-4">
-                  {/* Original Sale Selection */}
-                  <div>
-                    <Select
-                      label="البيع الأصلي"
-                      options={salesOptions}
-                      value={watch("originalSaleId")?.toString() || ""}
-                      onChange={handleSaleSelection}
-                      error={errors.originalSaleId?.message}
-                      placeholder="اختر البيع الأصلي..."
-                      required
-                    />
+              {!saleId ? (
+                <SalePicker companyId={companyId!} onPick={pickSale} />
+              ) : saleLoading || !sale ? (
+                <div className="flex items-center gap-2 rounded-lg border border-gray-200 p-4 text-sm text-gray-500">
+                  <Loader2 className="h-4 w-4 animate-spin" /> جارٍ تحميل الفاتورة...
+                </div>
+              ) : (
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-4 w-4 text-gray-500" />
+                      <Link to={`/sales/${sale.id}`} className="whitespace-nowrap font-mono font-semibold text-primary-700 hover:underline" dir="ltr">
+                        {sale.receiptNumber}
+                      </Link>
+                      <span className="text-xs text-gray-500" dir="ltr">{dateOf(sale.saleDate)}</span>
+                    </div>
+                    <button type="button" onClick={clearSale} className="text-xs font-medium text-primary-700 hover:underline">
+                      تغيير الفاتورة
+                    </button>
                   </div>
-
-                  {/* Client Information */}
-                  {selectedSale && (
-                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                      <div className="flex items-center space-x-2 space-x-reverse mb-2">
-                        <div className="p-1.5 bg-gray-100 rounded-lg">
-                          <Package className="w-4 h-4 text-gray-600" />
-                        </div>
-                        <h4 className="text-sm font-medium text-gray-900">معلومات العميل</h4>
-                      </div>
-                      <div className="text-sm text-gray-600">
-                        <p><span className="font-medium">العميل:</span> {selectedSale.client?.name || 'عميل نقدي'}</p>
-                        {selectedSale.client?.phone && (
-                          <p><span className="font-medium">الهاتف:</span> {selectedSale.client.phone}</p>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-4">
                     <div>
-                      <Input
-                        label="سبب الإرجاع"
-                        {...register("reason")}
-                        error={errors.reason?.message}
-                        placeholder="أدخل سبب الإرجاع"
-                      />
+                      <div className="text-xs text-gray-500">العميل</div>
+                      <div className="font-medium text-gray-900">{sale.client?.name || "عميل نقدي"}</div>
+                      {sale.client?.phone && <div className="text-xs text-gray-500" dir="ltr">{sale.client.phone}</div>}
                     </div>
                     <div>
+                      <div className="text-xs text-gray-500">الإجمالي</div>
+                      <div className="font-medium text-gray-900">{formatCurrency(Number(sale.totalAmount))}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-500">طريقة الدفع</div>
+                      <div className="font-medium text-gray-900">{salePaymentLabel(sale)}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-500">المتبقي على العميل</div>
+                      <div className={`font-medium ${stillOwed > 0 ? "text-red-600" : "text-gray-900"}`}>{formatCurrency(stillOwed)}</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <Input label="سبب الإرجاع" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="مثال: مقاس غير مناسب" />
+                <Input label="ملاحظات" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="أي ملاحظات إضافية" />
+              </div>
+
+              {/* Refund */}
+              {sale && items.length > 0 && (
+                <div className="space-y-3 rounded-lg border border-gray-200 p-4">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div>
                       <Input
-                        label="مبلغ الاسترداد"
+                        label="المبلغ المردود للعميل"
                         type="number"
                         step="0.01"
                         min="0"
-                        {...register("refundAmount", { valueAsNumber: true })}
-                        error={errors.refundAmount?.message}
-                        placeholder="0.00"
-                        value={refundAmount}
-                        onChange={(e) => setValue("refundAmount", parseFloat(e.target.value) || 0)}
+                        max={maxRefund}
+                        value={refundText ?? String(maxRefund)}
+                        onChange={(e) => setRefundText(e.target.value)}
+                        error={refundTooHigh ? `أقصى مبلغ يمكن رده ${formatCurrency(maxRefund)}` : undefined}
                       />
-                      <div className="text-xs text-gray-500 mt-1">
-                        قيمة المرتجع: {formatCurrency(subtotal)} — الحد الأقصى للاسترداد النقدي: {formatCurrency(maxRefund)}
-                      </div>
-                      {stillOwed > 0 && subtotal > 0 && (
-                        <div className="text-xs text-amber-700 mt-1">
-                          على الفاتورة مبلغ متبقٍ {formatCurrency(stillOwed)}، يُخصم من قيمة المرتجع من مديونية العميل ولا يُرد نقداً
+                      <p className="mt-1 text-xs text-gray-500">
+                        الحد الأقصى {formatCurrency(maxRefund)}
+                        {stillOwed > 0 && ` (على الفاتورة ${formatCurrency(stillOwed)} غير مدفوعة تُخصم من المديونية أولاً)`}
+                      </p>
+                    </div>
+                    {refundAmount > 0 && (
+                      <div>
+                        <span className="mb-1 block text-sm font-medium text-gray-700">طريقة رد المبلغ</span>
+                        <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="طريقة رد المبلغ">
+                          {(Object.keys(METHOD) as PaymentMethodCode[]).map((code) => {
+                            const m = METHOD[code];
+                            const Icon = m.icon;
+                            const on = refundMethod === code;
+                            return (
+                              <button
+                                key={code}
+                                type="button"
+                                role="radio"
+                                aria-checked={on}
+                                onClick={() => setRefundMethod(code)}
+                                className={`flex items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-sm font-medium transition ${
+                                  on ? "border-primary-500 bg-primary-50 text-primary-800 ring-1 ring-primary-500" : "border-gray-200 text-gray-700 hover:border-gray-300"
+                                }`}
+                              >
+                                <Icon className="h-4 w-4" />
+                                {m.label}
+                              </button>
+                            );
+                          })}
                         </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {canApprove && (
-                    <label className="md:col-span-2 flex items-center gap-2 text-sm text-gray-700">
-                      <input type="checkbox" checked={completeNow} onChange={(e) => setCompleteNow(e.target.checked)} />
-                      اعتماد المرتجع فوراً (إرجاع المخزون وخصم المديونية / الاسترداد الآن)
-                    </label>
-                  )}
-                  <div className="md:col-span-2">
-                    <Input
-                      label="ملاحظات"
-                      {...register("notes")}
-                      error={errors.notes?.message}
-                      placeholder="أدخل أي ملاحظات إضافية"
-                    />
-                  </div>
-                </div>
-              </div>
-            </Card>
-
-            {/* Return Summary Card */}
-            <Card padding="lg">
-              <div className="space-y-6">
-                <div className="flex items-center mb-4">
-                  <div className="p-2 bg-green-100 rounded-lg">
-                    <Package className="w-5 h-5 text-green-600" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-gray-900 mr-3">ملخص الإرجاع</h3>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-600">عدد المنتجات</span>
-                    <span className="font-medium">
-                      {cartCountLabel(items)}
-                    </span>
-                  </div>
-
-                  {items.length > 0 && (
-                    <div className="pt-2 border-t border-gray-200">
-                      <p className="text-xs text-gray-500 mb-2">المنتجات المرتجعة:</p>
-                      <div className={`space-y-1 ${items.length > 3 ? 'max-h-20 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100' : ''}`}>
-                        {items.map((item) => (
-                          <div key={item.productId} className="flex justify-between text-xs">
-                            <span className="text-gray-600 truncate">{item.productName}</span>
-                            <span className="text-gray-900 font-medium">{formatQty(item.quantity, item.unit)}</span>
-                          </div>
-                        ))}
                       </div>
-                    </div>
-                  )}
-
-                  <div className="border-t border-gray-200 pt-4 space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">المجموع الفرعي</span>
-                      <span className="font-medium">{formatCurrency(subtotal)}</span>
-                    </div>
-                    
-                    <div className="flex justify-between text-lg font-semibold border-t border-gray-200 pt-2">
-                      <span>المجموع الكلي</span>
-                      <span className="text-green-600">{formatCurrency(subtotal)}</span>
-                    </div>
+                    )}
                   </div>
+                  {blockedByShift ? (
+                    <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                      <span>
+                        لا توجد وردية مفتوحة لك. المبلغ النقدي يخرج من درج الوردية، فافتح وردية أولاً{" "}
+                        <Link to="/shifts" className="font-semibold underline">من صفحة الورديات</Link>
+                        ، أو اختر طريقة رد أخرى.
+                      </span>
+                    </p>
+                  ) : needsShift ? (
+                    <p className="text-xs text-gray-500">يُخصم المبلغ من درج ورديتك الحالية.</p>
+                  ) : null}
                 </div>
-              </div>
-            </Card>
-          </div>
+              )}
 
-          {/* Product Selection */}
-          <div ref={productsRef} />
-          <Card padding="lg">
-            <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center">
-                  <div className="p-2 bg-purple-100 rounded-lg">
-                    <Package className="w-5 h-5 text-purple-600" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-gray-900 mr-3">اختيار المنتجات للإرجاع</h3>
-                </div>
-                <div className="flex items-center space-x-2 space-x-reverse">
-                  <div className="text-sm text-gray-500">
-                    {filteredProducts.length} منتج متاح
-                  </div>
-                  {selectedSale && (
-                    <>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={returnAllItems}
-                        className="text-green-600 border-green-200 hover:bg-green-50"
-                      >
-                        إرجاع الكل
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={clearAllItems}
-                        className="text-red-600 border-red-200 hover:bg-red-50"
-                      >
-                        مسح الكل
-                      </Button>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {/* Search Controls */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                <div className="relative">
-                  <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                  <Input
-                    placeholder="البحث عن منتج أو رمز المنتج..."
-                    value={productSearch}
-                    onChange={(e) => setProductSearch(e.target.value)}
-                    className="pr-10"
-                  />
-                </div>
-              </div>
-
-              {/* Products Grid */}
-              {!selectedSale ? (
-                <div className="text-center py-8 text-gray-500">
-                  <Package className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                  <p>يرجى اختيار البيع الأصلي أولاً لعرض المنتجات المتاحة للإرجاع</p>
-                </div>
-              ) : productOptions.length > 0 ? (
-                <div className="max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pr-2">
-                    {productOptions.map((option, index) => {
-                      const isSelected = isProductSelected(option.product.id);
-                      const selectedQuantity = getSelectedQuantity(option.product.id);
-                      const originalSaleItem = filteredProducts[index];
-                      const maxQuantity = maxQtyOf(option.product.id);
-                      const canIncrement = selectedQuantity < maxQuantity;
-                      
-                      return (
-                        <div
-                          key={option.value}
-                          className={`border rounded-lg p-4 transition-all cursor-pointer ${
-                            isSelected
-                              ? 'border-blue-500 bg-blue-50 shadow-md'
-                              : 'border-gray-200 hover:border-blue-300 hover:shadow-sm'
-                          }`}
-                          onClick={() => addItem(option.product)}
-                        >
-                          <div className="flex justify-between items-start mb-2">
-                            <div className="flex-1">
-                              <h4 className="font-medium text-gray-900 text-sm mb-1">
-                                {option.product.name}
-                              </h4>
-                              <p className="text-xs text-gray-500 mb-2">
-                                SKU: {option.product.sku}
-                              </p>
-                              <div className="flex items-center justify-between">
-                                <span className="text-sm font-semibold text-green-600">
-                                  {formatCurrency(unitPriceOf(option.product.id))}
-                                </span>
-                                <span className="text-xs text-gray-500">
-                                  باع: {formatQty(soldQtyOf(option.product.id), unitOf(option.product))} — متاح للإرجاع: {formatQty(maxQuantity, unitOf(option.product))}
-                                </span>
-                              </div>
-                              {isSelected && selectedQuantity >= maxQuantity && (
-                                <div className="mt-2 text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded">
-                                  تم الوصول للحد الأقصى
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                          
-                          {isSelected && (
-                            <div className="mt-3 pt-3 border-t border-gray-200">
-                              <div className="flex items-center justify-between">
-                                <span className="text-xs text-gray-600">
-                                  الكمية المختارة: {formatQty(selectedQuantity)}/{formatQty(maxQuantity, unitOf(option.product))}
-                                </span>
-                                <div className="flex items-center space-x-2 space-x-reverse">
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      updateQuantity(option.product.id, selectedQuantity - 1);
-                                    }}
-                                    className="w-6 h-6 p-0"
-                                  >
-                                    <Minus className="w-3 h-3" />
-                                  </Button>
-                                  <span onClick={(e) => e.stopPropagation()}>
-                                    <QtyInput
-                                      product={option.product}
-                                      value={selectedQuantity}
-                                      onChange={(q) => updateQuantity(option.product.id, q)}
-                                      onInvalid={(m) => toast.error(m)}
-                                      aria-label={`كمية ${option.product.name}`}
-                                      className={`${allowsDecimal(option.product) ? "w-16" : "w-10"} rounded border border-gray-200 px-1 text-center text-sm font-medium`}
-                                    />
-                                  </span>
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      updateQuantity(option.product.id, selectedQuantity + 1);
-                                    }}
-                                    disabled={!canIncrement}
-                                    className={`w-6 h-6 p-0 ${!canIncrement ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                  >
-                                    <Plus className="w-3 h-3" />
-                                  </Button>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+              {canApprove ? (
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <input type="checkbox" checked={completeNow} onChange={(e) => setCompleteNow(e.target.checked)} />
+                  اعتماد المرتجع فوراً (إرجاع المخزون وخصم المديونية ورد المبلغ الآن)
+                </label>
               ) : (
-                <div className="text-center py-8">
-                  <Package className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-500">لا توجد منتجات متاحة</p>
-                </div>
+                <p className="flex items-start gap-2 rounded-lg bg-sky-50 px-3 py-2 text-xs text-sky-800">
+                  <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                  يُحفظ المرتجع في انتظار اعتماد المدير؛ يعود المخزون ويُرد المبلغ عند الاعتماد.
+                </p>
               )}
             </div>
           </Card>
-        </form>
 
+          {/* Summary */}
+          <Card padding="lg">
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="rounded-lg bg-green-100 p-2">
+                  <Package className="h-5 w-5 text-green-600" />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900">ملخص الإرجاع</h3>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">عدد المنتجات</span>
+                <span className="font-medium">{cartCountLabel(items)}</span>
+              </div>
+              {items.length > 0 && (
+                <div className={`space-y-1 border-t border-gray-200 pt-2 ${items.length > 4 ? "max-h-28 overflow-y-auto" : ""}`}>
+                  {items.map((item) => (
+                    <div key={item.productId} className="flex justify-between gap-2 text-xs">
+                      <span className="truncate text-gray-600">
+                        {item.productName}
+                        {isUnsellable(item.condition) && <span className="mr-1 text-red-600">({CONDITIONS.find((c) => c.value === item.condition)?.label})</span>}
+                      </span>
+                      <span className="font-medium text-gray-900">{formatQty(item.quantity, item.unit)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="space-y-2 border-t border-gray-200 pt-3 text-sm">
+                <div className="flex justify-between text-base font-semibold">
+                  <span>قيمة المرتجع</span>
+                  <span className="text-gray-900">{formatCurrency(subtotal)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">يُخصم من مديونية العميل</span>
+                  <span className="font-medium text-gray-900">{formatCurrency(debtCut)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">
+                    يُرد للعميل {approveNow ? "الآن" : "عند الاعتماد"}
+                    {refundAmount > 0 && <span className="text-gray-400"> · {METHOD[refundMethod as PaymentMethodCode]?.label}</span>}
+                  </span>
+                  <span className="font-semibold text-green-600">{formatCurrency(refundAmount)}</span>
+                </div>
+              </div>
+              {writtenOff.length > 0 && (
+                <p className="flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  الأصناف التالفة أو المعيبة لا تعود للمخزون، وتُسجَّل في حركات المخزون كمرتجع مشطوب.
+                </p>
+              )}
+            </div>
+          </Card>
+        </div>
+
+        {/* Products */}
+        <div ref={productsRef} />
+        <Card padding="lg">
+          <div className="space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="rounded-lg bg-purple-100 p-2">
+                  <Package className="h-5 w-5 text-purple-600" />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900">المنتجات المرتجعة</h3>
+              </div>
+              {sale && (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-500">{productCards.length} منتج في الفاتورة</span>
+                  <Button type="button" variant="outline" size="sm" onClick={returnAllItems} className="border-green-200 text-green-600 hover:bg-green-50">
+                    إرجاع الكل
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => { setItems([]); setRefundText(null); }} className="border-red-200 text-red-600 hover:bg-red-50">
+                    مسح الكل
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {sale && (
+              <div className="relative max-w-md">
+                <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <Input placeholder="ابحث عن منتج في الفاتورة..." value={productSearch} onChange={(e) => setProductSearch(e.target.value)} className="pr-10" />
+              </div>
+            )}
+
+            {!sale ? (
+              <div className="py-8 text-center text-gray-500">
+                <Package className="mx-auto mb-4 h-12 w-12 text-gray-300" />
+                <p>اختر الفاتورة الأصلية أولاً لعرض أصنافها</p>
+              </div>
+            ) : productCards.length === 0 ? (
+              <div className="py-8 text-center text-gray-500">لا توجد منتجات مطابقة</div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {productCards.map((line: any) => {
+                  const product = line.product;
+                  const selected = items.find((i) => i.productId === product.id);
+                  const qty = selected?.quantity || 0;
+                  const maxQuantity = maxQtyOf(product.id);
+                  const done = maxQuantity <= 0;
+                  return (
+                    <div
+                      key={product.id}
+                      className={`rounded-lg border p-4 transition ${
+                        selected ? "border-primary-500 bg-primary-50/50 shadow-sm" : done ? "border-gray-100 bg-gray-50 opacity-60" : "cursor-pointer border-gray-200 hover:border-primary-300 hover:shadow-sm"
+                      }`}
+                      onClick={() => !selected && !done && addItem(product)}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <h4 className="truncate text-sm font-medium text-gray-900">{product.name}</h4>
+                          {product.sku && <p className="text-xs text-gray-500" dir="ltr">{product.sku}</p>}
+                        </div>
+                        <span className="shrink-0 text-sm font-semibold text-green-600">{formatCurrency(unitPriceOf(product.id))}</span>
+                      </div>
+                      <p className="mt-2 text-xs text-gray-500">
+                        مباع {formatQty(soldQtyOf(product.id), unitOf(product))} · متاح للإرجاع {formatQty(maxQuantity, unitOf(product))}
+                      </p>
+                      {done && !selected && <p className="mt-1 text-xs text-orange-600">تم إرجاع كل الكمية</p>}
+
+                      {selected && (
+                        <div className="mt-3 space-y-2 border-t border-gray-200 pt-3" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs text-gray-600">الكمية</span>
+                            <div className="flex items-center gap-1.5">
+                              <button type="button" onClick={() => updateQuantity(product.id, subQty(qty, 1))} className="flex h-7 w-7 items-center justify-center rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40" aria-label="إنقاص">
+                                <Minus className="h-3.5 w-3.5" />
+                              </button>
+                              <QtyInput
+                                product={product}
+                                value={qty}
+                                onChange={(q) => updateQuantity(product.id, q)}
+                                onInvalid={(m) => toast.error(m)}
+                                aria-label={`كمية ${product.name}`}
+                                className={`${allowsDecimal(product) ? "w-16" : "w-10"} rounded border border-gray-200 px-1 text-center text-sm font-medium`}
+                              />
+                              <button type="button" onClick={() => updateQuantity(product.id, addQty(qty, 1))} disabled={qty >= maxQuantity} className="flex h-7 w-7 items-center justify-center rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40" aria-label="زيادة">
+                                <Plus className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs text-gray-600">حالة الصنف</span>
+                            <div className="flex gap-1">
+                              {CONDITIONS.map((c) => (
+                                <button
+                                  key={c.value}
+                                  type="button"
+                                  onClick={() => setCondition(product.id, c.value)}
+                                  className={`rounded-md border px-2 py-0.5 text-xs transition ${
+                                    selected.condition === c.value
+                                      ? isUnsellable(c.value) ? "border-red-400 bg-red-50 text-red-700" : "border-primary-500 bg-primary-50 text-primary-800"
+                                      : "border-gray-200 text-gray-600 hover:border-gray-300"
+                                  }`}
+                                >
+                                  {c.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between text-xs">
+                            <button type="button" onClick={() => removeItem(product.id)} className="text-red-600 hover:underline">إزالة</button>
+                            <span className="font-semibold text-gray-900">{formatCurrency(selected.total)}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </Card>
       </div>
     </Layout>
   );

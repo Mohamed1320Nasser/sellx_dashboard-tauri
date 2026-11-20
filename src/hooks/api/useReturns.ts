@@ -15,8 +15,8 @@ export const returnKeys = {
     [...returnKeys.lists(), params] as const,
   details: () => [...returnKeys.all, "detail"] as const,
   detail: (id: string) => [...returnKeys.details(), id] as const,
-  statistics: (companyId: number) =>
-    [...returnKeys.all, "statistics", companyId] as const,
+  statistics: (companyId: number, startDate?: string, endDate?: string) =>
+    [...returnKeys.all, "statistics", companyId, startDate || "", endDate || ""] as const,
   bySale: (saleId: number) => [...returnKeys.all, "bySale", saleId] as const,
 };
 
@@ -40,10 +40,10 @@ export const useReturn = (id: string, companyId: number) => {
 };
 
 // Get return statistics
-export const useReturnStatistics = (companyId: number) => {
+export const useReturnStatistics = (companyId: number, startDate?: string, endDate?: string) => {
   return useQuery({
-    queryKey: returnKeys.statistics(companyId),
-    queryFn: () => returnService.getStatistics(companyId),
+    queryKey: returnKeys.statistics(companyId, startDate, endDate),
+    queryFn: () => returnService.getStatistics(companyId, startDate, endDate),
     enabled: !!companyId,
     staleTime: 5 * 60 * 1000, // 5 minutes
   });

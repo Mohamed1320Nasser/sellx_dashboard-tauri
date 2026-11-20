@@ -220,7 +220,7 @@ const SalesDetails: React.FC = () => {
               <p className="text-gray-500 text-sm">تفاصيل عملية البيع</p>
             </div>
           </div>
-          <div className="flex items-center space-x-2 space-x-reverse">
+          <div className="flex flex-wrap items-center gap-2">
             {(sale.remainingAmount ?? 0) > 0.01 && (
               <Button
                 onClick={() => navigate(`/payments/create?saleId=${sale.id}`)}
@@ -231,6 +231,15 @@ const SalesDetails: React.FC = () => {
                 تسجيل دفعة ({formatCurrency(sale.remainingAmount)})
               </Button>
             )}
+            <Button
+              onClick={() => navigate(`/returns/create?saleId=${sale.id}`)}
+              variant="outline"
+              size="sm"
+              className="text-amber-700 border-amber-200 hover:bg-amber-50"
+            >
+              <RotateCcw className="w-4 h-4 ml-1" />
+              إرجاع
+            </Button>
             <Button
               onClick={handlePrintReceipt}
               variant="outline"

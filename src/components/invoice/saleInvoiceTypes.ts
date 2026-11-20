@@ -20,7 +20,7 @@ export interface InvoicePaymentLine {
   amount: number;
 }
 
-export type InvoiceKind = "sale" | "purchase" | "quote";
+export type InvoiceKind = "sale" | "purchase" | "quote" | "return";
 export type PillTone = "green" | "amber" | "red";
 export type InvoiceStatus = "PAID" | "PARTIAL" | "UNPAID";
 
@@ -98,6 +98,8 @@ export interface SaleInvoiceData {
   remainingAmount: number;
   /** payments made after the invoice (the money at the till is part of paidAmount) */
   payments: InvoicePaymentLine[];
+  /** return documents: what the return did instead of paid / remaining ("خُصم من المديونية", "المردود") */
+  returnRows?: { label: string; value: number; tone?: "plain" | "clear" }[];
 
   footerText?: string;
   /** Terms and conditions, from the print settings */

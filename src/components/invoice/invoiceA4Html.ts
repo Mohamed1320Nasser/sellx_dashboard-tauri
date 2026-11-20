@@ -123,7 +123,7 @@ ${A4_SIGNATURE_CSS}
     <div class="doc">
       <div class="doc-title">${esc(d.title)}</div>
       <div class="doc-grid">
-        <span>${isQuote ? "رقم العرض" : "رقم الفاتورة"}</span><b class="num">${esc(d.receiptNumber)}</b>
+        <span>${isQuote ? "رقم العرض" : d.kind === "return" ? "رقم المرتجع" : "رقم الفاتورة"}</span><b class="num">${esc(d.receiptNumber)}</b>
         <span>التاريخ</span><b>${esc(d.dateLabel)}</b>
         <span>الوقت</span><b>${esc(d.timeLabel)}</b>
       </div>
@@ -207,9 +207,11 @@ ${A4_SIGNATURE_CSS}
       ${d.discountAmount > 0 ? row(esc(d.discountLabel || "الخصم").replace(/(\d+(?:\.\d+)?%)/, '<bdi dir="ltr">$1</bdi>'), money(d.discountAmount, true), "t-red") : ""}
       ${d.taxAmount > 0 ? row(`ضريبة القيمة المضافة${d.taxRate ? ` (${d.taxRate}%)` : ""}`, money(d.taxAmount), "t-amber") : ""}
       ${d.additionalFee > 0 ? row(esc(d.additionalFeeLabel || "رسوم إضافية"), money(d.additionalFee)) : ""}
-      ${row(isQuote ? "إجمالي العرض" : "الإجمالي", money(d.totalAmount), "t-grand")}
+      ${row(isQuote ? "إجمالي العرض" : d.kind === "return" ? "قيمة المرتجع" : "الإجمالي", money(d.totalAmount), "t-grand")}
       ${
-        isQuote
+        d.kind === "return"
+          ? (d.returnRows || []).map((r) => row(esc(r.label), money(r.value), r.tone === "clear" ? "t-clear" : "")).join("")
+          : isQuote
           ? ""
           : row("المدفوع", money(d.paidAmount)) +
             (d.returnsAmount > 0 ? row("مرتجعات", money(d.returnsAmount, true), "t-red") : "") +

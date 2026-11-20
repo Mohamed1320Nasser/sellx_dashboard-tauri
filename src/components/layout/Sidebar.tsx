@@ -134,10 +134,16 @@ const navigationItems: NavigationItem[] = [
                 permission: 'canEditProducts',
             },
             {
-                name: 'المرتجعات',
+                name: 'مرتجعات المبيعات',
                 href: '/returns',
                 icon: RotateCcw,
                 permission: 'canViewReturns',
+            },
+            {
+                name: 'مرتجعات المشتريات',
+                href: '/purchases/returns',
+                icon: RotateCcw,
+                permission: 'canCreatePurchases',
             },
         ],
     },

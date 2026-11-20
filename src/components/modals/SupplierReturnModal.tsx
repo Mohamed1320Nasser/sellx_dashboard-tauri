@@ -7,6 +7,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Button, Modal, Select } from "../ui";
 import { formatCurrency } from "../../utils/currencyUtils";
 import { useCreateSupplierReturn } from "../../hooks/api/usePurchases";
+import { useCurrentShift } from "../../hooks/api/useShifts";
 import { addQty, formatQty, normalizeDigits, parseQty, qtyTimes, subQty, unitOf } from "../../utils/quantity";
 
 interface Props {
@@ -20,6 +21,8 @@ const round = (n: number) => Math.round(n * 100) / 100;
 
 export function SupplierReturnModal({ isOpen, onClose, companyId, purchase }: Props) {
   const createReturn = useCreateSupplierReturn();
+  const shift = useCurrentShift(companyId);
+  const hasShift = !!(shift.data as any)?.hasOpenShift;
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [refund, setRefund] = useState("");
@@ -69,6 +72,7 @@ export function SupplierReturnModal({ isOpen, onClose, companyId, purchase }: Pr
   const owed = Math.max(0, Number(purchase?.remainingAmount || 0));
   const maxRefund = round(Math.max(0, value - owed));
   const refundValue = refundTouched ? Number(refund) || 0 : maxRefund;
+  const blockedByShift = refundValue > 0 && refundMethod === "CASH" && !hasShift && !shift.isLoading;
   const refundTooBig = refundValue > maxRefund + 0.01;
   const chosen = rows.filter(r => (quantities[r.productId] || 0) > 0);
 
@@ -158,19 +162,26 @@ export function SupplierReturnModal({ isOpen, onClose, companyId, purchase }: Pr
             onChange={setRefundMethod}
             options={[
               { value: "CASH", label: "نقدي (يدخل درج الوردية)" },
+              { value: "CARD", label: "بطاقة" },
               { value: "BANK_TRANSFER", label: "تحويل بنكي" },
               { value: "MOBILE_WALLET", label: "محفظة إلكترونية" },
             ]}
           />
         )}
 
+        {blockedByShift && (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            لا توجد وردية مفتوحة لك. المبلغ النقدي يدخل درج الوردية، فافتح وردية أولاً من صفحة الورديات، أو اختر طريقة أخرى.
+          </p>
+        )}
+
         <div className="bg-gray-50 rounded-lg p-3 text-sm space-y-1">
           <div className="flex justify-between"><span>قيمة البضاعة المرتجعة</span><span className="font-semibold">{formatCurrency(value)}</span></div>
           <div className="flex justify-between"><span>المستحق للمورد قبل المرتجع</span><span>{formatCurrency(owed)}</span></div>
           <div className="flex justify-between"><span>يُخصم من المستحق</span><span>{formatCurrency(round(value - refundValue))}</span></div>
-          <div className="flex justify-between"><span>يرده المورد نقداً</span><span>{formatCurrency(refundValue)}</span></div>
+          <div className="flex justify-between"><span>يرده المورد{refundValue > 0 ? ` (${refundMethod === "CASH" ? "نقداً" : refundMethod === "CARD" ? "بطاقة" : refundMethod === "BANK_TRANSFER" ? "تحويل بنكي" : "محفظة"})` : ""}</span><span>{formatCurrency(refundValue)}</span></div>
           <p className="text-xs text-gray-500 pt-1">
-            المورد يرد نقداً فقط ما دفعته زيادة عن المستحق عليك. البضاعة تخرج من المخزون فوراً.
+            المورد يرد فقط ما دفعته زيادة عن المستحق عليك. البضاعة تخرج من المخزون فوراً.
           </p>
         </div>
 
@@ -181,7 +192,7 @@ export function SupplierReturnModal({ isOpen, onClose, companyId, purchase }: Pr
           <Button
             className="flex-1"
             onClick={submit}
-            disabled={chosen.length === 0 || refundTooBig || createReturn.isPending}
+            disabled={chosen.length === 0 || refundTooBig || blockedByShift || createReturn.isPending}
           >
             {createReturn.isPending ? "جاري الحفظ..." : "تسجيل المرتجع"}
           </Button>

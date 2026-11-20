@@ -30,6 +30,11 @@ const invalidatePurchaseData = (queryClient: ReturnType<typeof useQueryClient>) 
   queryClient.invalidateQueries({ queryKey: ["supplier-statement"] });
   queryClient.invalidateQueries({ queryKey: ["suppliers"] });
   queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] });
+  // supplier returns move stock and can put cash in (or take it out of) a drawer
+  queryClient.invalidateQueries({ queryKey: ["supplier-returns"] });
+  queryClient.invalidateQueries({ queryKey: ["stockMovements"] });
+  queryClient.invalidateQueries({ queryKey: ["current-shift"] });
+  queryClient.invalidateQueries({ queryKey: ["shifts"] });
 };
 
 export const useCreatePurchase = () => {

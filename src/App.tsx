@@ -55,6 +55,7 @@ import QuoteCreate from './pages/QuoteCreate';
 import QuoteEdit from './pages/QuoteEdit';
 import QuoteView from './pages/QuoteView';
 import Returns from './pages/Returns';
+import SupplierReturns from "./pages/SupplierReturns";
 import ReturnsCreate from './pages/ReturnsCreate';
 import ReturnsDetails from './pages/ReturnsDetails';
 import Absences from './pages/Absences';
@@ -305,6 +306,7 @@ const App: React.FC = () => {
                                         <Route path="/sales/:id" element={<SalesDetails />} />
                                         <Route path="/purchases" element={<Purchases />} />
                                         <Route path="/purchases/create" element={<PurchasesCreate />} />
+                                        <Route path="/purchases/returns" element={<SupplierReturns />} />
                                         <Route path="/purchases/:id" element={<PurchasesDetails />} />
                                         <Route path="/purchases/:id/edit" element={<PurchaseEdit />} />
                                         <Route path="/payments" element={<Payments />} />

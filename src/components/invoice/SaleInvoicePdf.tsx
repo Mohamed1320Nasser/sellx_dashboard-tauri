@@ -585,10 +585,24 @@ export const SaleInvoicePdf: React.FC<{ data: SaleInvoiceData }> = ({ data }) =>
               </View>
             ) : null}
             <View style={styles.grandRow}>
-              <Text style={styles.grandLabel}>{data.kind === "quote" ? "إجمالي العرض" : "الإجمالي"}</Text>
+              <Text style={styles.grandLabel}>{data.kind === "quote" ? "إجمالي العرض" : data.kind === "return" ? "قيمة المرتجع" : "الإجمالي"}</Text>
               <Text style={styles.grandValue}>{money(data.totalAmount)}</Text>
             </View>
-            {data.kind !== "quote" ? (
+            {data.kind === "return" ? (
+              (data.returnRows || []).map((r, i) =>
+                r.tone === "clear" ? (
+                  <View key={i} style={styles.clearRow}>
+                    <Text style={styles.clearText}>{r.label}</Text>
+                    <Text style={styles.clearText}>{money(r.value)}</Text>
+                  </View>
+                ) : (
+                  <View key={i} style={styles.tRow}>
+                    <Text style={styles.tRowLabel}>{r.label}</Text>
+                    <Text style={styles.tRowValue}>{money(r.value)}</Text>
+                  </View>
+                )
+              )
+            ) : data.kind !== "quote" ? (
               <>
                 <View style={styles.tRow}>
                   <Text style={styles.tRowLabel}>المدفوع</Text>

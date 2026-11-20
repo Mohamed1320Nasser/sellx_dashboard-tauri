@@ -1123,6 +1123,8 @@ export interface Return {
   userId: number;
   totalAmount: number;
   refundAmount: number;
+  /** how the refund went back: CASH (out of a drawer), CARD, MOBILE_WALLET, BANK_TRANSFER; null = no refund */
+  refundMethod?: string | null;
   status: ReturnStatus;
   reason?: string;
   notes?: string;
@@ -1135,8 +1137,21 @@ export interface Return {
     id: number;
     receiptNumber: string;
     saleDate: string;
+    paymentMethod?: string;
+    totalAmount?: number;
     items?: SaleItem[];
   };
+  /** the drawer movements of the cash refund (return page) */
+  drawer?: {
+    id: string;
+    type: string;
+    amount: number;
+    reason: string;
+    createdAt: string;
+    shift: { id: string; status: string; register?: { name: string } | null; user?: { fullname: string } | null };
+  }[];
+  /** the viewer may approve / reject (return page) */
+  canManage?: boolean;
   client?: Client;
   user?: {
     id: number;
@@ -1164,6 +1179,7 @@ export interface CreateReturnRequest {
   reason?: string;
   notes?: string;
   refundAmount?: number;
+  refundMethod?: string;
   completeNow?: boolean; // approve in the same step (managers only)
 }
 
@@ -1171,6 +1187,7 @@ export interface UpdateReturnStatusRequest {
   status: ReturnStatus;
   notes?: string;
   refundAmount?: number;
+  refundMethod?: string;
   companyId: number;
 }
 

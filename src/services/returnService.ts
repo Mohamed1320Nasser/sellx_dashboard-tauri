@@ -34,9 +34,9 @@ export const returnService = {
     apiClient.delete(`/return/single/${id}`, { params: { companyId } }),
 
   // Get return statistics
-  getStatistics: async (companyId: number): Promise<ReturnStatistics> => {
+  getStatistics: async (companyId: number, startDate?: string, endDate?: string): Promise<ReturnStatistics> => {
     const response = await apiClient.get("/return/statistics", {
-      params: { companyId },
+      params: { companyId, ...(startDate && { startDate }), ...(endDate && { endDate }) },
     });
 
     // Extract data from the response format: { msg: "ok", status: 200, data: result, error: false }
