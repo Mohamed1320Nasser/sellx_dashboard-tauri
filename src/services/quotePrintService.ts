@@ -3,25 +3,13 @@
  * - A4 print and PDF: the same invoice layout as sales ("عرض سعر")
  * - Thermal: the same receipt as sales, on the printer assigned to quotes
  */
-import { companyService } from './companyService';
+import { loadCompanyProfile as loadCompany } from './companyProfile';
 import { quoteService } from './quoteService';
 import { printReceipt } from './printService';
 import { quoteToReceiptData } from './receiptHtmlTemplate';
 import { usePrinterConfigStore } from '../stores/printerConfigStore';
 import { useSessionAuthStore } from '../stores/sessionAuthStore';
 import { buildSaleInvoicePdf, generateSaleInvoicePdf, printSaleInvoiceA4 } from '../components/invoice/generateSaleInvoicePdf';
-
-/** Full company profile (logo, address, tax number); falls back to what the session has */
-async function loadCompany(): Promise<any> {
-  const session = useSessionAuthStore.getState().company as any;
-  const companyId = session?.companyId || session?.company?.id;
-  try {
-    if (companyId) return await companyService.getProfile(companyId);
-  } catch {
-    /* offline or no access: use the session copy */
-  }
-  return session?.company || session || {};
-}
 
 /** The list may not carry the items: load the full quote when they are missing */
 async function withItems(quote: any): Promise<any> {

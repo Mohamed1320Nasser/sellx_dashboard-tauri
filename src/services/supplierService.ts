@@ -18,6 +18,10 @@ export interface SupplierStatementTransaction {
   /** Raises what the shop owes the supplier (purchases, cash refunded by the supplier) */
   credit: number;
   balance: number;
+  /** what the row opens */
+  link?: { kind: "purchase" | "payment"; id: number | string };
+  /** second line: payment method, transfer number */
+  note?: string;
 }
 
 export interface SupplierStatementResponse {

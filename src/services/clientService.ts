@@ -18,6 +18,10 @@ export interface ClientStatementTransaction {
   debit: number;
   credit: number;
   balance: number;
+  /** what the row opens */
+  link?: { kind: "sale" | "payment" | "return"; id: number | string };
+  /** second line: payment method, transfer number */
+  note?: string;
 }
 
 export interface ClientStatementResponse {
