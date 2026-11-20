@@ -1,6 +1,10 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { resolve } from "path";
+import { readFileSync } from "fs";
+
+// the app version shown to users = package.json (kept equal to the desktop version by release:version)
+const appVersion: string = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")).version;
 
 const host = process.env.TAURI_DEV_HOST;
 
@@ -41,9 +45,7 @@ export default defineConfig(({ mode }) => {
     define: {
       "import.meta.env.VITE_TARGET": JSON.stringify(isTauri ? "desktop" : "web"),
       "import.meta.env.BUILD_TIME": JSON.stringify(new Date().toISOString()),
-      "import.meta.env.APP_VERSION": JSON.stringify(
-        process.env.npm_package_version || "1.0.0"
-      ),
+      "import.meta.env.APP_VERSION": JSON.stringify(appVersion),
     },
     envPrefix: ["VITE_", "TAURI_"],
     optimizeDeps: {

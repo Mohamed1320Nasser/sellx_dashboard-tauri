@@ -1,6 +1,7 @@
 // Application constants
 export const APP_NAME = "SellX";
-export const APP_VERSION = "1.0.0";
+/** the real build version (package.json) */
+export { APP_VERSION } from "../utils/appVersion";
 
 // API related constants
 export const API_ENDPOINTS = {

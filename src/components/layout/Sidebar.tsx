@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom';
+import { APP_VERSION } from '../../utils/appVersion';
 import React, { useRef, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
@@ -450,14 +452,23 @@ const Sidebar: React.FC = () => {
                                     </div>
                                 </div>
 
-                                {/* Toggle Button */}
-                                <button
-                                    onClick={toggleSidebar}
-                                    className="w-full flex items-center justify-center p-2 text-gray-400 hover:bg-secondary-700/50 hover:text-white rounded-lg transition-all duration-200 text-xs"
-                                >
-                                    <Menu className="w-4 h-4 ml-1" />
-                                    <span className="text-xs">طي القائمة</span>
-                                </button>
+                                {/* Toggle + version */}
+                                <div className="flex items-center gap-1">
+                                    <button
+                                        onClick={toggleSidebar}
+                                        className="flex flex-1 items-center justify-center p-2 text-gray-400 hover:bg-secondary-700/50 hover:text-white rounded-lg transition-all duration-200 text-xs"
+                                    >
+                                        <Menu className="w-4 h-4 ml-1" />
+                                        <span className="text-xs">طي القائمة</span>
+                                    </button>
+                                    <Link
+                                        to="/settings/versions"
+                                        title="سجل الإصدارات"
+                                        className="rounded-lg px-2 py-2 text-xs text-gray-400 transition-colors hover:bg-secondary-700/50 hover:text-white"
+                                    >
+                                        الإصدار <bdi dir="ltr">{APP_VERSION}</bdi>
+                                    </Link>
+                                </div>
                             </div>
                         ) : (
                             <div className="p-2">
@@ -465,6 +476,9 @@ const Sidebar: React.FC = () => {
                                 <div className="w-9 h-9 bg-gradient-to-br from-primary-500 to-primary-600 rounded-full flex items-center justify-center mx-auto mb-2 shadow-lg">
                                     <User className="w-4 h-4 text-white" />
                                 </div>
+                                <Link to="/settings/versions" title={`الإصدار ${APP_VERSION} · سجل الإصدارات`} className="mb-1 block text-center text-[10px] text-gray-500 hover:text-white" dir="ltr">
+                                    {APP_VERSION}
+                                </Link>
                                 <button
                                     onClick={toggleSidebar}
                                     className="w-full flex items-center justify-center p-2 text-gray-400 hover:bg-secondary-700/50 hover:text-white rounded-lg transition-all duration-200"

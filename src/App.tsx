@@ -69,6 +69,7 @@ import Shifts from './pages/Shifts';
 import PrinterSettings from './pages/Settings/PrinterSettings';
 import CompanySettings from './pages/Settings/CompanySettings';
 import AuditLog from './pages/AuditLog';
+import Versions from './pages/Versions';
 import TaxSettings from './pages/Settings/TaxSettings';
 import NoInternetPage from './pages/NoInternetPage';
 import Expenses from './pages/Expenses';
@@ -337,6 +338,7 @@ const App: React.FC = () => {
                                         <Route path="/settings/printer" element={<PrinterSettings />} />
                                         <Route path="/settings/company" element={<CompanySettings />} />
                                         <Route path="/settings/audit-log" element={<AuditLog />} />
+                                        <Route path="/settings/versions" element={<Versions />} />
                                         <Route path="/settings/tax" element={<TaxSettings />} />
                                         <Route path="/cash-registers" element={<CashRegisters />} />
                                         <Route path="/shifts" element={<Shifts />} />
