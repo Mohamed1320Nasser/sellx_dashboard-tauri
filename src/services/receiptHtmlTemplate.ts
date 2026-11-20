@@ -93,6 +93,7 @@ export function saleToReceiptData(params: {
     // split payment: "نقداً 200 + بطاقة 300"
     paymentMethod: salePaymentLabel(sale, SALE_PAYMENT_LABELS, 'نقداً'),
     clientName: sale.client?.name || sale.clientName,
+    clientPhone: sale.client?.phone || undefined,
 
     // SELLX-SPECIFIC
     isPurchase: false,
@@ -182,6 +183,7 @@ export function quoteToReceiptData(params: Parameters<typeof saleToReceiptData>[
     ...rest,
     isQuote: true,
     clientName: quote.customerName || quote.client?.name || undefined,
+    clientPhone: quote.customerContact || quote.client?.phone || undefined,
     validUntil: quote.validUntil
       ? new Date(quote.validUntil).toLocaleDateString('ar-EG-u-nu-latn', { year: 'numeric', month: '2-digit', day: '2-digit' })
       : undefined,

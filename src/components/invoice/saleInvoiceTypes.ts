@@ -52,6 +52,8 @@ export interface SaleInvoiceData {
   clientBalance: number | null;
 
   cashierName?: string;
+  /** phone of the staff member who made it, so the customer knows whom to call */
+  staffPhone?: string;
   /** "الكاشير" / "المستخدم" / "أعدّه" */
   staffLabel: string;
   notes?: string;
@@ -65,6 +67,8 @@ export interface SaleInvoiceData {
   pillTone: PillTone;
   /** Left signature line: "توقيع المستلم" / "توقيع المورد" / "توقيع العميل بالموافقة" */
   signatureLabel: string;
+  /** name under the customer / supplier signature; none for a walk-in customer */
+  signName?: string;
 
   items: SaleInvoiceLineItem[];
   itemsCount: number;

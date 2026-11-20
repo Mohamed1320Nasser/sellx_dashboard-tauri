@@ -1,4 +1,5 @@
 import type { SaleInvoiceData } from "./saleInvoiceTypes";
+import { A4_SIGNATURE_CSS, a4Signatures } from "../pdf/a4Signatures";
 
 /**
  * The A4 invoice as a printable HTML page. Same content as SaleInvoicePdf (the PDF download):
@@ -103,8 +104,7 @@ tfoot td { padding: 7px 8px; font-size: 11px; color: #475569; border-top: 2px so
 .terms { margin-top: 18px; border-top: 1px solid #e2e8f0; padding-top: 10px; page-break-inside: avoid; }
 .terms-title { font-size: 11px; font-weight: 700; margin-bottom: 4px; }
 .terms-body { font-size: 10.5px; color: #475569; line-height: 1.8; white-space: pre-line; }
-.signs { display: flex; gap: 40px; margin-top: 36px; page-break-inside: avoid; }
-.signs div { flex: 1; border-top: 1px solid #94a3b8; padding-top: 6px; text-align: center; font-size: 11px; color: #64748b; }
+${A4_SIGNATURE_CSS}
 .foot { margin-top: 22px; padding-top: 10px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; gap: 12px; font-size: 10px; color: #64748b; }
 </style>
 </head>
@@ -116,7 +116,6 @@ tfoot td { padding: 7px 8px; font-size: 11px; color: #475569; border-top: 2px so
         <div class="company">${esc(d.companyName)}</div>
         ${d.companyAddress ? `<div class="brand-line">${esc(d.companyAddress)}</div>` : ""}
         ${brandLine("هاتف", d.companyPhone)}
-        ${brandLine("", d.companyEmail)}
         ${brandLine("الرقم الضريبي", d.companyTaxNumber)}
         ${brandLine("السجل التجاري", d.commercialRegister)}
       </div>
@@ -135,7 +134,7 @@ tfoot td { padding: 7px 8px; font-size: 11px; color: #475569; border-top: 2px so
     <div class="cell">
       <div class="label">${esc(d.partyLabel)}</div>
       <div class="value">${esc(d.clientName)}</div>
-      ${d.clientPhone || d.clientEmail ? `<div class="sub"><span class="num">${esc([d.clientPhone, d.clientEmail].filter(Boolean).join(" · "))}</span></div>` : ""}
+      ${d.clientPhone ? `<div class="sub">هاتف: <span class="num">${esc(d.clientPhone)}</span></div>` : ""}
       ${d.clientAddress ? `<div class="sub">${esc(d.clientAddress)}</div>` : ""}
     </div>
     <div class="cell">
@@ -146,6 +145,7 @@ tfoot td { padding: 7px 8px; font-size: 11px; color: #475569; border-top: 2px so
     <div class="cell">
       <div class="label">${esc(d.staffLabel)}</div>
       <div class="value">${esc(d.cashierName || "—")}</div>
+      ${d.staffPhone ? `<div class="sub">هاتف: <span class="num">${esc(d.staffPhone)}</span></div>` : ""}
     </div>
   </div>
   ${d.subject ? `<div class="subject"><b>الموضوع:</b> ${esc(d.subject)}</div>` : ""}
@@ -222,14 +222,14 @@ tfoot td { padding: 7px 8px; font-size: 11px; color: #475569; border-top: 2px so
 
   ${d.terms ? `<div class="terms"><div class="terms-title">الشروط والأحكام</div><div class="terms-body">${esc(d.terms)}</div></div>` : ""}
 
-  <div class="signs">
-    <div>${esc(d.signatureLabel)}</div>
-    <div>ختم الشركة / التوقيع</div>
-  </div>
+  ${a4Signatures(
+    { label: d.signatureLabel, name: d.signName, phone: d.clientPhone },
+    { label: "ختم الشركة / التوقيع", name: d.companyName, address: d.companyAddress, phone: d.companyPhone }
+  )}
 
   <div class="foot">
     <span>${esc(d.footerText || `شكرًا لتعاملكم مع ${d.companyName}`)}</span>
-    <span>طُبعت في <span class="num">${esc(d.printedAtLabel)}</span></span>
+    <span>طُبعت في ${esc(d.printedAtLabel)}</span>
     <span>Powered by SellX</span>
   </div>
 </body>

@@ -66,6 +66,7 @@ export interface SellxReceiptData {
   compact?: boolean;
   supplierName?: string; // Purchase receipts: who the goods came from
   clientName?: string; // Sale receipts: the customer whose account carries the invoice
+  clientPhone?: string;
   remaining?: number; // Purchase receipts: amount still owed on the invoice
   additionalFee?: number; // Delivery fees, service charges, etc.
   additionalFeeLabel?: string; // Custom label (e.g., "رسوم التوصيل")

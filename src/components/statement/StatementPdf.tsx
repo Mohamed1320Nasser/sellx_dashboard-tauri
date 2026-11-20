@@ -2,6 +2,8 @@ import React from "react";
 import { Document, Page, View, Text, Image, StyleSheet } from "@react-pdf/renderer";
 import { registerSaleInvoiceFonts } from "../invoice/saleInvoiceFonts";
 import { bidiParts, type StatementDocData } from "./statementData";
+import { LabelValue, WordsText } from "../pdf/PdfText";
+import { PdfSignatures } from "../pdf/PdfSignatures";
 
 registerSaleInvoiceFonts();
 
@@ -126,17 +128,6 @@ const styles = StyleSheet.create({
   closingValue: { color: "#fff", fontSize: 12, fontWeight: "bold" },
   closingNote: { color: "#cbd5e1", fontSize: 7.5, marginTop: 2, textAlign: "right" },
 
-  signatures: { flexDirection: "row-reverse", gap: 32, paddingTop: 30 },
-  sigLine: {
-    flex: 1,
-    borderTopWidth: 1,
-    borderTopColor: COLOR.inkFaint,
-    paddingTop: 5,
-    fontSize: 8,
-    color: COLOR.inkFaint,
-    textAlign: "center",
-  },
-
   /* table header again at the top of every page after the first */
   repeatHead: { position: "absolute", top: 14, left: 32, right: 32 },
   repeatTitle: { fontSize: 7.5, color: COLOR.inkFaint, textAlign: "right" },
@@ -192,39 +183,6 @@ const DateText: React.FC<{ label: string }> = ({ label }) => {
   );
 };
 
-/**
- * Arabic words with dates and Latin names inside ("من 2026/11/01 إلى 2026/11/20", "Mohamed Nasser"):
- * consecutive words of the same script stay one piece, dates are laid out left to right
- */
-const WordsText: React.FC<{ text: string; style: any; align?: "flex-start" | "flex-end" }> = ({ text, style, align = "flex-end" }) => {
-  const groups: { kind: "date" | "latin" | "ar"; text: string }[] = [];
-  for (const w of text.split(" ").filter(Boolean)) {
-    const kind = /^\d+\/\d+\/\d+$/.test(w) ? "date" : /^[A-Za-z0-9]/.test(w) ? "latin" : "ar";
-    const last = groups[groups.length - 1];
-    if (last && last.kind === kind && kind !== "date") last.text += ` ${w}`;
-    else groups.push({ kind, text: w });
-  }
-  return (
-    <View style={{ flexDirection: "row-reverse", flexWrap: "wrap", gap: 3, alignSelf: align }}>
-      {groups.map((g, i) =>
-        g.kind === "date" ? (
-          <View key={i} style={styles.dateRow}>
-            {g.text.split(/(\/)/).filter(Boolean).map((p, j) => (
-              <Text key={j} style={style}>
-                {p}
-              </Text>
-            ))}
-          </View>
-        ) : (
-          <Text key={i} style={style}>
-            {g.text}
-          </Text>
-        )
-      )}
-    </View>
-  );
-};
-
 const TableHead: React.FC<{ d: StatementDocData }> = ({ d }) => (
   <View style={styles.thRow}>
     <Text style={[styles.th, styles.cDate]}>التاريخ</Text>
@@ -274,25 +232,13 @@ export const StatementPdf: React.FC<{ data: StatementDocData }> = ({ data: d }) 
             )}
             <View>
               <Text style={styles.company}>{d.companyName}</Text>
-              {d.companyAddress ? <Text style={styles.brandLine}>{d.companyAddress}</Text> : null}
-              {d.companyPhone ? (
-                <View style={styles.brandRow}>
-                  <Text style={styles.brandRowText}>هاتف:</Text>
-                  <Text style={styles.brandRowText}>{d.companyPhone}</Text>
-                </View>
-              ) : null}
-              {d.companyEmail ? <Text style={styles.brandLine}>{d.companyEmail}</Text> : null}
+              {d.companyAddress ? <WordsText text={d.companyAddress} style={styles.brandRowText} /> : null}
+              {d.companyPhone ? <LabelValue label="هاتف" value={d.companyPhone} style={styles.brandRowText} /> : null}
               {d.companyTaxNumber ? (
-                <View style={[styles.brandRow, { marginTop: 3 }]}>
-                  <Text style={[styles.brandRowText, { color: COLOR.inkFaint }]}>الرقم الضريبي:</Text>
-                  <Text style={[styles.brandRowText, { color: COLOR.inkFaint }]}>{d.companyTaxNumber}</Text>
-                </View>
+                <LabelValue label="الرقم الضريبي" value={d.companyTaxNumber} style={[styles.brandRowText, { color: COLOR.inkFaint }]} />
               ) : null}
               {d.commercialRegister ? (
-                <View style={styles.brandRow}>
-                  <Text style={[styles.brandRowText, { color: COLOR.inkFaint }]}>السجل التجاري:</Text>
-                  <Text style={[styles.brandRowText, { color: COLOR.inkFaint }]}>{d.commercialRegister}</Text>
-                </View>
+                <LabelValue label="السجل التجاري" value={d.commercialRegister} style={[styles.brandRowText, { color: COLOR.inkFaint }]} />
               ) : null}
             </View>
           </View>
@@ -307,19 +253,22 @@ export const StatementPdf: React.FC<{ data: StatementDocData }> = ({ data: d }) 
         <View style={styles.strip}>
           <View style={styles.cell}>
             <Text style={styles.label}>{d.partyLabel}</Text>
-            <Text style={styles.value}>{d.party.name}</Text>
-            {d.party.phone || d.party.email ? (
-              <Text style={styles.sub}>{[d.party.phone, d.party.email].filter(Boolean).join(" · ")}</Text>
-            ) : null}
-            {d.party.address ? <Text style={styles.sub}>{d.party.address}</Text> : null}
+            <WordsText text={d.party.name} style={styles.value} />
+            {d.party.phone ? <LabelValue label="هاتف" value={d.party.phone} style={styles.sub} /> : null}
+            {d.party.address ? <WordsText text={d.party.address} style={styles.sub} /> : null}
           </View>
-          <View style={[styles.cell, styles.cellLast]}>
+          <View style={styles.cell}>
             <Text style={styles.label}>الفترة</Text>
             <WordsText text={d.periodLabel} style={styles.value} />
             <View style={{ flexDirection: "row-reverse", gap: 3, alignSelf: "flex-end", marginTop: 2 }}>
               <Text style={[styles.sub, { marginTop: 0 }]}>طُبع في</Text>
               <WordsText text={d.printedAtLabel} style={[styles.sub, { marginTop: 0 }]} />
             </View>
+          </View>
+          <View style={[styles.cell, styles.cellLast]}>
+            <Text style={styles.label}>أعدّه</Text>
+            <WordsText text={d.staffName || "—"} style={styles.value} />
+            {d.staffPhone ? <LabelValue label="هاتف" value={d.staffPhone} style={styles.sub} /> : null}
           </View>
         </View>
 
@@ -397,10 +346,10 @@ export const StatementPdf: React.FC<{ data: StatementDocData }> = ({ data: d }) 
             </View>
             <Text style={styles.closingValue}>{money(Math.abs(d.closing))}</Text>
           </View>
-          <View style={styles.signatures}>
-            <Text style={styles.sigLine}>{d.kind === "client" ? "توقيع العميل" : "توقيع المورد"}</Text>
-            <Text style={styles.sigLine}>ختم الشركة / التوقيع</Text>
-          </View>
+          <PdfSignatures
+            party={{ label: d.kind === "client" ? "توقيع العميل" : "توقيع المورد", name: d.party.name, phone: d.party.phone }}
+            company={{ label: "ختم الشركة / التوقيع", name: d.companyName, address: d.companyAddress, phone: d.companyPhone }}
+          />
         </View>
 
         {/* Footer */}

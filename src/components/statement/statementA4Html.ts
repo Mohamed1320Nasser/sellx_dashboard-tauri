@@ -1,4 +1,5 @@
 import type { StatementDocData } from "./statementData";
+import { A4_SIGNATURE_CSS, a4Signatures } from "../pdf/a4Signatures";
 
 /** The statement as a printable A4 page: the same layout as StatementPdf, the column titles repeat on every page */
 const esc = (v: unknown) =>
@@ -47,7 +48,7 @@ body { font-family: 'IBM Plex Sans Arabic', 'Cairo', 'Tajawal', Arial, sans-seri
 .doc { text-align: left; min-width: 190px; }
 .doc-title { display: inline-block; background: #0f172a; color: #fff; font-weight: 700; font-size: 15px; padding: 5px 14px; border-radius: 6px; margin-bottom: 8px; }
 .doc-line { font-size: 11px; color: #475569; line-height: 1.7; }
-.strip { display: grid; grid-template-columns: 1.4fr 1fr; margin-top: 14px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+.strip { display: grid; grid-template-columns: 1.4fr 1.2fr 1fr; margin-top: 14px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
 .cell { padding: 10px 14px; border-left: 1px solid #e2e8f0; background: #f8fafc; }
 .cell:last-child { border-left: 0; }
 .label { font-size: 10px; color: #94a3b8; font-weight: 700; margin-bottom: 3px; }
@@ -83,7 +84,7 @@ tfoot td { padding: 8px; font-size: 11.5px; font-weight: 700; border-top: 2px so
 .closing b { font-size: 15px; }
 .closing small { display: block; font-size: 10px; color: #cbd5e1; }
 .signs { display: flex; gap: 40px; margin-top: 36px; page-break-inside: avoid; }
-.signs div { flex: 1; border-top: 1px solid #94a3b8; padding-top: 6px; text-align: center; font-size: 11px; color: #64748b; }
+${A4_SIGNATURE_CSS}
 .foot { margin-top: 22px; padding-top: 10px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; gap: 12px; font-size: 10px; color: #64748b; }
 </style>
 </head>
@@ -95,7 +96,6 @@ tfoot td { padding: 8px; font-size: 11.5px; font-weight: 700; border-top: 2px so
         <div class="company">${esc(d.companyName)}</div>
         ${d.companyAddress ? `<div class="brand-line">${esc(d.companyAddress)}</div>` : ""}
         ${brandLine("هاتف", d.companyPhone)}
-        ${brandLine("", d.companyEmail)}
         ${brandLine("الرقم الضريبي", d.companyTaxNumber)}
         ${brandLine("السجل التجاري", d.commercialRegister)}
       </div>
@@ -111,13 +111,18 @@ tfoot td { padding: 8px; font-size: 11.5px; font-weight: 700; border-top: 2px so
     <div class="cell">
       <div class="label">${esc(d.partyLabel)}</div>
       <div class="value">${esc(d.party.name)}</div>
-      ${d.party.phone || d.party.email ? `<div class="sub"><span class="num">${esc([d.party.phone, d.party.email].filter(Boolean).join(" · "))}</span></div>` : ""}
+      ${d.party.phone ? `<div class="sub">هاتف: <span class="num">${esc(d.party.phone)}</span></div>` : ""}
       ${d.party.address ? `<div class="sub">${esc(d.party.address)}</div>` : ""}
     </div>
     <div class="cell">
       <div class="label">الفترة</div>
       <div class="value">${bidi(d.periodLabel)}</div>
       <div class="sub">طُبع في ${bidi(d.printedAtLabel)}</div>
+    </div>
+    <div class="cell">
+      <div class="label">أعدّه</div>
+      <div class="value">${esc(d.staffName || "—")}</div>
+      ${d.staffPhone ? `<div class="sub">هاتف: <span class="num">${esc(d.staffPhone)}</span></div>` : ""}
     </div>
   </div>
 
@@ -166,10 +171,10 @@ tfoot td { padding: 8px; font-size: 11.5px; font-weight: 700; border-top: 2px so
     <b class="num">${money(Math.abs(d.closing))}</b>
   </div>
 
-  <div class="signs">
-    <div>${isClient ? "توقيع العميل" : "توقيع المورد"}</div>
-    <div>ختم الشركة / التوقيع</div>
-  </div>
+  ${a4Signatures(
+    { label: isClient ? "توقيع العميل" : "توقيع المورد", name: d.party.name, phone: d.party.phone },
+    { label: "ختم الشركة / التوقيع", name: d.companyName, address: d.companyAddress, phone: d.companyPhone }
+  )}
 
   <div class="foot">
     <span>${esc(d.footerText || `شكرًا لتعاملكم مع ${d.companyName}`)}</span>

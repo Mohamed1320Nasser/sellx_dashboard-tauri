@@ -73,6 +73,12 @@ export function SellxReceipt({ data }: Props) {
             <span className="receipt__value">{data.clientName}</span>
           </div>
         )}
+        {data.clientName && data.clientPhone && (
+          <div className="receipt__row">
+            <span className="receipt__label">هاتف العميل</span>
+            <span className="receipt__value" dir="ltr">{data.clientPhone}</span>
+          </div>
+        )}
         {data.supplierName && (
           <div className="receipt__row">
             <span className="receipt__label">المورد</span>

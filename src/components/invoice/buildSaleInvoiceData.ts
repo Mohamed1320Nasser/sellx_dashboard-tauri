@@ -159,11 +159,17 @@ export async function buildSaleInvoiceData(params: {
     partyLabel: isPurchase ? "المورد" : "العميل",
     clientName: party?.name || sale.clientName || sale.supplierName || (isPurchase || isQuote ? "—" : "عميل نقدي"),
     clientPhone: party?.phone || undefined,
+    signName: party?.name || sale.clientName || sale.supplierName || undefined,
     clientEmail: party?.email || undefined,
     clientAddress: party?.address || undefined,
     clientBalance: !isPurchase && !isQuote && sale.clientBalance != null ? num(sale.clientBalance) : null,
 
     cashierName: sale.user?.fullname || cashier?.fullname || cashier?.name || cashier?.username,
+    // the creator's phone; the person printing only when they made it (or nothing says who did)
+    staffPhone:
+      sale.user?.phone ||
+      (!sale.user || (cashier?.id && sale.user?.id === cashier.id) ? cashier?.phone : undefined) ||
+      undefined,
     staffLabel: isPurchase ? "المستخدم" : isQuote ? "أعدّه" : "الكاشير",
     notes: sale.notes || undefined,
     subject: isQuote ? String(sale.subject || "").trim() || undefined : undefined,

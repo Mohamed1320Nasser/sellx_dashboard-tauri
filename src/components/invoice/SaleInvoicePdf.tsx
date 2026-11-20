@@ -3,6 +3,8 @@ import { Document, Page, View, Text, Image, StyleSheet } from "@react-pdf/render
 import { registerSaleInvoiceFonts } from "./saleInvoiceFonts";
 import type { SaleInvoiceData } from "./saleInvoiceTypes";
 import { formatQty } from '../../utils/quantity';
+import { LabelValue, WordsText } from "../pdf/PdfText";
+import { PdfSignatures } from "../pdf/PdfSignatures";
 
 registerSaleInvoiceFonts();
 
@@ -338,21 +340,6 @@ const styles = StyleSheet.create({
   subject: { fontSize: 10, marginBottom: 8, textAlign: "right", fontWeight: "bold" },
   notes: { fontSize: 8.5, color: COLOR.inkSoft, marginTop: 8, textAlign: "right", lineHeight: 1.5 },
 
-  signatures: {
-    flexDirection: "row-reverse",
-    paddingHorizontal: 32,
-    paddingTop: 26,
-    gap: 32,
-  },
-  sigLine: {
-    flex: 1,
-    borderTopWidth: 1,
-    borderTopColor: COLOR.inkFaint,
-    paddingTop: 5,
-    fontSize: 8,
-    color: COLOR.inkFaint,
-    textAlign: "center",
-  },
 
   foot: {
     flexDirection: "row-reverse",
@@ -417,27 +404,23 @@ export const SaleInvoicePdf: React.FC<{ data: SaleInvoiceData }> = ({ data }) =>
             <View>
               <Text style={styles.companyName}>{data.companyName}</Text>
               {data.companyAddress ? (
-                <Text style={styles.brandLine}>{data.companyAddress}</Text>
-              ) : null}
-              {data.companyPhone ? (
-                <View style={styles.brandLineRow}>
-                  <Text style={styles.brandLineRowText}>هاتف:</Text>
-                  <Text style={styles.brandLineRowText}>{data.companyPhone}</Text>
+                <View style={{ marginBottom: 3.5 }}>
+                  <WordsText text={data.companyAddress} style={styles.brandLineRowText} />
                 </View>
               ) : null}
-              {data.companyEmail ? (
-                <Text style={styles.brandLine}>{data.companyEmail}</Text>
+              {data.companyPhone ? (
+                <View style={{ marginBottom: 3.5 }}>
+                  <LabelValue label="هاتف" value={data.companyPhone} style={styles.brandLineRowText} />
+                </View>
               ) : null}
               {data.companyTaxNumber ? (
-                <View style={[styles.brandLineRow, { marginBottom: 0, marginTop: 5 }]}>
-                  <Text style={styles.taxLineRowText}>الرقم الضريبي:</Text>
-                  <Text style={styles.taxLineRowText}>{data.companyTaxNumber}</Text>
+                <View style={{ marginTop: 5 }}>
+                  <LabelValue label="الرقم الضريبي" value={data.companyTaxNumber} style={styles.taxLineRowText} />
                 </View>
               ) : null}
               {data.commercialRegister ? (
-                <View style={[styles.brandLineRow, { marginBottom: 0, marginTop: 3 }]}>
-                  <Text style={styles.taxLineRowText}>السجل التجاري:</Text>
-                  <Text style={styles.taxLineRowText}>{data.commercialRegister}</Text>
+                <View style={{ marginTop: 3 }}>
+                  <LabelValue label="السجل التجاري" value={data.commercialRegister} style={styles.taxLineRowText} />
                 </View>
               ) : null}
             </View>
@@ -445,8 +428,8 @@ export const SaleInvoicePdf: React.FC<{ data: SaleInvoiceData }> = ({ data }) =>
           <View style={styles.docMeta}>
             <Text style={styles.docTitle}>{data.title}</Text>
             <Text style={styles.docNum}>{data.receiptNumber}</Text>
-            <Text style={styles.docDate}>{data.dateLabel}</Text>
-            <Text style={styles.docDate}>{data.timeLabel}</Text>
+            <WordsText text={data.dateLabel} style={styles.docDate} align="flex-start" nowrap />
+            <WordsText text={data.timeLabel} style={styles.docDate} align="flex-start" nowrap />
           </View>
         </View>
 
@@ -454,15 +437,19 @@ export const SaleInvoicePdf: React.FC<{ data: SaleInvoiceData }> = ({ data }) =>
         <View style={styles.infoStrip}>
           <View style={styles.infoCell}>
             <Text style={styles.infoLabel}>{data.partyLabel}</Text>
-            <Text style={styles.infoValue}>{data.clientName}</Text>
-            {data.clientPhone || data.clientEmail ? (
-              <Text style={styles.infoSub}>
-                {[data.clientPhone, data.clientEmail].filter(Boolean).join(" · ")}
-              </Text>
+            <WordsText text={data.clientName} style={styles.infoValue} />
+            {data.clientPhone ? (
+              <View style={{ marginTop: 2 }}>
+                <LabelValue label="هاتف" value={data.clientPhone} style={[styles.infoSub, { marginTop: 0 }]} />
+              </View>
             ) : (
               <Text style={styles.infoSub}> </Text>
             )}
-            {data.clientAddress ? <Text style={styles.infoSub}>{data.clientAddress}</Text> : null}
+            {data.clientAddress ? (
+              <View style={{ marginTop: 2 }}>
+                <WordsText text={data.clientAddress} style={[styles.infoSub, { marginTop: 0 }]} />
+              </View>
+            ) : null}
           </View>
           <View style={styles.infoCell}>
             <Text style={styles.infoLabel}>{data.middleLabel}</Text>
@@ -471,7 +458,12 @@ export const SaleInvoicePdf: React.FC<{ data: SaleInvoiceData }> = ({ data }) =>
           </View>
           <View style={[styles.infoCell, styles.infoCellLast]}>
             <Text style={styles.infoLabel}>{data.staffLabel}</Text>
-            <Text style={styles.infoValue}>{data.cashierName || "—"}</Text>
+            <WordsText text={data.cashierName || "—"} style={styles.infoValue} />
+            {data.staffPhone ? (
+              <View style={{ marginTop: 2 }}>
+                <LabelValue label="هاتف" value={data.staffPhone} style={[styles.infoSub, { marginTop: 0 }]} />
+              </View>
+            ) : null}
           </View>
         </View>
 
@@ -642,10 +634,11 @@ export const SaleInvoicePdf: React.FC<{ data: SaleInvoiceData }> = ({ data }) =>
         ) : null}
 
         {/* Signatures */}
-        <View style={styles.signatures} wrap={false}>
-          <Text style={styles.sigLine}>{data.signatureLabel}</Text>
-          <Text style={styles.sigLine}>ختم الشركة / التوقيع</Text>
-        </View>
+        <PdfSignatures
+          style={{ paddingHorizontal: 32, paddingTop: 26 }}
+          party={{ label: data.signatureLabel, name: data.signName, phone: data.clientPhone }}
+          company={{ label: "ختم الشركة / التوقيع", name: data.companyName, address: data.companyAddress, phone: data.companyPhone }}
+        />
 
         {/* Footer */}
         <View style={styles.foot} fixed>

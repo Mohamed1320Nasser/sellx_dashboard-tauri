@@ -7,6 +7,7 @@ import { saveFile } from "../invoice/generateSaleInvoicePdf";
 import { printA4Document } from "../../services/printService";
 import { loadCompanyProfile } from "../../services/companyProfile";
 import { usePrinterConfigStore } from "../../stores/printerConfigStore";
+import { useSessionAuthStore } from "../../stores/sessionAuthStore";
 
 interface StatementInput {
   kind: StatementKind;
@@ -22,6 +23,7 @@ async function dataFor(input: StatementInput) {
     company: await loadCompanyProfile(),
     footerText: config.footerText,
     commercialRegister: config.commercialRegister,
+    staff: (useSessionAuthStore.getState() as any).user,
   });
 }
 

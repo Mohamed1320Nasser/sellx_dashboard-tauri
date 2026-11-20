@@ -51,6 +51,9 @@ export interface StatementDocData {
 
   partyLabel: string;
   party: StatementParty;
+  /** who printed it */
+  staffName?: string;
+  staffPhone?: string;
   periodLabel: string;
 
   debitLabel: string;
@@ -135,6 +138,7 @@ export function buildStatementData(params: {
   endDate?: string;
   footerText?: string;
   commercialRegister?: string;
+  staff?: { fullname?: string; name?: string; username?: string; phone?: string | null } | null;
 }): StatementDocData {
   const { kind, statement, company, startDate, endDate } = params;
   const isClient = kind === "client";
@@ -191,6 +195,8 @@ export function buildStatementData(params: {
 
     partyLabel: isClient ? "العميل" : "المورد",
     party,
+    staffName: params.staff?.fullname || params.staff?.name || params.staff?.username || undefined,
+    staffPhone: params.staff?.phone || undefined,
     periodLabel: periodLabelOf(startDate, endDate),
 
     debitLabel: isClient ? "مدين" : "مدين (عليه)",
