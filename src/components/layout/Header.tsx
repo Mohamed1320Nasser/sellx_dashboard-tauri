@@ -60,6 +60,8 @@ const Header: React.FC = () => {
             '/stock-movements': 'حركة المخزون',
             '/stocktakes': 'جرد المخزون',
             '/price-lists': 'قوائم الأسعار',
+            '/reports': 'كل التقارير',
+            '/reports/end-of-day': 'تقرير نهاية اليوم',
             '/financial-reports': 'التقارير المالية',
         };
         

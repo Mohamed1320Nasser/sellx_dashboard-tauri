@@ -156,6 +156,18 @@ const navigationItems: NavigationItem[] = [
         permissions: ['canViewFinancialReports', 'canViewAnalytics'],
         children: [
             {
+                name: 'كل التقارير',
+                href: '/reports',
+                icon: Receipt,
+                permission: 'canViewFinancialReports',
+            },
+            {
+                name: 'تقرير نهاية اليوم',
+                href: '/reports/end-of-day',
+                icon: ClipboardCheck,
+                permission: 'canViewFinancialReports',
+            },
+            {
                 name: 'التقارير المالية',
                 href: '/financial-reports',
                 icon: Calculator,
@@ -348,6 +360,8 @@ const Sidebar: React.FC = () => {
                     <div className="relative group">
                         <NavLink
                             to={item.href}
+                            // a page with its own sub-pages in the menu ("كل التقارير") is active only on itself
+                            end={item.href === '/reports'}
                             className={({ isActive }) =>
                                 `flex items-center px-3 py-2.5 text-sm font-medium rounded-xl transition-all duration-200 transform ${
                                     isActive
