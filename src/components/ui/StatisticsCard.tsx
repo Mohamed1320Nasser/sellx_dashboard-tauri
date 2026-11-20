@@ -16,6 +16,8 @@ interface StatisticsCardProps {
      * previous period had zero activity) — renders as "new"/"—" instead of
      * a misleading 0% up-arrow. */
     isNeutral?: boolean;
+    /** what it is compared with; default "the previous 30 days" */
+    label?: string;
   };
   subtitle?: string;
   isLoading?: boolean;
@@ -85,7 +87,7 @@ const StatisticsCard: React.FC<StatisticsCardProps> = ({
     if (typeof val === 'number') return true;
     if (typeof val === 'string') {
       // Check if it contains numbers and currency symbols
-      return /[\d,]+/.test(val) && (val.includes('ج.م') || val.includes('ريال') || /^\d+/.test(val.trim()));
+      return /[\d,]+/.test(val) && (val.includes('ج.م') || val.includes('ريال') || /^-?\d+/.test(val.trim()));
     }
     return false;
   };
@@ -95,8 +97,16 @@ const StatisticsCard: React.FC<StatisticsCardProps> = ({
     if (typeof val === 'string') {
       if (val.includes('ج.م')) return ' ج.م';
       if (val.includes('ريال')) return ' ريال';
+      if (val.trim().endsWith('%')) return '%';
     }
     return '';
+  };
+
+  // keep the decimals the value was written with (72.2% stays 72.2%, money keeps 2)
+  const decimalsOf = (val: string | number, suffix: string): number => {
+    if (suffix && suffix !== '%') return 2;
+    const m = String(val).match(/\.(\d+)/);
+    return m ? m[1].length : 0;
   };
 
   const numericValue = getNumericValue(value);
@@ -131,7 +141,7 @@ const StatisticsCard: React.FC<StatisticsCardProps> = ({
               end={numericValue} 
               duration={2}
               separator=","
-              decimals={suffix ? 2 : 0}
+              decimals={decimalsOf(value, suffix)}
               suffix={suffix}
             />
           </h3>
@@ -165,9 +175,9 @@ const StatisticsCard: React.FC<StatisticsCardProps> = ({
                 <span className="mr-1">
                   {growth.isPositive ? '↗' : '↘'}
                 </span>
-                {Math.abs(growth.value)}%
+                <bdi dir="ltr">{Math.round(Math.abs(growth.value) * 10) / 10}%</bdi>
               </div>
-              <span className="text-xs text-gray-500 mr-2">من الشهر الماضي</span>
+              <span className="text-xs text-gray-500 mr-2">{growth.label || "عن الـ 30 يوم السابقة"}</span>
             </>
           )}
         </div>

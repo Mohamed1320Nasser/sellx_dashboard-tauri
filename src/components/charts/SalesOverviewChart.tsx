@@ -1,92 +1,62 @@
 import React from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Card } from '../ui';
+import { formatCurrency } from '../../utils';
 
-// Sample data - replace with real data from props
-const mockData = [
-  { date: '01/01', sales: 4000, target: 3500 },
-  { date: '02/01', sales: 3000, target: 3500 },
-  { date: '03/01', sales: 5000, target: 3500 },
-  { date: '04/01', sales: 4500, target: 3500 },
-  { date: '05/01', sales: 6000, target: 3500 },
-  { date: '06/01', sales: 5500, target: 3500 },
-  { date: '07/01', sales: 7000, target: 3500 },
-];
-
-interface SalesOverviewChartProps {
-  data?: typeof mockData;
+export interface DailySale {
+  /** yyyy-MM-dd (shop day) */
+  date: string;
+  revenue: number;
+  orders: number;
 }
 
-const SalesOverviewChart: React.FC<SalesOverviewChartProps> = ({ data = mockData }) => {
+const dayLabel = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+
+/** Sales per day for the dashboard's period (real figures, one point per day) */
+const SalesOverviewChart: React.FC<{ data: DailySale[]; isLoading?: boolean }> = ({ data, isLoading }) => {
+  const total = data.reduce((s, d) => s + d.revenue, 0);
+  const best = data.reduce<DailySale | null>((b, d) => (!b || d.revenue > b.revenue ? d : b), null);
   return (
     <Card padding="lg" shadow="xl">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h3 className="text-lg font-semibold text-gray-900">نظرة عامة على المبيعات</h3>
-          <p className="text-sm text-gray-600">آخر 7 أيام</p>
+          <h3 className="text-lg font-semibold text-gray-900">المبيعات اليومية</h3>
+          <p className="text-sm text-gray-500">آخر {data.length || 30} يوم</p>
         </div>
-        <div className="flex items-center space-x-2 space-x-reverse">
-          <button className="px-3 py-1.5 text-sm bg-primary-50 text-primary-600 rounded-lg font-medium hover:bg-primary-100 transition-colors">
-            يومي
-          </button>
-          <button className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 rounded-lg transition-colors">
-            أسبوعي
-          </button>
-          <button className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 rounded-lg transition-colors">
-            شهري
-          </button>
-        </div>
+        {best && best.revenue > 0 && (
+          <p className="text-left text-xs text-gray-500">
+            أعلى يوم <bdi className="font-medium text-gray-700">{dayLabel(best.date)}</bdi>
+            <span className="block font-semibold text-gray-900">{formatCurrency(best.revenue)}</span>
+          </p>
+        )}
       </div>
-
-      {/* Chart */}
-      <ResponsiveContainer width="100%" height={300}>
-        <LineChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-          <XAxis
-            dataKey="date"
-            stroke="#94a3b8"
-            style={{ fontSize: '12px', fontFamily: 'Almarai' }}
-          />
-          <YAxis
-            stroke="#94a3b8"
-            style={{ fontSize: '12px', fontFamily: 'Almarai' }}
-          />
-          <Tooltip
-            contentStyle={{
-              backgroundColor: '#fff',
-              border: '1px solid #e5e7eb',
-              borderRadius: '8px',
-              fontSize: '12px',
-              fontFamily: 'Almarai'
-            }}
-          />
-          <Legend
-            wrapperStyle={{
-              fontSize: '12px',
-              fontFamily: 'Almarai'
-            }}
-          />
-          <Line
-            type="monotone"
-            dataKey="sales"
-            stroke="#10b981"
-            strokeWidth={3}
-            dot={{ fill: '#10b981', r: 4 }}
-            activeDot={{ r: 6 }}
-            name="المبيعات"
-          />
-          <Line
-            type="monotone"
-            dataKey="target"
-            stroke="#f59e0b"
-            strokeWidth={2}
-            strokeDasharray="5 5"
-            dot={false}
-            name="الهدف"
-          />
-        </LineChart>
-      </ResponsiveContainer>
+      {isLoading ? (
+        <div className="h-[280px] animate-pulse rounded-xl bg-gray-100" />
+      ) : total === 0 ? (
+        <div className="flex h-[280px] items-center justify-center rounded-xl bg-gray-50 text-sm text-gray-500">لا توجد مبيعات في هذه الفترة</div>
+      ) : (
+        <div dir="ltr">
+          <ResponsiveContainer width="100%" height={280}>
+            <AreaChart data={data} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+              <defs>
+                <linearGradient id="salesFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#10b981" stopOpacity={0.25} />
+                  <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+              <XAxis dataKey="date" tickFormatter={dayLabel} stroke="#94a3b8" tick={{ fontSize: 11 }} minTickGap={16} />
+              <YAxis stroke="#94a3b8" tick={{ fontSize: 11 }} width={56} tickFormatter={(v: number) => (v >= 1000 ? `${Math.round(v / 100) / 10}k` : String(v))} />
+              <Tooltip
+                contentStyle={{ border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 12, fontFamily: 'Almarai', direction: 'rtl' }}
+                labelFormatter={(d: string) => dayLabel(d)}
+                formatter={(value: number, _name, item: any) => [`${formatCurrency(value)} · ${item?.payload?.orders || 0} فاتورة`, 'المبيعات']}
+              />
+              <Area type="monotone" dataKey="revenue" stroke="#10b981" strokeWidth={2.5} fill="url(#salesFill)" dot={false} activeDot={{ r: 5 }} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      )}
     </Card>
   );
 };

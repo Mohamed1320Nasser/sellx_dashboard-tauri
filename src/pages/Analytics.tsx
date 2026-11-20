@@ -6,14 +6,12 @@ import {
   ProductPerformanceChart,
   CustomerAnalyticsChart,
   InventoryAnalyticsChart,
-  DashboardSummary,
 } from "../components/analytics";
 import {
   useSalesTrends,
   useProductPerformance,
   useCustomerAnalytics,
   useInventoryAnalytics,
-  useDashboardSummary,
 } from "../hooks/api/useAnalytics";
 import {
   TrendPeriod,
@@ -28,7 +26,7 @@ import { AlertCircle, Filter, Calendar, BarChart3 } from "lucide-react";
 
 const Analytics: React.FC = () => {
   const { company } = useSessionAuthStore();
-  const [activeTab, setActiveTab] = useState<"dashboard" | "sales" | "products" | "customers" | "inventory">("dashboard");
+  const [activeTab, setActiveTab] = useState<"sales" | "products" | "customers" | "inventory">("sales");
   
   // Date filters
   const [dateRange, setDateRange] = useState<DateRange>({
@@ -63,8 +61,6 @@ const Analytics: React.FC = () => {
   });
 
   // API calls
-  const { data: dashboardData, isLoading: dashboardLoading } = useDashboardSummary();
-  
   const { data: salesData, isLoading: salesLoading } = useSalesTrends({
     ...salesFilters,
     ...(dateRange.startDate && { startDate: dateRange.startDate }),
@@ -100,7 +96,6 @@ const Analytics: React.FC = () => {
   }
 
   const tabs = [
-    { id: "dashboard", label: "لوحة التحكم", icon: BarChart3 },
     { id: "sales", label: "اتجاهات المبيعات", icon: BarChart3 },
     { id: "products", label: "أداء المنتجات", icon: BarChart3 },
     { id: "customers", label: "تحليل العملاء", icon: BarChart3 },
@@ -188,10 +183,6 @@ const Analytics: React.FC = () => {
 
           {/* Content */}
           <div className="space-y-4 sm:space-y-6">
-            {activeTab === "dashboard" && (
-              <DashboardSummary data={dashboardData!} isLoading={dashboardLoading} />
-            )}
-
             {activeTab === "sales" && (
               <div className="space-y-6">
                 {/* Sales Filters */}

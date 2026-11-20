@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Edit, Trash2, Package, AlertTriangle, Eye, Folder, Printer, ShoppingCart, FolderInput } from "lucide-react";
+import { Plus, Edit, Trash2, Package, AlertTriangle, Eye, Printer, ShoppingCart, FolderInput } from "lucide-react";
 import { Layout } from "../components/layout";
-import { Button, Card, DataTable, Badge, ConfirmDialog, Modal, Select } from "../components/ui";
+import { Button, DataTable, Badge, ConfirmDialog, Modal, Select } from "../components/ui";
 import type { Column, TableFilter } from "../components/ui/DataTable";
 import { PermissionGuard } from "../components/common/PermissionGuard";
 import { useSessionAuthStore } from "../stores/sessionAuthStore";
@@ -41,7 +41,8 @@ const Products: React.FC = () => {
   const [pageSize, setPageSize] = useState(10);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
-  const [showLowStock, setShowLowStock] = useState(false);
+  // ?lowStock=1 (from the dashboard's stock alert) opens the list filtered
+  const [showLowStock, setShowLowStock] = useState(() => new URLSearchParams(window.location.search).get('lowStock') === '1');
   const [showNoPrice, setShowNoPrice] = useState(false);
   // Removed showCreateModal state - now using navigation
   // Removed editingProduct state - now using navigation to edit page
@@ -366,12 +367,6 @@ const Products: React.FC = () => {
     [categoriesData]
   );
 
-  // Calculate summary stats
-  const totalProducts = (productsData as any)?.data?.totalCount || 0;
-  const lowStockCount = (productsData as any)?.data?.list.filter(
-    (p: any) => p.stockQuantity <= p.minStockLevel
-  ).length || 0;
-
   return (
     <Layout>
       <div className="w-full space-y-6">
@@ -389,47 +384,6 @@ const Products: React.FC = () => {
               إضافة منتج جديد
             </Button>
           </PermissionGuard>
-        </div>
-
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Card padding="md">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-primary-500/30">
-                <Package className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">إجمالي المنتجات</p>
-                <p className="text-2xl font-bold text-gray-900">{totalProducts}</p>
-              </div>
-            </div>
-          </Card>
-
-          <Card padding="md">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-gradient-to-br from-red-500 to-red-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-red-500/30">
-                <AlertTriangle className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">مخزون منخفض</p>
-                <p className="text-2xl font-bold text-red-600">{lowStockCount}</p>
-              </div>
-            </div>
-          </Card>
-
-          <Card padding="md">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-green-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-green-500/30">
-                <Folder className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">الفئات</p>
-                <p className="text-2xl font-bold text-green-600">
-                  {categoriesData?.data?.totalCount || 0}
-                </p>
-              </div>
-            </div>
-          </Card>
         </div>
 
         {/* Products Table with integrated search and filters */}

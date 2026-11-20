@@ -567,7 +567,7 @@ export interface Quote {
   validUntil?: string | null;
   terms?: QuoteTerm[];
   convertedToSaleId?: number | null;
-  convertedToSale?: { id: number; receiptNumber: string } | null;
+  convertedToSale?: { id: number; receiptNumber: string; createdAt?: string } | null;
   createdAt: string;
   updatedAt: string;
   items?: QuoteItem[];
@@ -1027,6 +1027,8 @@ export interface InventoryAnalyticsResponse {
 
 // Dashboard Summary
 export interface DashboardSummary {
+  /** the days the "current" figures cover (shop days, yyyy-MM-dd) */
+  period?: { days: number; from: string; to: string; previousFrom: string; previousTo: string };
   overview: {
     currentRevenue: number;
     currentReturns: number;
@@ -1034,33 +1036,46 @@ export interface DashboardSummary {
     previousRevenue: number;
     previousReturns: number;
     previousNetRevenue: number;
-    revenueGrowth: number;
+    /** null = nothing to compare with */
+    revenueGrowth: number | null;
+    netRevenueGrowth?: number | null;
     currentOrders: number;
     previousOrders: number;
-    orderGrowth: number;
+    orderGrowth: number | null;
+    currentReturnOrders?: number;
+    currentRefunds?: number;
+    currentTax?: number;
     totalRevenue: number;
-    totalReturns: number;
-    netRevenue: number;
     customerCount: number;
+    /** customers who bought in the period */
+    activeCustomers?: number;
     newCustomersToday: number;
     totalProducts: number;
     totalSuppliers: number;
     currentPurchases: number;
     previousPurchases: number;
-    purchaseGrowth: number;
+    purchaseGrowth: number | null;
     currentPurchaseOrders: number;
     previousPurchaseOrders: number;
-    purchaseOrderGrowth: number;
+    purchaseOrderGrowth: number | null;
     totalPurchaseValue: number;
-    grossProfit: number;
-    profitMargin: number;
+    /** null for cashiers (cost and profit are for managers) */
+    grossProfit: number | null;
+    previousGrossProfit?: number | null;
+    profitGrowth?: number | null;
+    /** gross profit / net revenue (without tax), % */
+    profitMargin: number | null;
     averageOrderValue: number;
     returnRate: number;
-    pendingPayments: number;
-    completedPayments: number;
     todaysRevenue: number;
     todaysOrders: number;
+    todaysAverageOrderValue?: number;
   };
+  /** one row per shop day of the period */
+  dailySales?: Array<{ date: string; revenue: number; orders: number }>;
+  /** money taken in the period per method, and what the period's invoices still owe */
+  collections?: { byMethod: Array<{ method: string; amount: number }>; total: number; unpaid: number };
+  /** best sellers of the period, by sales value */
   topProducts: Array<{
     id: string;
     name: string;

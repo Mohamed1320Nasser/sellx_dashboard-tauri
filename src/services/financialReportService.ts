@@ -53,6 +53,8 @@ export const financialReportService = {
   getTopSellingProducts: async (params: {
     companyId: number;
     limit?: number;
+    startDate?: string;
+    endDate?: string;
   }): Promise<TopSellingProduct[]> => {
     const response = await apiClient.get(
       "/financial-report/top-selling-products",
@@ -76,6 +78,8 @@ export const financialReportService = {
   getSalesTrends: async (params: {
     companyId: number;
     days?: number;
+    startDate?: string;
+    endDate?: string;
   }): Promise<SalesTrendsResponse> => {
     const response = await apiClient.get("/financial-report/sales-trends", {
       params,

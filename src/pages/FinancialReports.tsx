@@ -4,25 +4,23 @@ import { useSalesReport } from '../hooks/api/useFinancialReports';
 import { useSessionAuthStore } from '../stores/sessionAuthStore';
 import { ReportPeriod } from '../types/business';
 import { formatCurrency, formatNumber } from '../utils';
-import { formatTableDate } from '../utils/dateUtils';
+import { formatTableDate, toLocalDay } from '../utils/dateUtils';
 import { DateRange, DateRangeFilter } from '../components/filters';
 import {
   Eye,
-  TrendingUp,
   AlertCircle,
   RefreshCw,
   Receipt,
   User,
   Calendar,
   Package,
-  Percent,
   CheckCircle,
   Clock,
   XCircle,
   FileText,
   FileSpreadsheet
 } from 'lucide-react';
-import { Button, DataTable, Card, Select } from '../components/ui';
+import { DataTable, Card, Select } from '../components/ui';
 import type { Column } from '../components/ui/DataTable';
 import { FinancialReportAnalytics } from '../components/financialReports';
 import { Layout } from '../components/layout';
@@ -32,6 +30,29 @@ import {
   type ReportColumn,
 } from '../utils/reportExport';
 import toast from 'react-hot-toast';
+import { HeaderAction } from '../components/common/HeaderAction';
+
+const DAYS_OF: Partial<Record<ReportPeriod, number>> = {
+  [ReportPeriod.DAILY]: 1,
+  [ReportPeriod.WEEKLY]: 7,
+  [ReportPeriod.MONTHLY]: 30,
+  [ReportPeriod.QUARTERLY]: 90,
+  [ReportPeriod.YEARLY]: 365,
+};
+
+/** The chosen period as whole days ending today (or the custom days); empty = no limit */
+function rangeOf(period: ReportPeriod, custom: DateRange): { startDate?: string; endDate?: string } {
+  if (period === ReportPeriod.CUSTOM) {
+    return {
+      ...(custom.startDate?.trim() && { startDate: custom.startDate }),
+      ...(custom.endDate?.trim() && { endDate: custom.endDate }),
+    };
+  }
+  const days = DAYS_OF[period] || 30;
+  const from = new Date();
+  from.setDate(from.getDate() - (days - 1));
+  return { startDate: toLocalDay(from), endDate: toLocalDay(new Date()) };
+}
 
 const FinancialReports: React.FC = () => {
   const navigate = useNavigate();
@@ -43,37 +64,22 @@ const FinancialReports: React.FC = () => {
     dateRange: { startDate: '', endDate: '' } as DateRange,
     period: ReportPeriod.MONTHLY as ReportPeriod,
   });
-  const [showAnalytics, setShowAnalytics] = useState(true);
+
+  // One date range for everything on the page (cards, best sellers, chart, table, export)
+  const range = useMemo(() => rangeOf(filters.period, filters.dateRange), [filters.period, filters.dateRange]);
 
   // Get sales report data
   const { data: salesData, isLoading, error, refetch } = useSalesReport({
     page: currentPage,
     limit: pageSize,
     ...(searchTerm && { search: searchTerm }),
-    ...(filters.dateRange.startDate && filters.dateRange.startDate.trim() && { startDate: filters.dateRange.startDate }),
-    ...(filters.dateRange.endDate && filters.dateRange.endDate.trim() && { endDate: filters.dateRange.endDate }),
-    ...(filters.period && filters.period !== ReportPeriod.CUSTOM && { period: filters.period }),
+    ...range,
   });
 
   // Computed values
   const sales = useMemo(() => salesData?.list || [], [salesData]);
   const totalCount = salesData?.totalCount || 0;
 
-  // Check if company is available
-  if (!company || !company.companyId || company.companyId === 0) {
-    return (
-      <Layout>
-        <div className="min-h-screen flex items-center justify-center">
-          <div className="text-center">
-            <AlertCircle className="mx-auto h-12 w-12 text-red-400 mb-4" />
-            <h2 className="text-2xl font-bold text-gray-900 mb-4">خطأ في المصادقة</h2>
-            <p className="text-gray-600">يرجى التأكد من تسجيل الدخول والانضمام لشركة</p>
-            <p className="text-sm text-gray-500 mt-2">يرجى التأكد من تسجيل الدخول والانضمام لشركة صالحة</p>
-          </div>
-        </div>
-      </Layout>
-    );
-  }
 
   const handleSearch = useCallback((value: string) => {
     setSearchTerm(value);
@@ -92,12 +98,12 @@ const FinancialReports: React.FC = () => {
 
   // Filter options
   const periodOptions = useMemo(() => [
-    { value: ReportPeriod.DAILY, label: 'يومي' },
-    { value: ReportPeriod.WEEKLY, label: 'أسبوعي' },
-    { value: ReportPeriod.MONTHLY, label: 'شهري' },
-    { value: ReportPeriod.QUARTERLY, label: 'ربع سنوي' },
-    { value: ReportPeriod.YEARLY, label: 'سنوي' },
-    { value: ReportPeriod.CUSTOM, label: 'مخصص' },
+    { value: ReportPeriod.DAILY, label: 'اليوم' },
+    { value: ReportPeriod.WEEKLY, label: 'آخر 7 أيام' },
+    { value: ReportPeriod.MONTHLY, label: 'آخر 30 يوم' },
+    { value: ReportPeriod.QUARTERLY, label: 'آخر 90 يوم' },
+    { value: ReportPeriod.YEARLY, label: 'آخر سنة' },
+    { value: ReportPeriod.CUSTOM, label: 'فترة مخصصة' },
   ], []);
 
   const handleViewDetails = (sale: any) => {
@@ -132,8 +138,8 @@ const FinancialReports: React.FC = () => {
     const companyName =
       company?.name || company?.company?.name || company?.companyName || '';
     const subtitleParts = [`الفترة: ${periodLabel}`];
-    if (filters.period === ReportPeriod.CUSTOM && filters.dateRange.startDate) {
-      subtitleParts.push(`${filters.dateRange.startDate} → ${filters.dateRange.endDate}`);
+    if (range.startDate || range.endDate) {
+      subtitleParts.push(`${range.startDate || 'البداية'} → ${range.endDate || 'اليوم'}`);
     }
     return {
       title: 'تقرير المبيعات',
@@ -149,7 +155,7 @@ const FinancialReports: React.FC = () => {
           ]
         : undefined,
     };
-  }, [salesData, company, periodLabel, filters]);
+  }, [salesData, company, periodLabel, range]);
 
   const handleExportPdf = useCallback(async () => {
     if (sales.length === 0) {
@@ -265,6 +271,22 @@ const FinancialReports: React.FC = () => {
     },
   ];
 
+  // Check if company is available
+  if (!company || !company.companyId || company.companyId === 0) {
+    return (
+      <Layout>
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="text-center">
+            <AlertCircle className="mx-auto h-12 w-12 text-red-400 mb-4" />
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">خطأ في المصادقة</h2>
+            <p className="text-gray-600">يرجى التأكد من تسجيل الدخول والانضمام لشركة</p>
+            <p className="text-sm text-gray-500 mt-2">يرجى التأكد من تسجيل الدخول والانضمام لشركة صالحة</p>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
   return (
     <Layout>
       <div className="space-y-6">
@@ -273,42 +295,13 @@ const FinancialReports: React.FC = () => {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">التقارير المالية</h1>
             <p className="text-gray-600 mt-1">
-              إدارة وتتبع التقارير المالية والمبيعات
+              قائمة الدخل وحركة النقد وفواتير البيع للفترة المختارة
             </p>
           </div>
-          <div className="flex space-x-3 space-x-reverse">
-            <Button
-              variant="outline"
-              onClick={() => setShowAnalytics(!showAnalytics)}
-              className="flex items-center"
-            >
-              <TrendingUp className="w-4 h-4 ml-1" />
-              {showAnalytics ? 'إخفاء التحليلات' : 'عرض التحليلات'}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={handleExportPdf}
-              className="flex items-center"
-            >
-              <FileText className="w-4 h-4 ml-1" />
-              PDF
-            </Button>
-            <Button
-              variant="outline"
-              onClick={handleExportExcel}
-              className="flex items-center"
-            >
-              <FileSpreadsheet className="w-4 h-4 ml-1" />
-              Excel
-            </Button>
-            <Button
-              variant="outline"
-              onClick={handleRefresh}
-              className="flex items-center"
-            >
-              <RefreshCw className="w-4 h-4 ml-1" />
-              تحديث
-            </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <HeaderAction icon={FileText} label="PDF" onClick={handleExportPdf} />
+            <HeaderAction icon={FileSpreadsheet} label="Excel" onClick={handleExportExcel} />
+            <HeaderAction icon={RefreshCw} label="تحديث" onClick={handleRefresh} iconOnly />
           </div>
         </div>
 
@@ -338,15 +331,13 @@ const FinancialReports: React.FC = () => {
               />
             )}
             <span className="text-xs text-gray-400 mr-auto">
-              تُطبَّق على التحليلات والتقرير والتصدير
+              تُطبَّق على قائمة الدخل والفواتير والتصدير
             </span>
           </div>
         </Card>
 
-        {/* Analytics Section */}
-        {showAnalytics && (
-          <FinancialReportAnalytics filters={filters} />
-        )}
+        {/* Income statement + cash for the chosen days */}
+        <FinancialReportAnalytics filters={range} />
 
         {/* Error Display */}
         {error && (

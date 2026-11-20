@@ -43,16 +43,17 @@ export const useProfitLossReport = (
 };
 
 // Get top selling products
-export const useTopSellingProducts = (limit: number = 10) => {
+export const useTopSellingProducts = (limit: number = 10, range: { startDate?: string; endDate?: string } = {}) => {
   const { company } = useSessionAuthStore();
   const companyId = company?.companyId;
 
   return useQuery({
-    queryKey: ["topSellingProducts", companyId, limit],
+    queryKey: ["topSellingProducts", companyId, limit, range.startDate, range.endDate],
     queryFn: () =>
       financialReportService.getTopSellingProducts({
         companyId: companyId!,
         limit,
+        ...range,
       }),
     enabled: !!companyId && companyId > 0,
     staleTime: 10 * 60 * 1000, // 10 minutes
@@ -60,16 +61,17 @@ export const useTopSellingProducts = (limit: number = 10) => {
 };
 
 // Get sales trends
-export const useSalesTrends = (days: number = 30) => {
+export const useSalesTrends = (days: number = 30, range: { startDate?: string; endDate?: string } = {}) => {
   const { company } = useSessionAuthStore();
   const companyId = company?.companyId;
 
   return useQuery({
-    queryKey: ["salesTrends", companyId, days],
+    queryKey: ["salesTrends", companyId, days, range.startDate, range.endDate],
     queryFn: () =>
       financialReportService.getSalesTrends({
         companyId: companyId!,
         days,
+        ...range,
       }),
     enabled: !!companyId && companyId > 0,
     staleTime: 5 * 60 * 1000, // 5 minutes
