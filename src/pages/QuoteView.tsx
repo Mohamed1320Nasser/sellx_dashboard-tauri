@@ -7,7 +7,10 @@ import {
   ChevronDown,
   Download,
   Edit,
+  Eye,
   FileText,
+  Link2,
+  Link2Off,
   Copy,
   Mail,
   MessageCircle,
@@ -21,15 +24,16 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { whatsappNumber } from "../utils/whatsapp";
-import { sendQuoteWhatsApp } from "../components/quotes/sendQuoteWhatsApp";
+import { copyText, openExternal, quoteShareLink, whatsappNumber } from "../utils/whatsapp";
+import SendQuoteModal from "../components/quotes/SendQuoteModal";
+import { quoteService } from "../services/quoteService";
 import { Layout } from "../components/layout";
 import { ConfirmDialog } from "../components/ui";
 import ConvertQuoteModal from "../components/quotes/ConvertQuoteModal";
 import { Masked, RevealButton, useReveal } from "../components/ui/Secret";
 import { useConvertQuoteToSale, useDeleteQuote, useEmailQuote, useQuote, useUpdateQuote } from "../hooks/api/useQuotes";
 import { useSessionAuthStore } from "../stores/sessionAuthStore";
-import { formatTableDate } from "../utils/dateUtils";
+import { formatDateTime, formatTableDate } from "../utils/dateUtils";
 import { formatCurrency } from "../utils/currencyUtils";
 import { formatQty, unitOf } from "../utils/quantity";
 import { downloadQuotePdf, printQuoteA4, printQuoteThermal } from "../services/quotePrintService";
@@ -145,6 +149,9 @@ const QuoteView: React.FC = () => {
   const [showConvert, setShowConvert] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [showProfit, toggleProfit] = useReveal();
+  const [sending, setSending] = useState(false);
+  const [showUnshare, setShowUnshare] = useState(false);
+  const [unsharing, setUnsharing] = useState(false);
   const [params, setParams] = useSearchParams();
 
   // "تحويل لفاتورة" from the quotes list lands here with ?convert=1
@@ -222,8 +229,23 @@ const QuoteView: React.FC = () => {
       }
     );
 
-  const sendWhatsApp = () =>
-    sendQuoteWhatsApp(quote, { companyId, companyName: (company as any)?.company?.name || (company as any)?.name || "", queryClient });
+  const sendWhatsApp = () => setSending(true);
+  const shareLink = quote.shareToken ? quoteShareLink(quote.shareToken) : "";
+  const views = quote.viewCount || 0;
+
+  const unshare = async () => {
+    setUnsharing(true);
+    try {
+      await quoteService.unshare(quote.id, companyId);
+      await queryClient.invalidateQueries({ queryKey: ["quotes"] });
+      toast.success("تم إيقاف الرابط. لن يفتح عند العميل بعد الآن");
+      setShowUnshare(false);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.msg || e?.message || "تعذر إيقاف الرابط");
+    } finally {
+      setUnsharing(false);
+    }
+  };
 
   const btn = "inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50";
 
@@ -405,6 +427,52 @@ const QuoteView: React.FC = () => {
           <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             <AlertTriangle className="h-4 w-4 shrink-0" />
             انتهت صلاحية العرض في {formatTableDate(quote.validUntil!)}. راجع الأسعار قبل التحويل أو عدّل تاريخ الصلاحية.
+          </div>
+        )}
+
+        {/* Customer link: did the customer open it? */}
+        {shareLink && (
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm">
+            <span className="flex min-w-0 items-center gap-2">
+              <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${views ? "bg-emerald-50 text-emerald-600" : "bg-gray-100 text-gray-500"}`}>
+                {views ? <Eye className="h-4 w-4" /> : <Link2 className="h-4 w-4" />}
+              </span>
+              <span className="min-w-0">
+                <span className="block font-medium text-gray-900">
+                  {views ? (views === 1 ? "فتح العميل العرض مرة واحدة" : `فتح العميل العرض ${views} مرات`) : "أُرسل الرابط، ولم يفتحه العميل بعد"}
+                </span>
+                {quote.lastViewedAt && (
+                  <span className="block text-xs text-gray-500">
+                    آخر مرة <bdi>{formatDateTime(quote.lastViewedAt)}</bdi>
+                    {views > 1 && quote.firstViewedAt && (
+                      <>
+                        {" "}
+                        · أول مرة <bdi>{formatDateTime(quote.firstViewedAt)}</bdi>
+                      </>
+                    )}
+                  </span>
+                )}
+                {!quote.sharePdfAt && <span className="block text-xs text-amber-700">عُدّل العرض بعد الإرسال: الصفحة تعرض البيانات الجديدة، والـ PDF يُحدَّث عند الإرسال مرة أخرى.</span>}
+              </span>
+            </span>
+            <span className="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                onClick={async () => ((await copyText(shareLink)) ? toast.success("تم نسخ الرابط") : toast.error("تعذر النسخ"))}
+                className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 font-medium text-gray-600 hover:bg-gray-100"
+              >
+                <Copy className="h-4 w-4" />
+                نسخ الرابط
+              </button>
+              <button type="button" onClick={() => openExternal(`${shareLink}?preview=1`)} className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 font-medium text-gray-600 hover:bg-gray-100">
+                <Eye className="h-4 w-4" />
+                معاينة
+              </button>
+              <button type="button" onClick={() => setShowUnshare(true)} className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 font-medium text-red-600 hover:bg-red-50">
+                <Link2Off className="h-4 w-4" />
+                إيقاف
+              </button>
+            </span>
           </div>
         )}
 
@@ -607,6 +675,21 @@ const QuoteView: React.FC = () => {
         companyId={companyId}
         converting={convertMutation.isPending}
         onConvert={convert}
+      />
+      <SendQuoteModal
+        quote={sending ? quote : null}
+        onClose={() => setSending(false)}
+        companyId={companyId}
+        companyName={(company as any)?.company?.name || (company as any)?.name || ""}
+      />
+      <ConfirmDialog
+        isOpen={showUnshare}
+        onClose={() => setShowUnshare(false)}
+        onConfirm={unshare}
+        title="إيقاف رابط العميل"
+        message="لن يفتح الرابط المرسل عند العميل بعد الآن. إذا أرسلت العرض مرة أخرى سيُنشأ رابط جديد."
+        confirmText="إيقاف الرابط"
+        isLoading={unsharing}
       />
       <ConfirmDialog
         isOpen={showDelete}

@@ -1,3 +1,4 @@
+import { apiClient } from "../services/apiClient";
 /**
  * Send to a customer on WhatsApp: opens the chat with a ready message (the person sends it).
  */
@@ -42,4 +43,28 @@ export async function openExternal(url: string): Promise<boolean> {
   if (!w) return false;
   w.opener = null;
   return true;
+}
+
+/** The page the customer opens for a quote (served by the API) */
+export function quoteShareLink(token: string): string {
+  const base = String(apiClient.defaults.baseURL || "").replace(/\/+$/, "");
+  return `${base}/q/${token}`;
+}
+
+/** Copy text; falls back to a hidden textarea where the clipboard API is missing */
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.cssText = "position:fixed;top:0;left:0;opacity:0";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    return ok;
+  }
 }

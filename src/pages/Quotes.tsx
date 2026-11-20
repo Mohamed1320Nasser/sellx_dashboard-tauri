@@ -27,7 +27,7 @@ import { useDeleteQuote, useEmailQuote, useQuotes } from "../hooks/api/useQuotes
 import { formatTableDate } from "../utils/dateUtils";
 import { formatCurrency } from "../utils/currencyUtils";
 import { downloadQuotePdf, printQuoteA4, printQuoteThermal } from "../services/quotePrintService";
-import { sendQuoteWhatsApp } from "../components/quotes/sendQuoteWhatsApp";
+import SendQuoteModal from "../components/quotes/SendQuoteModal";
 import type { Quote, QuoteListSummary } from "../types";
 
 const STATUS: Record<string, { label: string; cls: string }> = {
@@ -59,6 +59,7 @@ const Quotes: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [deleting, setDeleting] = useState<Quote | null>(null);
+  const [sending, setSending] = useState<Quote | null>(null);
 
   const { data: quotesData, isLoading } = useQuotes({
     companyId,
@@ -121,7 +122,18 @@ const Quotes: React.FC = () => {
           );
         }
         const s = STATUS[q.status] || STATUS.DRAFT;
-        return <span className={`whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ${s.cls}`}>{s.label}</span>;
+        const views = q.shareToken ? q.viewCount || 0 : 0;
+        return (
+          <div className="flex flex-col items-start gap-1">
+            <span className={`whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ${s.cls}`}>{s.label}</span>
+            {views > 0 && (
+              <span className="inline-flex items-center gap-1 whitespace-nowrap text-[11px] text-emerald-700" title={q.lastViewedAt ? `آخر مرة ${formatTableDate(q.lastViewedAt)}` : undefined}>
+                <Eye className="h-3 w-3" />
+                {views === 1 ? "فتحه العميل" : `فتحه العميل ${views} مرات`}
+              </span>
+            )}
+          </div>
+        );
       },
     },
     {
@@ -298,7 +310,7 @@ const Quotes: React.FC = () => {
             {
               icon: MessageCircle,
               label: "إرسال واتساب",
-              onClick: q => sendQuoteWhatsApp(q, { companyId, companyName, queryClient }),
+              onClick: q => setSending(q),
               variant: "success",
             },
             {
@@ -343,6 +355,7 @@ const Quotes: React.FC = () => {
           }
         />
 
+        <SendQuoteModal quote={sending} onClose={() => setSending(null)} companyId={companyId} companyName={companyName} />
         <ConfirmDialog
           isOpen={!!deleting}
           onClose={() => setDeleting(null)}

@@ -7,14 +7,13 @@ import { printA4Document } from "../../services/printService";
 import { usePrinterConfigStore } from "../../stores/printerConfigStore";
 import type { InvoiceKind } from "./saleInvoiceTypes";
 
-// Builds the unified sale invoice PDF and triggers a browser download.
-// Used by both the Sales list "تحميل PDF" action and the Sale Details page.
-export async function generateSaleInvoicePdf(params: {
+/** The unified sale invoice / quote PDF as a file (to download, upload or share) */
+export async function buildSaleInvoicePdf(params: {
   sale: any;
   company: any;
   cashier?: any;
   kind?: InvoiceKind;
-}): Promise<void> {
+}): Promise<File> {
   const config = usePrinterConfigStore.getState();
   const data = await buildSaleInvoiceData({
     ...params,
@@ -27,15 +26,30 @@ export async function generateSaleInvoicePdf(params: {
   const blob = await pdf(
     React.createElement(SaleInvoicePdf, { data }) as unknown as React.ReactElement<DocumentProps>
   ).toBlob();
+  return new File([blob], `${data.kind === "quote" ? "عرض-سعر" : "فاتورة"}-${data.receiptNumber}.pdf`, { type: "application/pdf" });
+}
 
-  const url = URL.createObjectURL(blob);
+/** Save a file with the browser's download */
+export function saveFile(file: File) {
+  const url = URL.createObjectURL(file);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `${data.kind === "quote" ? "عرض-سعر" : "فاتورة"}-${data.receiptNumber}.pdf`;
+  link.download = file.name;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// Builds the unified sale invoice PDF and triggers a browser download.
+// Used by both the Sales list "تحميل PDF" action and the Sale Details page.
+export async function generateSaleInvoicePdf(params: {
+  sale: any;
+  company: any;
+  cashier?: any;
+  kind?: InvoiceKind;
+}): Promise<void> {
+  saveFile(await buildSaleInvoicePdf(params));
 }
 
 /** Print the same A4 invoice as the PDF, with the system print dialog (A4 / office printers) */

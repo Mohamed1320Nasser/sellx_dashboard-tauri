@@ -56,6 +56,21 @@ export const quoteService = {
     }),
 
   // Email quote to customer
+  /** Make (or keep) the customer link, with the PDF that goes with it */
+  share: (id: string, companyId: number, pdf?: File): Promise<Quote> => {
+    const form = new FormData();
+    if (pdf) form.append("file", pdf, "quote.pdf");
+    return apiClient.post(`/quote/single/${id}/share`, form, {
+      params: { companyId },
+      headers: { "Content-Type": "multipart/form-data" },
+      timeout: 120000,
+    });
+  },
+
+  /** Turn the customer link off */
+  unshare: (id: string, companyId: number): Promise<Quote> =>
+    apiClient.delete(`/quote/single/${id}/share`, { params: { companyId } }),
+
   email: (id: string, companyId: number): Promise<{ success: boolean; message: string }> =>
     apiClient.post(`/quote/email/${id}`, { companyId }),
 };

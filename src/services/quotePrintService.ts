@@ -9,7 +9,7 @@ import { printReceipt } from './printService';
 import { quoteToReceiptData } from './receiptHtmlTemplate';
 import { usePrinterConfigStore } from '../stores/printerConfigStore';
 import { useSessionAuthStore } from '../stores/sessionAuthStore';
-import { generateSaleInvoicePdf, printSaleInvoiceA4 } from '../components/invoice/generateSaleInvoicePdf';
+import { buildSaleInvoicePdf, generateSaleInvoicePdf, printSaleInvoiceA4 } from '../components/invoice/generateSaleInvoicePdf';
 
 /** Full company profile (logo, address, tax number); falls back to what the session has */
 async function loadCompany(): Promise<any> {
@@ -43,6 +43,11 @@ export async function printQuoteA4(quote: any): Promise<void> {
 
 export async function downloadQuotePdf(quote: any): Promise<void> {
   await generateSaleInvoicePdf({ sale: await withItems(quote), company: await loadCompany(), cashier: currentUser(), kind: 'quote' });
+}
+
+/** The quote's PDF as a file (sent with the customer link, or shared) */
+export async function quotePdfFile(quote: any): Promise<File> {
+  return buildSaleInvoicePdf({ sale: await withItems(quote), company: await loadCompany(), cashier: currentUser(), kind: 'quote' });
 }
 
 export async function printQuoteThermal(quote: any): Promise<void> {

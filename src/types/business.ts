@@ -538,6 +538,13 @@ export interface Quote {
   customerEmail?: string;
   /** what the quote is for, printed under the title */
   subject?: string | null;
+  /** customer link /q/<shareToken>; null = none or turned off */
+  shareToken?: string | null;
+  /** when the PDF behind the link was sent; null = none, or edited since */
+  sharePdfAt?: string | null;
+  viewCount?: number;
+  firstViewedAt?: string | null;
+  lastViewedAt?: string | null;
   currency: string;
   priceListId?: string | null;
   /** sum of the line totals */
