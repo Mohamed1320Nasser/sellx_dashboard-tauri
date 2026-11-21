@@ -62,6 +62,8 @@ const Header: React.FC = () => {
             '/price-lists': 'قوائم الأسعار',
             '/reports': 'كل التقارير',
             '/reports/end-of-day': 'تقرير نهاية اليوم',
+            '/reports/receivables-aging': 'أعمار ديون العملاء',
+            '/reports/payables-aging': 'أعمار مستحقات الموردين',
             '/financial-reports': 'التقارير المالية',
         };
         

@@ -72,6 +72,7 @@ import AuditLog from './pages/AuditLog';
 import Versions from './pages/Versions';
 import Reports from './pages/Reports';
 import EndOfDayReport from './pages/EndOfDayReport';
+import AgingReport from './pages/AgingReport';
 import TaxSettings from './pages/Settings/TaxSettings';
 import NoInternetPage from './pages/NoInternetPage';
 import Expenses from './pages/Expenses';
@@ -322,6 +323,8 @@ const App: React.FC = () => {
                                         <Route path="/stocktakes/:id" element={<StocktakeDetails />} />
                                         <Route path="/reports" element={<Reports />} />
                                         <Route path="/reports/end-of-day" element={<EndOfDayReport />} />
+                                        <Route path="/reports/receivables-aging" element={<AgingReport key="customers" kind="customers" />} />
+                                        <Route path="/reports/payables-aging" element={<AgingReport key="suppliers" kind="suppliers" />} />
                                         <Route path="/financial-reports" element={<FinancialReports />} />
                                         <Route path="/category-report" element={<CategoryReport />} />
                                         <Route path="/analytics" element={<Analytics />} />

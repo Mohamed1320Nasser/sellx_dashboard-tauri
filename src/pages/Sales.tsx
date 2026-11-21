@@ -32,7 +32,8 @@ const Sales: React.FC = () => {
   const [pageSize, setPageSize] = useState(10);
   const [searchTerm, setSearchTerm] = useState("");
   const [paymentFilter, setPaymentFilter] = useState("");
-  const [paymentStatusFilter, setPaymentStatusFilter] = useState("");
+  // a report can open the list already filtered: /sales?paymentStatus=UNPAID
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState(() => new URLSearchParams(window.location.search).get("paymentStatus") || "");
   const [additionalFeeFilter, setAdditionalFeeFilter] = useState("");
   const [dateRange, setDateRange] = useState<DateRange>({ startDate: "", endDate: "" });
   const [showPrintModal, setShowPrintModal] = useState(false);

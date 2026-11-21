@@ -7,7 +7,6 @@ import {
   ClipboardList,
   Folder,
   Hourglass,
-  Landmark,
   PackageSearch,
   Receipt,
   ShoppingBasket,
@@ -38,9 +37,8 @@ const GROUPS: { title: string; items: ReportCard[] }[] = [
     title: 'المالية',
     items: [
       { title: 'التقارير المالية', description: 'قائمة الدخل حتى صافي الربح، وحركة النقد، وفواتير البيع للفترة.', icon: Calculator, to: '/financial-reports', permission: 'canViewFinancialReports' },
-      { title: 'أعمار ديون العملاء', description: 'من عليه فلوس، وكم مضى عليها: 0–30، 31–60، 61–90، أكثر من 90 يوم.', icon: Hourglass },
-      { title: 'أعمار مستحقات الموردين', description: 'ما علينا للموردين، والمتأخر منه حسب تاريخ الاستحقاق.', icon: AlarmClock },
-      { title: 'تقرير الضريبة', description: 'ضريبة المبيعات المحصلة ناقص ضريبة المشتريات، شهرياً.', icon: Landmark },
+      { title: 'أعمار ديون العملاء', description: 'من عليه فلوس، وكم مضى عليها: 0–30، 31–60، 61–90، أكثر من 90 يوم.', icon: Hourglass, to: '/reports/receivables-aging', permission: 'canViewFinancialReports' },
+      { title: 'أعمار مستحقات الموردين', description: 'ما علينا للموردين، والمتأخر منه حسب تاريخ الاستحقاق.', icon: AlarmClock, to: '/reports/payables-aging', permission: 'canViewFinancialReports' },
     ],
   },
   {
