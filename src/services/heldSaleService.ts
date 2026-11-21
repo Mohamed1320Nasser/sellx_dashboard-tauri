@@ -18,6 +18,8 @@ export interface HeldSaleItemInput {
   quantity: number;
   unitPrice?: number;
   packId?: string;
+  /** unitPrice is a price agreed with the customer (keep it on resume) */
+  negotiated?: boolean;
 }
 
 export interface HoldSaleRequest {
@@ -49,6 +51,8 @@ export interface ResumedItem {
   unitPrice: number;
   basePrice: number;
   priceChanged: boolean;
+  /** heldPrice was agreed with the customer: the cart keeps it */
+  negotiated?: boolean;
   /** Held as a pack: quantity and prices are per pack */
   pack?: { id: string; name: string; factor: number; sellingPrice: number };
 }

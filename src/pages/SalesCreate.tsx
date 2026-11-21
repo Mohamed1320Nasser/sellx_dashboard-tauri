@@ -26,6 +26,8 @@ import { PrintReceiptPreview } from "../components/printer/PrintReceiptPreview";
 import { usePrinterConfigStore } from "../stores/printerConfigStore";
 import { companyService } from "../services/companyService";
 import QtyInput from "../components/ui/QtyInput";
+import LinePrice from "../components/sales/LinePrice";
+import { NEGOTIATION_WARN_PERCENT, priceGap } from "../utils/negotiation";
 import { addQty, allowsDecimal, cartCountLabel, formatQty, normalizeDigits, qtyTimes, toQty, unitOf } from "../utils/quantity";
 import { MAX_SPLIT_PARTS, SPLIT_PART_METHODS, partsLabel, type SplitPartMethod } from "../utils/paymentMethods";
 import { useQueryClient } from "@tanstack/react-query";
@@ -105,7 +107,13 @@ interface SaleItem {
   packs?: ProductPack[];
   /** The product sold by the piece (price, weighed or not), to switch a pack line back */
   piece?: { sellingPrice: number; allowDecimalQty: boolean };
+  /** A manager agreed another price with the customer: unitPrice is that price, listPrice the original */
+  negotiated?: boolean;
+  listPrice?: number;
 }
+
+/** The line's price before any negotiation */
+const originalPrice = (item: SaleItem) => (item.negotiated ? item.listPrice ?? item.unitPrice : item.unitPrice);
 
 interface ProductPack {
   id: string;
@@ -292,6 +300,8 @@ const SalesCreate: React.FC = () => {
       prev.map((item) => {
         if (item.packId) return item; // a pack has its own price, not the list's
         const unitPrice = priceFor(item.productId, item.basePrice);
+        // an agreed price stays; only the original it is compared with follows the list
+        if (item.negotiated) return item.listPrice === unitPrice ? item : { ...item, listPrice: unitPrice };
         return unitPrice === item.unitPrice ? item : { ...item, unitPrice, total: qtyTimes(item.quantity, unitPrice) };
       })
     );
@@ -548,6 +558,19 @@ const SalesCreate: React.FC = () => {
       if (weighed && !pack) setFocusQtyFor(key);
     }
     return true;
+  };
+
+  /** A manager's agreed price for a line; `null` = back to the original price */
+  const setLinePrice = (key: string, price: number | null) => {
+    setItems((prev) =>
+      prev.map((item) => {
+        if (lineKey(item) !== key) return item;
+        const original = originalPrice(item);
+        const unitPrice = price === null ? original : price;
+        const negotiated = Math.abs(unitPrice - original) >= 0.005;
+        return { ...item, unitPrice, total: qtyTimes(item.quantity, unitPrice), negotiated, listPrice: negotiated ? original : undefined };
+      })
+    );
   };
 
   /** Switch a cart line between piece and one of the product's packs */
@@ -979,6 +1002,8 @@ const SalesCreate: React.FC = () => {
   // ------------------------------------------------------------ hold sale (تعليق)
   const queryClient = useQueryClient();
   const role = usePermissionStore((state) => state.role);
+  // the server allows a changed price for managers and owners only (and logs it)
+  const canNegotiate = role === "ADMIN" || role === "MANAGER";
   const { data: heldData } = useHeldSales(companyId || 0);
   const heldCount = heldData?.list?.length || 0;
   const [showHoldModal, setShowHoldModal] = useState(false);
@@ -1006,6 +1031,7 @@ const SalesCreate: React.FC = () => {
           quantity: i.quantity,
           unitPrice: i.unitPrice,
           ...(i.packId && { packId: i.packId }),
+          ...(i.negotiated && { negotiated: true }),
         })),
         discountType: v.discountType,
         discountAmount: Number(v.discountAmount) || 0,
@@ -1046,9 +1072,11 @@ const SalesCreate: React.FC = () => {
         productId: i.productId as unknown as number,
         productName: i.productName,
         quantity: i.quantity,
-        unitPrice: i.unitPrice,
+        // an agreed price comes back as it was; the original follows today's list
+        unitPrice: i.negotiated ? i.heldPrice : i.unitPrice,
         basePrice: i.basePrice,
-        total: qtyTimes(i.quantity, i.unitPrice),
+        total: qtyTimes(i.quantity, i.negotiated ? i.heldPrice : i.unitPrice),
+        ...(i.negotiated && Math.abs(i.heldPrice - i.unitPrice) >= 0.005 && { negotiated: true, listPrice: i.unitPrice }),
         stock: i.stockQuantity,
         allowDecimalQty: i.pack ? false : i.allowDecimalQty,
         unit: i.unit,
@@ -1516,11 +1544,15 @@ const SalesCreate: React.FC = () => {
                                   })}
                                 </div>
                               )}
-                              <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-gray-500">
-                                <span className="whitespace-nowrap">
-                                  {formatCurrency(item.unitPrice)}
-                                  {item.packName ? ` / ${item.packName}` : item.allowDecimalQty && item.unit ? ` / ${item.unit}` : ""}
-                                </span>
+                              <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-gray-500">
+                                <LinePrice
+                                  price={item.unitPrice}
+                                  original={originalPrice(item)}
+                                  suffix={item.packName ? ` / ${item.packName}` : item.allowDecimalQty && item.unit ? ` / ${item.unit}` : ""}
+                                  editable={canNegotiate}
+                                  onChange={(price) => setLinePrice(key, price)}
+                                  onDone={focusScan}
+                                />
                                 {item.packFactor ? <span className="whitespace-nowrap text-gray-400">= {formatQty(piecesOf(item), item.piece?.allowDecimalQty ? item.unit : "قطعة")}</span> : null}
                                 {isMaxReached && <span className="whitespace-nowrap text-amber-600">· آخر الكمية</span>}
                               </p>
@@ -2078,6 +2110,21 @@ const SalesCreate: React.FC = () => {
                 <span className="text-gray-600">إجمالي الكمية:</span>
                 <span className="font-medium">{cartCountLabel(items)}</span>
               </div>
+              {(() => {
+                const changed = items.filter((i) => i.negotiated);
+                if (!changed.length) return null;
+                const far = changed.filter((i) => Math.abs(priceGap(i.unitPrice, originalPrice(i))) > NEGOTIATION_WARN_PERCENT + 1e-9).length;
+                const diff = changed.reduce((sum, i) => sum + qtyTimes(i.quantity, i.unitPrice) - qtyTimes(i.quantity, originalPrice(i)), 0);
+                return (
+                  <div className={`flex justify-between gap-2 text-sm ${far ? "text-amber-700" : "text-gray-600"}`}>
+                    <span className="inline-flex items-center gap-1">
+                      {far > 0 && <AlertTriangle className="h-3.5 w-3.5" />}
+                      سعر متفاوض عليه: {changed.length} منتج{far > 0 ? ` (${far} بفرق أكثر من ${NEGOTIATION_WARN_PERCENT}%)` : ""}
+                    </span>
+                    <span className="whitespace-nowrap font-medium">{diff >= 0 ? "+" : "-"}{formatCurrency(Math.abs(diff))}</span>
+                  </div>
+                );
+              })()}
               {discountAmount > 0 && (
                 <div className="flex justify-between text-sm text-red-600">
                   <span>الخصم:</span>

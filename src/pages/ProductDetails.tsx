@@ -1,19 +1,37 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Package, DollarSign, AlertTriangle, Edit, Trash2, Tag } from 'lucide-react';
+import React, { useState } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { ArrowLeft, Package, Edit, Trash2, Tag, LayoutGrid, ShoppingCart, Truck, LineChart as LineChartIcon, ArrowLeftRight } from 'lucide-react';
 import { Layout } from '../components/layout';
-import { Button, Card, ConfirmDialog } from '../components/ui';
+import { Button, ConfirmDialog } from '../components/ui';
 import { PermissionGuard } from '../components/common/PermissionGuard';
 import { useSessionAuthStore } from '../stores/sessionAuthStore';
 import { useProduct, useDeleteProduct } from '../hooks/api/useProducts';
 import { formatCurrency, formatNumber } from '../utils/currencyUtils';
-import { formatTableDate } from '../utils/dateUtils';
 import type { Product } from '../types';
 import { printBarcode } from '../services/smartPrintService';
 import toast from 'react-hot-toast';
 import { PrintBarcodeModal } from '../components/modals/PrintBarcodeModal';
 import { formatQty, unitOf } from '../utils/quantity';
 import { HeaderAction } from '../components/common/HeaderAction';
+import { usePermissionStore } from '../stores/permissionStore';
+import { productHistoryService, type ProductInsights } from '../services/productHistoryService';
+import { Tile } from '../components/productDetails/HistoryParts';
+import { DEFAULT_RANGE, shopDate, type HistoryRange } from '../components/productDetails/historyRange';
+import ProductOverviewTab from '../components/productDetails/ProductOverviewTab';
+import ProductSalesTab from '../components/productDetails/ProductSalesTab';
+import ProductPurchasesTab from '../components/productDetails/ProductPurchasesTab';
+import ProductPricesTab from '../components/productDetails/ProductPricesTab';
+import ProductMovementsTab from '../components/productDetails/ProductMovementsTab';
+
+type TabId = 'overview' | 'sales' | 'purchases' | 'prices' | 'movements';
+const TABS: { id: TabId; label: string; icon: React.ElementType; managers?: boolean }[] = [
+  { id: 'overview', label: 'نظرة عامة', icon: LayoutGrid },
+  { id: 'sales', label: 'المبيعات', icon: ShoppingCart },
+  { id: 'purchases', label: 'المشتريات', icon: Truck, managers: true },
+  { id: 'prices', label: 'الأسعار', icon: LineChartIcon, managers: true },
+  { id: 'movements', label: 'حركة المخزون', icon: ArrowLeftRight },
+];
 
 const ProductDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -39,6 +57,33 @@ const ProductDetails: React.FC = () => {
     companyId || 0
   );
   const deleteMutation = useDeleteProduct();
+
+  // managers and owners see costs, purchases and price history
+  const role = usePermissionStore(state => state.role);
+  const isManager = role === 'ADMIN' || role === 'MANAGER';
+  const companyName = company?.company?.name || company?.name;
+  const { data: insights } = useQuery<ProductInsights>({
+    queryKey: ['product-history', 'insights', id, companyId],
+    queryFn: () => productHistoryService.insights(id || '', companyId || 0),
+    enabled: !!id && !!companyId,
+  });
+
+  // the open tab lives in the link (?tab=sales), so refresh and back keep it
+  const [searchParams, setSearchParams] = useSearchParams();
+  const asked = searchParams.get('tab') as TabId | null;
+  const tab: TabId = asked && TABS.some(t => t.id === asked && (!t.managers || isManager)) ? asked : 'overview';
+  const setTab = (t: TabId) =>
+    setSearchParams(
+      prev => {
+        const next = new URLSearchParams(prev);
+        if (t === 'overview') next.delete('tab');
+        else next.set('tab', t);
+        return next;
+      },
+      { replace: true }
+    );
+  // one choice of days for every history tab
+  const [range, setRange] = useState<HistoryRange>(DEFAULT_RANGE);
 
   const product = productData;
 
@@ -149,22 +194,18 @@ const ProductDetails: React.FC = () => {
     );
   }
 
-  const currentStock = product?.currentStock || product?.stockQuantity || 0;
-  const minStock = product?.minStockLevel || 0;
-  const isLowStock = currentStock <= minStock;
-  const stockStatusColor = isLowStock ? 'text-red-600' : 'text-green-600';
-  
-  // FIX #4: Calculate profit margin correctly (retail industry standard)
-  const purchasePrice = product?.purchasePrice || 0;
-  const sellingPrice = product?.sellingPrice || 0;
-  const profitAmount = sellingPrice - purchasePrice; // Amount of profit
-  // Margin = (Profit / Selling Price) × 100 (not Profit / Cost)
-  const profitMarginPercentage = sellingPrice > 0 ? (profitAmount / sellingPrice * 100) : 0;
+  const unit = unitOf(product as any);
+  const currentStock = insights?.stock ?? Number(product?.currentStock ?? product?.stockQuantity ?? 0);
+  const minStock = Number(product?.minStockLevel || 0);
+  const isLowStock = minStock > 0 && currentStock <= minStock;
+  const sellingPrice = insights?.sellingPrice ?? Number(product?.sellingPrice || 0);
+  const tabs = TABS.filter(t => !t.managers || isManager);
+  const tabProps = { productId: id || '', productName: product.name, companyId, companyName, range, onRange: setRange };
 
   return (
     <Layout>
-      <div className="w-full space-y-6">
-        {/* Clean Header Section */}
+      <div className="w-full space-y-5">
+        {/* Header */}
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex min-w-0 items-center gap-3">
             <Button
@@ -175,11 +216,16 @@ const ProductDetails: React.FC = () => {
               <ArrowLeft className="w-4 h-4" />
               <span>العودة</span>
             </Button>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">
-                {product?.name || 'منتج غير محدد'}
-              </h1>
-              <p className="text-gray-500 text-sm">تفاصيل المنتج</p>
+            <div className="min-w-0">
+              <h1 className="truncate text-2xl font-bold text-gray-900">{product.name}</h1>
+              <p className="text-sm text-gray-500">
+                {product.category?.name || 'بدون فئة'}
+                {product.sku && (
+                  <span className="mr-2 font-mono text-gray-400" dir="ltr">
+                    {product.sku}
+                  </span>
+                )}
+              </p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -193,163 +239,76 @@ const ProductDetails: React.FC = () => {
           </div>
         </div>
 
-        {/* Stock Status Alert */}
-        {isLowStock && minStock > 0 && (
-          <div className="bg-gradient-to-r from-red-50 to-red-100 rounded-xl p-6 border border-red-200 shadow-sm">
-            <div className="flex items-center">
-              <div className="p-2 bg-red-600 rounded-lg ml-3">
-                <AlertTriangle className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-red-800">مخزون منخفض</h3>
-                <p className="text-red-700">
-                  المخزون الحالي ({formatQty(currentStock, unitOf(product as any))}) أقل من الحد الأدنى المطلوب ({formatQty(minStock, unitOf(product as any))})
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Product Overview Section */}
-        <div className="space-y-6">
-          {/* Data Status Message */}
-          {(!product?.name || !product?.sku) && (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
-              <div className="flex items-center">
-                <AlertTriangle className="w-5 h-5 text-yellow-600 ml-2" />
-                <div>
-                  <h3 className="text-sm font-medium text-yellow-800">بيانات المنتج غير مكتملة</h3>
-                  <p className="text-sm text-yellow-700">
-                    يبدو أن بعض بيانات المنتج مفقودة. يمكنك النقر على زر "تعديل" لإضافة أو تحديث المعلومات المطلوبة.
-                  </p>
-                </div>
-              </div>
-            </div>
+        {/* Key numbers */}
+        <div className={`grid grid-cols-2 gap-3 ${isManager ? 'md:grid-cols-3 xl:grid-cols-5' : 'md:grid-cols-4'}`}>
+          <Tile
+            label="المخزون"
+            value={formatQty(currentStock, unit || 'قطعة')}
+            tone={currentStock <= 0 ? 'bad' : isLowStock ? 'warn' : 'default'}
+            sub={
+              currentStock <= 0
+                ? 'نفد من المخزون'
+                : isLowStock
+                  ? `أقل من حد التنبيه (${formatQty(minStock, unit)})`
+                  : insights?.daysOfStock != null
+                    ? `يكفي حوالي ${formatNumber(insights.daysOfStock)} يوم`
+                    : insights
+                      ? 'لا مبيعات آخر 30 يوم'
+                      : undefined
+            }
+          />
+          <Tile label="سعر البيع" value={sellingPrice > 0 ? formatCurrency(sellingPrice) : 'بدون سعر'} tone={sellingPrice > 0 ? 'default' : 'warn'} sub={unit ? `لكل ${unit}` : 'للقطعة'} />
+          {isManager && (
+            <Tile
+              label="التكلفة"
+              value={insights?.purchasePrice !== undefined ? formatCurrency(insights.purchasePrice) : '—'}
+              tone={insights?.margin != null && insights.margin < 0 ? 'bad' : 'default'}
+              sub={insights?.margin != null ? `هامش الربح ⁦${insights.margin.toFixed(1)}%⁩` : undefined}
+            />
           )}
+          <Tile
+            label="مبيعات آخر 30 يوم"
+            value={insights ? formatQty(insights.last30.qty, unit || 'قطعة') : '—'}
+            sub={insights ? formatCurrency(insights.last30.revenue) : undefined}
+          />
+          <Tile
+            label="آخر بيع"
+            value={insights?.lastSale ? shopDate(insights.lastSale.at) : insights ? 'لم يُبع بعد' : '—'}
+            sub={insights?.lastPurchase ? `آخر شراء ${shopDate(insights.lastPurchase.at)}` : insights ? 'لم يُشترَ بعد' : undefined}
+          />
+        </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Basic Information Card */}
-            <Card padding="lg" className="lg:col-span-2">
-              <div className="space-y-6">
-                <div className="flex items-center mb-4">
-                  <div className="p-2 bg-blue-100 rounded-lg">
-                    <Package className="w-5 h-5 text-blue-600" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-gray-900 mr-3">المعلومات الأساسية</h3>
-                </div>
+        {/* Tabs */}
+        <div className="-mx-1 overflow-x-auto px-1">
+          <nav role="tablist" aria-label="بيانات المنتج" className="flex min-w-max gap-1 border-b border-gray-200">
+            {tabs.map(t => {
+              const Icon = t.icon;
+              const selected = tab === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  onClick={() => setTab(t.id)}
+                  className={`-mb-px inline-flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium transition-colors ${
+                    selected ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                  }`}
+                >
+                  <Icon className="h-4 w-4" />
+                  {t.label}
+                </button>
+              );
+            })}
+          </nav>
+        </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">اسم المنتج</label>
-                    <div className="bg-gray-50 rounded-lg p-3 border">
-                      <span className="text-gray-900">{product?.name || 'غير محدد'}</span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">رمز المنتج (SKU)</label>
-                    <div className="bg-gray-50 rounded-lg p-3 border">
-                      <span className="text-gray-900">{product?.sku || 'غير محدد'}</span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">الفئة</label>
-                    <div className="bg-gray-50 rounded-lg p-3 border">
-                      <span className="text-gray-900">{product?.category?.name || 'غير محدد'}</span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">تاريخ الإنشاء</label>
-                    <div className="bg-gray-50 rounded-lg p-3 border">
-                      <span className="text-gray-900">
-                        {product?.createdAt ? formatTableDate(product.createdAt) : 'غير محدد'}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">الوصف</label>
-                    <div className="bg-gray-50 rounded-lg p-3 border min-h-[100px]">
-                      <span className="text-gray-900">
-                        {product?.description || 'لا يوجد وصف متاح لهذا المنتج'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </Card>
-
-            {/* Pricing & Stock Card */}
-            <Card padding="lg">
-              <div className="space-y-6">
-                <div className="flex items-center mb-4">
-                  <div className="p-2 bg-green-100 rounded-lg">
-                    <DollarSign className="w-5 h-5 text-green-600" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-gray-900 mr-3">التسعير والمخزون</h3>
-                </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">سعر الشراء</label>
-                    <div className="bg-gray-50 rounded-lg p-3 border">
-                      <span className="text-gray-900">
-                        {purchasePrice > 0 ? formatCurrency(purchasePrice) : 'غير محدد'}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">سعر البيع</label>
-                    <div className="bg-gray-50 rounded-lg p-3 border">
-                      <span className="text-gray-900">
-                        {sellingPrice > 0 ? formatCurrency(sellingPrice) : 'غير محدد'}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">الكمية المتاحة</label>
-                    <div className="bg-gray-50 rounded-lg p-3 border">
-                      <span className={`font-medium ${stockStatusColor}`}>
-                        {formatQty(currentStock, unitOf(product as any))}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">الحد الأدنى للمخزون</label>
-                    <div className="bg-gray-50 rounded-lg p-3 border">
-                      <span className="text-gray-900">
-                        {formatQty(minStock, unitOf(product as any))}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">مبلغ الربح</label>
-                    <div className="bg-gray-50 rounded-lg p-3 border">
-                      <span className="font-medium text-green-600">
-                        {profitAmount > 0 ? formatCurrency(profitAmount) : 'غير محدد'}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">هامش الربح</label>
-                    <div className="bg-gray-50 rounded-lg p-3 border">
-                      <span className="font-medium text-green-600">
-                        {profitMarginPercentage > 0 ? `${profitMarginPercentage.toFixed(1)}%` : 'غير محدد'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </Card>
-          </div>
-
+        <div role="tabpanel">
+          {tab === 'overview' && <ProductOverviewTab product={product} insights={insights} unit={unit} />}
+          {tab === 'sales' && <ProductSalesTab {...tabProps} isManager={isManager} />}
+          {tab === 'purchases' && isManager && <ProductPurchasesTab {...tabProps} />}
+          {tab === 'prices' && isManager && <ProductPricesTab {...tabProps} />}
+          {tab === 'movements' && <ProductMovementsTab {...tabProps} />}
         </div>
 
         {/* Delete Confirmation Dialog */}
