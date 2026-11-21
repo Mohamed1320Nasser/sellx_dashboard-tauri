@@ -1,6 +1,7 @@
 
 mod config;
 mod network;
+mod offline;
 
 use std::io::Write;
 use std::process::Command;
@@ -1165,6 +1166,7 @@ fn list_usb_devices() -> Result<Vec<String>, String> {
 pub fn run() {
     tauri::Builder::default()
         // ── Plugins ────────────────────────────────────────
+        .manage(offline::OfflineState(std::sync::Mutex::new(None)))
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
@@ -1195,6 +1197,27 @@ pub fn run() {
             // Network
             network::get_network_status,
             network::check_network_now,
+            // Offline selling (local database, queue, backups)
+            offline::offline_status,
+            offline::offline_meta_get,
+            offline::offline_meta_set,
+            offline::offline_next_seq,
+            offline::offline_kv_replace,
+            offline::offline_kv_put,
+            offline::offline_kv_get,
+            offline::offline_kv_list,
+            offline::offline_enqueue,
+            offline::offline_pending,
+            offline::offline_mark,
+            offline::offline_actions,
+            offline::offline_set_status,
+            offline::offline_prune,
+            offline::offline_save_login,
+            offline::offline_check_login,
+            offline::offline_backup_now,
+            offline::offline_backup_list,
+            offline::offline_backup_restore,
+            offline::offline_set_mirror,
             // Printer (Sultana's simplified commands)
             list_printers,
             print_receipt,
@@ -1213,9 +1236,16 @@ pub fn run() {
             }
             // Start background network monitoring
             network::start_network_monitor(app.handle().clone());
+            // Offline selling: open (and if needed repair) the local database
+            offline::init(app.handle());
             log::info!("SellX POS started");
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running SellX POS");
+        .build(tauri::generate_context!())
+        .expect("error while building SellX POS")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                offline::on_exit(app);
+            }
+        });
 }
