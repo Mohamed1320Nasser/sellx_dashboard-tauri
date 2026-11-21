@@ -1,5 +1,6 @@
 import { apiClient } from "./apiClient";
 import type { Purchase, PaginatedResponse, BackendApiResponse } from "../types";
+import { sendOnce } from "./idempotency";
 
 interface CreatePurchaseRequest {
   companyId: number;
@@ -35,7 +36,7 @@ interface PurchaseFilters {
 
 export const purchaseService = {
   create: (data: CreatePurchaseRequest | FormData): Promise<Purchase> =>
-    apiClient.post("/purchase/new", data),
+    sendOnce("purchase", data, config => apiClient.post("/purchase/new", data, config)),
 
   getList: (
     params: PurchaseFilters

@@ -1,4 +1,5 @@
 import { apiClient } from "./apiClient";
+import { sendOnce } from "./idempotency";
 
 export enum PaymentMethod {
   CASH = "CASH",
@@ -152,7 +153,8 @@ export interface SupplierPaymentSummary {
 type Envelope<T> = { data: T; msg?: string; status?: number };
 
 export const paymentService = {
-  create: (data: CreatePaymentRequest): Promise<Envelope<Payment>> => apiClient.post("/payment/create", data),
+  create: (data: CreatePaymentRequest): Promise<Envelope<Payment>> =>
+    sendOnce("payment", data, config => apiClient.post("/payment/create", data, config)),
 
   getList: (
     params: PaymentListParams
@@ -184,7 +186,7 @@ export const paymentService = {
 
   /** One amount over the customer's oldest unpaid invoices */
   collectFromClient: (clientId: number, data: CollectFromClientRequest): Promise<Envelope<CollectFromClientResult>> =>
-    apiClient.post(`/payment/client/${clientId}/collect`, data),
+    sendOnce(`collect:${clientId}`, data, config => apiClient.post(`/payment/client/${clientId}/collect`, data, config)),
 
   getSupplierSummary: (supplierId: number, companyId: number): Promise<SupplierPaymentSummary> =>
     apiClient.get(`/payment/supplier/${supplierId}/summary`, { params: { companyId } }),

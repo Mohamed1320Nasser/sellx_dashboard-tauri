@@ -8,11 +8,14 @@ import type {
   ExpenseSummaryResponse,
   BackendApiResponse,
 } from "../types";
+import { sendOnce } from "./idempotency";
 
 export const expenseService = {
   // Create expense
   create: (data: CreateExpenseRequest, companyId: number): Promise<BackendApiResponse<Expense>> =>
-    apiClient.post("/expense/new", { ...data, companyId }, { params: { companyId } }),
+    sendOnce("expense", { ...data, companyId }, config =>
+      apiClient.post("/expense/new", { ...data, companyId }, { ...config, params: { companyId } })
+    ),
 
   // List expenses with filters
   getList: (params: GetExpenseListRequest): Promise<BackendApiResponse<GetExpenseListResponse>> =>

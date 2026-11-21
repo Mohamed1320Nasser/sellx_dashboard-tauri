@@ -8,10 +8,11 @@ import type {
   BackendApiResponse,
   PaginatedResponse,
 } from "../types";
+import { sendOnce } from "./idempotency";
 
 export const returnService = {
   create: (data: CreateReturnRequest): Promise<Return> =>
-    apiClient.post("/return/new", data),
+    sendOnce("return", data, config => apiClient.post("/return/new", data, config)),
 
   // Get returns list
   getList: (

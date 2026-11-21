@@ -1,5 +1,6 @@
 import { apiClient } from "./apiClient";
 import type { Sale, PaginatedResponse, BackendApiResponse } from "../types";
+import { sendOnce } from "./idempotency";
 
 interface CreateSaleRequest {
   companyId: number;
@@ -27,7 +28,7 @@ interface SaleFilters {
 
 export const saleService = {
   create: (data: CreateSaleRequest): Promise<Sale> =>
-    apiClient.post("/sale/new", data),
+    sendOnce("sale", data, config => apiClient.post("/sale/new", data, config)),
 
   getList: (
     params: SaleFilters
