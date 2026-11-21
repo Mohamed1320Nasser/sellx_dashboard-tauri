@@ -36,11 +36,12 @@ const Login: React.FC = () => {
         try {
             const success = await login({ ...data, isAdmin, rememberMe });
             
+            const { loginError, offlineLogin } = useSessionAuthStore.getState();
             if (success) {
-                showSuccessToast('تم تسجيل الدخول بنجاح');
-                navigate('/');
+                showSuccessToast(offlineLogin ? 'تم تسجيل الدخول بدون إنترنت: البيع متاح، وسيُرسل كل شيء عند عودة الاتصال' : 'تم تسجيل الدخول بنجاح');
+                navigate(offlineLogin ? '/sales/create' : '/');
             } else {
-                showErrorToast('فشل في تسجيل الدخول. تحقق من بيانات الاعتماد.');
+                showErrorToast(loginError || 'فشل في تسجيل الدخول. تحقق من بيانات الاعتماد.');
             }
         } catch (error) {
             showErrorToast(error);

@@ -2,9 +2,16 @@ import axios from "axios";
 import { API_CONFIG, getCurrentApiConfig } from "../config/api";
 import { useSessionAuthStore } from "../stores/sessionAuthStore";
 import toast from "react-hot-toast";
+import { installOfflineAdapter } from "../offline/adapter";
+import { inLocalMode } from "../offline/runtime";
+
+/** stored instead of a server token after signing in on this PC without internet */
+export const OFFLINE_SESSION_TOKEN = "offline-session";
 
 // Axios instance with interceptors
 export const apiClient = axios.create(API_CONFIG);
+// Offline selling (desktop): answers the POS from the PC when the server cannot be reached
+installOfflineAdapter(apiClient);
 
 // Update the baseURL dynamically
 const updateApiClientBaseURL = () => {
@@ -34,6 +41,9 @@ apiClient.interceptors.request.use(
     const token =
       localStorage.getItem("token") || sessionStorage.getItem("token");
 
+    // Signed in offline: no server token; the offline layer answers the POS
+    if (token === OFFLINE_SESSION_TOKEN) return config;
+
     if (token) {
       // Basic token format validation
       try {
@@ -54,6 +64,8 @@ apiClient.interceptors.request.use(
         const currentTime = Math.floor(Date.now() / 1000);
 
         if (payload.exp && payload.exp < currentTime) {
+          // Offline: keep working on the PC; signing in again is asked once the server is back
+          if (inLocalMode()) return config;
           localStorage.removeItem("token");
           sessionStorage.removeItem("token");
           const authStore = useSessionAuthStore.getState();

@@ -1,6 +1,11 @@
 import { create } from "zustand";
 import { sessionAuthService } from "../services/sessionAuthService";
 import { usePermissionStore } from "./permissionStore";
+import { localStore, storeError } from "../offline/localStore";
+import { setOfflineSession, useOfflineStore } from "../offline/runtime";
+
+/** this PC can sign people in without internet (registered for offline selling) */
+const offlineDevice = () => (localStore && useOfflineStore.getState().status === "ready" ? useOfflineStore.getState().device : null);
 
 // Helper function to map user role to company role
 // Now we use the companyRole directly from the backend instead of mapping
@@ -43,6 +48,9 @@ interface SessionAuthStore {
     isAdmin?: boolean;
     rememberMe?: boolean;
   }) => Promise<boolean>;
+  /** why the last login failed (shown on the login page), and whether it was an offline sign-in */
+  loginError: string | null;
+  offlineLogin: boolean;
   logout: () => void;
   checkAuth: () => boolean;
   initialize: () => boolean;
@@ -57,6 +65,8 @@ export const useSessionAuthStore = create<SessionAuthStore>((set, get) => ({
   isAuthenticated: false,
   isLoading: false,
   token: null,
+  loginError: null,
+  offlineLogin: false,
 
   // Login Action (like eduloom's handleLogin)
   login: async (credentials: {
@@ -65,7 +75,7 @@ export const useSessionAuthStore = create<SessionAuthStore>((set, get) => ({
     isAdmin?: boolean;
     rememberMe?: boolean;
   }) => {
-    set({ isLoading: true });
+    set({ isLoading: true, loginError: null, offlineLogin: false });
 
     try {
       const response = await sessionAuthService.submitLogin(
@@ -99,10 +109,41 @@ export const useSessionAuthStore = create<SessionAuthStore>((set, get) => ({
           token,
           isLoading: false,
         });
+        setOfflineSession(false);
 
+        // A PC registered for offline selling remembers a salted hash (never the password) so this
+        // person can sign in here when the internet is down
+        const device = offlineDevice();
+        if (device && user.company?.id === device.companyId) {
+          const names = [credentials.emailOrUsername, user.username, user.email].filter((n, i, a): n is string => !!n && a.indexOf(n) === i);
+          for (const n of names) {
+            localStore!.saveLogin(n, credentials.password, { ...user, password: undefined }).catch(e => console.warn("[offline] could not remember sign-in:", storeError(e)));
+          }
+        }
         return true;
+      } else if (response.network && offlineDevice()) {
+        // No server: sign in from what this PC remembers
+        try {
+          const saved = await localStore!.checkLogin(credentials.emailOrUsername, credentials.password);
+          const user = saved.profile;
+          if (user?.company?.id !== offlineDevice()!.companyId) throw new Error("هذا المستخدم ليس من المحل المسجل عليه هذا الجهاز");
+          sessionAuthService.startOfflineSession(user);
+          setOfflineSession(true);
+          set({
+            user: { ...user, role: mapUserRoleToCompanyRole(user.role, user.companyRole) },
+            company: { ...user.company, companyId: user.company.id, company: user.company },
+            isAuthenticated: true,
+            token: "offline-session",
+            isLoading: false,
+            offlineLogin: true,
+          });
+          return true;
+        } catch (e) {
+          set({ isLoading: false, loginError: `لا يوجد اتصال بالسيرفر. ${storeError(e)}` });
+          return false;
+        }
       } else {
-        set({ isLoading: false });
+        set({ isLoading: false, loginError: response.network ? "لا يوجد اتصال بالسيرفر. تحقق من الإنترنت" : response.msg || null });
         return false;
       }
     } catch {
@@ -114,6 +155,7 @@ export const useSessionAuthStore = create<SessionAuthStore>((set, get) => ({
   // Logout Action (like eduloom's handleLogout)
   logout: () => {
     sessionAuthService.logout();
+    setOfflineSession(false);
     // Clear permissions when logging out
     usePermissionStore.getState().clearPermissions();
     set({

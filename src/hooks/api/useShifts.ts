@@ -96,9 +96,11 @@ export const useCreateCashMovement = () => {
 
   return useMutation({
     mutationFn: shiftService.createCashMovement,
-    onSuccess: (data) => {
+    onSuccess: (data: any) => {
+      // apiClient resolves to the envelope { msg, status, data: { cashMovement } }
+      const movement = data?.data?.cashMovement ?? data?.cashMovement;
       queryClient.invalidateQueries({
-        queryKey: ["shift", data.cashMovement.shiftId],
+        queryKey: ["shift", movement?.shiftId],
       });
       queryClient.invalidateQueries({
         queryKey: ["current-shift"],

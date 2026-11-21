@@ -1,6 +1,18 @@
 import { UserPermissions } from "../stores/permissionStore";
 import { sessionAuthService } from "./sessionAuthService";
 import { requestDeduplication } from "../utils/requestDeduplication";
+import { localStore } from "../offline/localStore";
+import { inLocalMode } from "../offline/runtime";
+
+/** permissions kept on a PC that sells offline, per shop and user */
+const savedKey = (companyId: number) => `${companyId}:${sessionAuthService.getCurrentUser()?.id ?? ""}`;
+async function savedPermissions(companyId: number): Promise<PermissionResponse | null> {
+  try {
+    return localStore ? await localStore.kvGet<PermissionResponse>("perm", savedKey(companyId)) : null;
+  } catch {
+    return null;
+  }
+}
 
 export interface PermissionResponse {
   success: boolean;
@@ -37,6 +49,12 @@ class PermissionService {
       }
     }
 
+    // Offline (or signed in offline): the copy kept on this PC
+    if (inLocalMode()) {
+      const saved = await savedPermissions(companyId);
+      if (saved) return saved;
+    }
+
     try {
       const response = await fetch(
         `${this.baseURL}/auth/permissions?companyId=${companyId}`,
@@ -60,6 +78,7 @@ class PermissionService {
 
       // Cache the response
       this.requestCache.set(cacheKey, { data, timestamp: now });
+      if (localStore && data?.success) void localStore.kvPut("perm", savedKey(companyId), data).catch(() => undefined);
 
       return data;
     } catch (error) {
@@ -67,6 +86,8 @@ class PermissionService {
       if (this.requestCache.has(cacheKey)) {
         return this.requestCache.get(cacheKey)!.data;
       }
+      const saved = await savedPermissions(companyId);
+      if (saved) return saved;
 
       throw error;
     }

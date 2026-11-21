@@ -43,6 +43,7 @@ const Header: React.FC = () => {
         const pageTitles: { [key: string]: string } = {
             '/analytics': 'التحليلات',
             '/settings/audit-log': 'سجل العمليات',
+            '/settings/offline': 'البيع بدون إنترنت',
             '/settings/versions': 'سجل الإصدارات',
             '/users': 'إدارة المستخدمين',
             '/user-management': 'إدارة المستخدمين',

@@ -5,6 +5,8 @@ import DesktopUpdateBanner from './DesktopUpdateBanner';
 import WhatsNewBar from './WhatsNewBar';
 import { useUIStore } from '../../stores/uiStore';
 import { usePermissions } from '../../hooks/usePermissions';
+import { useLocation } from 'react-router-dom';
+import { OfflineBar, OfflinePagePanel, usePageNeedsInternet } from '../offline/OfflineBar';
 
 interface LayoutProps {
     children: React.ReactNode;
@@ -15,6 +17,7 @@ interface LayoutProps {
 const Layout: React.FC<LayoutProps> = ({ children, compact = false }) => {
     const { sidebarCollapsed } = useUIStore();
     const permissionsLoaded = useRef(false);
+    const needsInternet = usePageNeedsInternet(useLocation().pathname);
     
     // Load user permissions only once per session
     const { isLoading } = usePermissions();
@@ -58,9 +61,10 @@ const Layout: React.FC<LayoutProps> = ({ children, compact = false }) => {
                 {/* Page content with professional spacing */}
                 <main className="min-w-0 flex-1 overflow-x-clip bg-gray-50">
                     <div className={`${compact ? "px-3 py-3" : "pl-6 pr-4 sm:pl-8 sm:pr-6 lg:pl-12 lg:pr-8 py-6"} transition-all duration-300 ease-in-out`}>
+                        <OfflineBar />
                         <DesktopUpdateBanner />
                         <WhatsNewBar />
-                        {children}
+                        {needsInternet ? <OfflinePagePanel /> : children}
                     </div>
                 </main>
             </div>

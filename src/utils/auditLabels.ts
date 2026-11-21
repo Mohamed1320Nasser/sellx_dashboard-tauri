@@ -48,6 +48,9 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   EXPENSE_DELETE: "حذف مصروف",
   SALARY_PAY: "صرف راتب",
   SALARY_DELETE: "حذف راتب",
+  OFFLINE_SETTING: "تغيير البيع بدون إنترنت",
+  DEVICE_ADD: "تسجيل جهاز للبيع بدون إنترنت",
+  DEVICE_REMOVE: "إلغاء تسجيل جهاز",
 };
 
 export const AUDIT_GROUP_OPTIONS = [
@@ -108,6 +111,7 @@ export const FIELD_LABELS: Record<string, string> = {
   address: "العنوان",
   taxNumber: "الرقم الضريبي",
   password: "كلمة المرور",
+  offlineEnabled: "البيع بدون إنترنت",
 };
 
 /** Page for the item a row is about, when there is one */

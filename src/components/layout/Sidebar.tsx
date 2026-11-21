@@ -32,7 +32,8 @@ import {
     Clock,
     Cog,
     Building2,
-    Wallet
+    Wallet,
+    CloudOff,
 } from 'lucide-react';
 import { useSessionAuthStore } from '../../stores/sessionAuthStore';
 import { useUIStore } from '../../stores/uiStore';
@@ -267,6 +268,12 @@ const navigationItems: NavigationItem[] = [
                 name: 'سجل العمليات',
                 href: '/settings/audit-log',
                 icon: History,
+                permission: 'canManageUserRoles',
+            },
+            {
+                name: 'البيع بدون إنترنت',
+                href: '/settings/offline',
+                icon: CloudOff,
                 permission: 'canManageUserRoles',
             },
         ],

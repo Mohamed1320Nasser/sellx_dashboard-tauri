@@ -10,6 +10,8 @@ interface AuthResponse {
     user: any;
   };
   msg?: string;
+  /** the server could not be reached (no answer, or its gateway answered for it) */
+  network?: boolean;
 }
 
 class SessionAuthService {
@@ -86,6 +88,9 @@ class SessionAuthService {
         }),
       });
 
+      if ([502, 503, 504].includes(response.status)) {
+        return { success: false, network: true, msg: "تعذر الوصول إلى السيرفر" };
+      }
       const responseData = await response.json();
 
       // API response structure: { data: { login: true, token: "...", user: {...}, rememberMe: true/false } }
@@ -137,6 +142,7 @@ class SessionAuthService {
     } catch (error: any) {
       return {
         success: false,
+        network: true,
         msg: error.message || "Network error occurred",
       };
     }
@@ -156,6 +162,19 @@ class SessionAuthService {
     localStorage.removeItem("user");
     localStorage.removeItem("company");
     localStorage.removeItem("rememberMe");
+    sessionStorage.removeItem("offlineSession");
+    localStorage.removeItem("offlineSession");
+  }
+
+  /** Signed in on this PC without internet: the session lives in this window only */
+  startOfflineSession(user: any): void {
+    this.logout();
+    localStorage.setItem("rememberMe", "false");
+    sessionStorage.setItem("token", "offline-session");
+    sessionStorage.setItem("isAuthed", "true");
+    sessionStorage.setItem("user", JSON.stringify(user));
+    if (user.company) sessionStorage.setItem("company", JSON.stringify(user.company));
+    sessionStorage.setItem("offlineSession", "1");
   }
 
   // Clear all session data (like eduloom's sessionStorage.clear)

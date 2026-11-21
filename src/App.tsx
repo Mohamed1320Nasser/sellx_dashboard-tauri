@@ -79,6 +79,8 @@ import SlowMovingReport from './pages/SlowMovingReport';
 import ReorderReport from './pages/ReorderReport';
 import TaxSettings from './pages/Settings/TaxSettings';
 import NoInternetPage from './pages/NoInternetPage';
+import OfflineSettings from './pages/Settings/OfflineSettings';
+import { canWorkOffline, startOffline, useOfflineStore } from './offline/runtime';
 import Expenses from './pages/Expenses';
 import ExpenseCreate from './pages/ExpenseCreate';
 import ExpenseEdit from './pages/ExpenseEdit';
@@ -94,6 +96,8 @@ const App: React.FC = () => {
     // Network status monitoring
     const { isOnline, checkConnection } = useNetworkStatus();
     const [showOfflinePage, setShowOfflinePage] = useState(false);
+    // A PC registered for offline selling keeps working: no "no internet" page there
+    const offlineReady = useOfflineStore((s) => s.status === 'ready' && !!s.catalogAt) && canWorkOffline();
 
     // Initialize authentication immediately on first render
     const [isInitialized, setIsInitialized] = useState(false);
@@ -107,14 +111,14 @@ const App: React.FC = () => {
     // Show offline page when network is lost (only in desktop)
     useEffect(() => {
         // Only show offline page in desktop app
-        if (isTauri && !isOnline) {
+        if (isTauri && !isOnline && !offlineReady) {
             console.log('[APP] Network lost - showing offline page');
             setShowOfflinePage(true);
-        } else if (isOnline && showOfflinePage) {
+        } else if ((isOnline || offlineReady) && showOfflinePage) {
             // Auto-hide when back online
             setShowOfflinePage(false);
         }
-    }, [isOnline, showOfflinePage]);
+    }, [isOnline, showOfflinePage, offlineReady]);
 
     // Determine router type at runtime - HashRouter for file:// protocol (Electron), BrowserRouter for web
     // This is computed once and memoized to prevent re-renders
@@ -159,6 +163,8 @@ const App: React.FC = () => {
             }
             
             initialize();
+            // Offline selling: local database, connection to the server, sending what was recorded
+            void startOffline();
 
             // Add timeout for API initialization to prevent hanging
             Promise.race([
@@ -353,6 +359,7 @@ const App: React.FC = () => {
                                         <Route path="/settings/printer" element={<PrinterSettings />} />
                                         <Route path="/settings/company" element={<CompanySettings />} />
                                         <Route path="/settings/audit-log" element={<AuditLog />} />
+                                        <Route path="/settings/offline" element={<OfflineSettings />} />
                                         <Route path="/settings/versions" element={<Versions />} />
                                         <Route path="/settings/tax" element={<TaxSettings />} />
                                         <Route path="/cash-registers" element={<CashRegisters />} />
