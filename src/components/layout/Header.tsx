@@ -64,6 +64,10 @@ const Header: React.FC = () => {
             '/reports/end-of-day': 'تقرير نهاية اليوم',
             '/reports/receivables-aging': 'أعمار ديون العملاء',
             '/reports/payables-aging': 'أعمار مستحقات الموردين',
+            '/reports/sales-by-cashier': 'المبيعات حسب الكاشير',
+            '/reports/stock-valuation': 'قيمة المخزون',
+            '/reports/slow-moving': 'الأصناف الراكدة',
+            '/reports/reorder': 'تقرير إعادة الطلب',
             '/financial-reports': 'التقارير المالية',
         };
         

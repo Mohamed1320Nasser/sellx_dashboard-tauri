@@ -1,6 +1,6 @@
 [package]
 name = "sellx-pos"
-version = "1.3.2"
+version = "1.3.3"
 description = "SellX POS - Point of Sale System"
 authors = ["SellX"]
 license = "UNLICENSED"

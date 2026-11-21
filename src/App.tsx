@@ -73,6 +73,10 @@ import Versions from './pages/Versions';
 import Reports from './pages/Reports';
 import EndOfDayReport from './pages/EndOfDayReport';
 import AgingReport from './pages/AgingReport';
+import SalesByCashierReport from './pages/SalesByCashierReport';
+import StockValuationReport from './pages/StockValuationReport';
+import SlowMovingReport from './pages/SlowMovingReport';
+import ReorderReport from './pages/ReorderReport';
 import TaxSettings from './pages/Settings/TaxSettings';
 import NoInternetPage from './pages/NoInternetPage';
 import Expenses from './pages/Expenses';
@@ -325,6 +329,10 @@ const App: React.FC = () => {
                                         <Route path="/reports/end-of-day" element={<EndOfDayReport />} />
                                         <Route path="/reports/receivables-aging" element={<AgingReport key="customers" kind="customers" />} />
                                         <Route path="/reports/payables-aging" element={<AgingReport key="suppliers" kind="suppliers" />} />
+                                        <Route path="/reports/sales-by-cashier" element={<SalesByCashierReport />} />
+                                        <Route path="/reports/stock-valuation" element={<StockValuationReport />} />
+                                        <Route path="/reports/slow-moving" element={<SlowMovingReport />} />
+                                        <Route path="/reports/reorder" element={<ReorderReport />} />
                                         <Route path="/financial-reports" element={<FinancialReports />} />
                                         <Route path="/category-report" element={<CategoryReport />} />
                                         <Route path="/analytics" element={<Analytics />} />

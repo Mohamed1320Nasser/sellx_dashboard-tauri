@@ -30,7 +30,7 @@ const GROUPS: { title: string; items: ReportCard[] }[] = [
     title: 'اليومية',
     items: [
       { title: 'تقرير نهاية اليوم', description: 'مبيعات اليوم، الداخل والخارج بكل طريقة دفع، الأدراج وفروقها، والأصناف المباعة. جاهز للطباعة.', icon: ClipboardList, to: '/reports/end-of-day', permission: 'canViewFinancialReports' },
-      { title: 'المبيعات حسب الكاشير', description: 'مبيعات كل كاشير وفواتيره ومرتجعاته وفروق ورديته لأي فترة.', icon: Users },
+      { title: 'المبيعات حسب الكاشير', description: 'مبيعات كل كاشير وفواتيره ومرتجعاته وفروق ورديته لأي فترة.', icon: Users, to: '/reports/sales-by-cashier', permission: 'canViewFinancialReports' },
     ],
   },
   {
@@ -46,9 +46,9 @@ const GROUPS: { title: string; items: ReportCard[] }[] = [
     items: [
       { title: 'التحليلات', description: 'اتجاه المبيعات، أداء المنتجات، العملاء، والمخزون.', icon: BarChart3, to: '/analytics', permission: 'canViewAnalytics' },
       { title: 'تقرير الفئات', description: 'المبيعات والربح لكل فئة منتجات.', icon: Folder, to: '/category-report', permission: 'canViewFinancialReports' },
-      { title: 'قيمة المخزون', description: 'قيمة البضاعة الموجودة بسعر التكلفة وبسعر البيع، لكل فئة.', icon: Warehouse },
-      { title: 'الأصناف الراكدة', description: 'أصناف لم تُبع منذ مدة، والفلوس المحبوسة فيها.', icon: PackageSearch },
-      { title: 'تقرير إعادة الطلب', description: 'ماذا تشتري وكم، ومن أي مورد، حسب سرعة البيع والحد الأدنى.', icon: ShoppingBasket },
+      { title: 'قيمة المخزون', description: 'قيمة البضاعة الموجودة بسعر التكلفة وبسعر البيع، لكل فئة.', icon: Warehouse, to: '/reports/stock-valuation', permission: 'canViewFinancialReports' },
+      { title: 'الأصناف الراكدة', description: 'أصناف لم تُبع منذ مدة، والفلوس المحبوسة فيها.', icon: PackageSearch, to: '/reports/slow-moving', permission: 'canViewFinancialReports' },
+      { title: 'تقرير إعادة الطلب', description: 'ماذا تشتري وكم، ومن أي مورد، حسب سرعة البيع والحد الأدنى.', icon: ShoppingBasket, to: '/reports/reorder', permission: 'canViewFinancialReports' },
     ],
   },
 ];
